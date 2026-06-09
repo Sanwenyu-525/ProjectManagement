@@ -87,3 +87,19 @@
   --transition-slow: 0.4s ease;
   --transition-spring: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
+/* 响应式媒体查询 */
+@media (max-width: 768px) {
+  :root {
+    --space-4: 12px;
+    --space-6: 20px;
+    --text-base: 13px;
+  }
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --space-4: 14px;
+    --space-6: 22px;
+  }
+}

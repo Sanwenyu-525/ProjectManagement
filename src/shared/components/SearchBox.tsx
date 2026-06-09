@@ -24,7 +24,7 @@ export default function SearchBox({ onClick }: SearchBoxProps) {
         border: `1px solid ${focused ? 'rgba(34, 197, 94, 0.5)' : 'rgba(255, 255, 255, 0.15)'}`,
         borderRadius: 8,
         padding: '10px 20px',
-        minWidth: 320,
+        minWidth: 0,
         maxWidth: 400,
         boxShadow: focused
           ? 'inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 0 20px rgba(34, 197, 94, 0.1)'

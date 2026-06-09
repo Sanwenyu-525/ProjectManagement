@@ -147,6 +147,7 @@ export default function MainLayout() {
           position: 'relative',
           zIndex: 10,
           boxShadow: 'inset 0 -1px 0 rgba(255, 255, 255, 0.4), 0 4px 12px rgba(0, 0, 0, 0.08)',
+          flexWrap: 'nowrap',
         }}>
           {/* Logo和菜单 - 左侧 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
