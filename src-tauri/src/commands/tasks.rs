@@ -46,30 +46,7 @@ pub async fn tasks_list(
     sql.push_str(" ORDER BY t.createdAt DESC");
 
     let refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
-    let tasks = db.query_json(&sql, &refs).map_err(|e| e.to_string())?;
-
-    // Attach children to parent tasks
-    if let Some(arr) = tasks.as_array() {
-        let mut task_map = serde_json::Map::new();
-        let mut root_tasks = Vec::new();
-
-        for task in arr {
-            if let (Some(id), parent_id) = (
-                task.get("id").and_then(|v| v.as_str()),
-                task.get("parentId").and_then(|v| v.as_str()),
-            ) {
-                task_map.insert(id.to_string(), task.clone());
-                if parent_id.is_none() {
-                    root_tasks.push(task.clone());
-                }
-            }
-        }
-
-        // For simplicity, return flat list (frontend handles hierarchy)
-        Ok(tasks)
-    } else {
-        Ok(tasks)
-    }
+    db.query_json(&sql, &refs).map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,8 +67,8 @@ pub async fn tasks_create(
     project_id: String,
     data: CreateTaskInput,
 ) -> Result<JsonValue, String> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let id = crate::db::new_id();
+    let now = crate::db::now_str();
 
     db.execute(
         "INSERT INTO tasks (id, title, description, status, priority, dueDate, projectId, repoScope, milestoneId, parentId, createdAt, updatedAt)
@@ -163,7 +140,7 @@ pub async fn tasks_update(
         add_field!(milestone_id, "milestoneId");
 
         if !sets.is_empty() {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = crate::db::now_str();
             sets.push(format!("updatedAt = ?{}", idx));
             param_values.push(Box::new(now));
             idx += 1;
@@ -184,9 +161,7 @@ pub async fn tasks_update(
 
 #[command]
 pub async fn tasks_delete(db: State<'_, Database>, id: String) -> Result<(), String> {
-    db.execute_returning_changes("DELETE FROM tasks WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    db.delete_by_id("tasks", &id).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -214,7 +189,7 @@ pub async fn tasks_update_status(
         .unwrap_or("")
         .to_string();
 
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = crate::db::now_str();
     db.execute(
         "UPDATE tasks SET status = ?1, updatedAt = ?2 WHERE id = ?3",
         rusqlite::params![status, now, id],

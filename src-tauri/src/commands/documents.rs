@@ -35,8 +35,8 @@ pub async fn documents_create(
     project_id: String,
     data: CreateDocumentInput,
 ) -> Result<JsonValue, String> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let id = crate::db::new_id();
+    let now = crate::db::now_str();
 
     db.execute(
         "INSERT INTO documents (id, title, content, type, projectId, createdAt, updatedAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
@@ -93,7 +93,7 @@ pub async fn documents_update(
         }
 
         if !sets.is_empty() {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = crate::db::now_str();
             sets.push(format!("updatedAt = ?{}", idx));
             param_values.push(Box::new(now));
             idx += 1;
@@ -110,7 +110,5 @@ pub async fn documents_update(
 
 #[command]
 pub async fn documents_delete(db: State<'_, Database>, id: String) -> Result<(), String> {
-    db.execute_returning_changes("DELETE FROM documents WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    db.delete_by_id("documents", &id).map_err(|e| e.to_string())
 }

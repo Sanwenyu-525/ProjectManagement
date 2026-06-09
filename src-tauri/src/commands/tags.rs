@@ -23,7 +23,7 @@ pub struct CreateTagInput {
 
 #[command]
 pub async fn tags_create(db: State<'_, Database>, data: CreateTagInput) -> Result<JsonValue, String> {
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = crate::db::new_id();
 
     db.execute(
         "INSERT INTO tags (id, name, color, userId) VALUES (?1, ?2, ?3, ?4)",
@@ -75,9 +75,7 @@ pub async fn tags_update(db: State<'_, Database>, id: String, data: UpdateTagInp
 
 #[command]
 pub async fn tags_delete(db: State<'_, Database>, id: String) -> Result<(), String> {
-    db.execute_returning_changes("DELETE FROM tags WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    db.delete_by_id("tags", &id).map_err(|e| e.to_string())
 }
 
 #[command]

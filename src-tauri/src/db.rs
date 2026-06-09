@@ -3,6 +3,16 @@ use rusqlite::Connection;
 use std::path::Path;
 use thiserror::Error;
 
+/// Generate a new UUID string.
+pub fn new_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+/// Current UTC time as "YYYY-MM-DD HH:MM:SS".
+pub fn now_str() -> String {
+    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("Database error: {0}")]
@@ -128,16 +138,31 @@ impl Database {
         details: Option<&serde_json::Value>,
         project_id: &str,
     ) -> Result<(), DbError> {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = new_id();
         let details_str = details
             .map(|d| serde_json::to_string(d).unwrap_or_default())
             .unwrap_or_default();
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = now_str();
 
         self.execute(
             "INSERT INTO activity_logs (id, action, entityType, entityId, details, projectId, createdAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![id, action, entity_type, entity_id, details_str, project_id, now],
         )?;
+        Ok(())
+    }
+
+    /// Insert a row and return it as JSON. Caller provides the full INSERT SQL and params.
+    /// `fetch_sql` should be a SELECT * WHERE id = ?1 query; `fetch_id` is the new row's id.
+    pub fn insert_and_fetch(&self, insert_sql: &str, insert_params: &[&dyn rusqlite::types::ToSql], fetch_sql: &str, fetch_id: &str) -> Result<serde_json::Value, DbError> {
+        self.execute(insert_sql, insert_params)?;
+        self.query_one_json(fetch_sql, &[&fetch_id])?
+            .ok_or_else(|| DbError::Lock("Insert succeeded but row not found".into()))
+    }
+
+    /// Delete a row by id. Returns Ok(()) regardless of whether the row existed.
+    pub fn delete_by_id(&self, table: &str, id: &str) -> Result<(), DbError> {
+        let sql = format!("DELETE FROM \"{}\" WHERE id = ?1", table);
+        self.execute_returning_changes(&sql, &[&id])?;
         Ok(())
     }
 }

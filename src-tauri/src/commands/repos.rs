@@ -30,8 +30,8 @@ pub async fn repos_add(
     project_id: String,
     data: AddRepoInput,
 ) -> Result<JsonValue, String> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let id = crate::db::new_id();
+    let now = crate::db::now_str();
 
     db.execute(
         "INSERT INTO remote_repos (id, projectId, platform, repoUrl, repoFullName, defaultBranch, repoStatus, createdAt, updatedAt)
@@ -88,7 +88,7 @@ pub async fn repos_update(
         }
 
         if !sets.is_empty() {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = crate::db::now_str();
             sets.push(format!("updatedAt = ?{}", idx));
             param_values.push(Box::new(now));
             idx += 1;
@@ -107,15 +107,13 @@ pub async fn repos_update(
 
 #[command]
 pub async fn repos_remove(db: State<'_, Database>, id: String) -> Result<(), String> {
-    db.execute_returning_changes("DELETE FROM remote_repos WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    db.delete_by_id("remote_repos", &id).map_err(|e| e.to_string())
 }
 
 #[command]
 pub async fn repos_sync(db: State<'_, Database>, id: String) -> Result<JsonValue, String> {
     // Stub: just update lastSyncAt
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = crate::db::now_str();
     db.execute(
         "UPDATE remote_repos SET lastSyncAt = ?1, updatedAt = ?1 WHERE id = ?2",
         rusqlite::params![now, id],

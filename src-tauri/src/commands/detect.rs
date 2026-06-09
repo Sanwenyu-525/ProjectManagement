@@ -16,18 +16,41 @@ pub struct DetectedProject {
     pub repo_platform: Option<String>,
     pub open_command: Option<String>,
     pub live_url: Option<String>,
+    pub git_root: Option<String>,
+    pub group_id: Option<String>,
+    pub parent_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectGroup {
+    pub id: String,
+    pub label: String,
+    pub group_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanResult {
+    pub projects: Vec<DetectedProject>,
+    pub groups: Vec<ProjectGroup>,
 }
 
 /// Detect project info from a local directory path.
 #[command]
 pub async fn detect_local_project(path: String) -> Result<DetectedProject, String> {
+    detect_local_project_inner(&path)
+}
+
+/// Synchronous project detection logic (used by both single detect and scan).
+fn detect_local_project_inner(path: &str) -> Result<DetectedProject, String> {
     let dir = Path::new(&path);
     if !dir.is_dir() {
         return Err("Path is not a directory".into());
     }
 
     let mut detected = DetectedProject {
-        local_path: Some(path.clone()),
+        local_path: Some(path.to_string()),
         source: "Local".into(),
         ..Default::default()
     };
@@ -151,6 +174,9 @@ pub async fn detect_local_project(path: String) -> Result<DetectedProject, Strin
     tech_stack.dedup();
     detected.tech_stack = tech_stack;
 
+    // 5. Detect open command (dev server) from project config
+    detected.open_command = detect_open_command(dir);
+
     Ok(detected)
 }
 
@@ -172,7 +198,7 @@ pub async fn detect_git_repo(repo_url: String) -> Result<DetectedProject, String
     }
 
     // Detect
-    let mut detected = detect_local_project(temp_dir.to_string_lossy().to_string()).await?;
+    let mut detected = detect_local_project_inner(&temp_dir.to_string_lossy())?;
 
     // Set source to Remote
     detected.source = "Remote".into();
@@ -184,6 +210,231 @@ pub async fn detect_git_repo(repo_url: String) -> Result<DetectedProject, String
     let _ = fs::remove_dir_all(&temp_dir);
 
     Ok(detected)
+}
+
+/// Scan a directory for all projects within it, with relationship detection.
+#[command]
+pub async fn detect_scan_directory(path: String, max_depth: Option<usize>) -> Result<ScanResult, String> {
+    let root = PathBuf::from(&path);
+    if !root.is_dir() {
+        return Err("Path is not a directory".into());
+    }
+
+    let depth = max_depth.unwrap_or(1);
+    let mut projects = Vec::new();
+
+    scan_directory(&root, depth, &mut projects);
+
+    // Detect relationships
+    let groups = detect_relationships(&mut projects);
+
+    Ok(ScanResult { projects, groups })
+}
+
+/// Recursively scan for project directories.
+fn scan_directory(dir: &Path, remaining_depth: usize, results: &mut Vec<DetectedProject>) {
+    if remaining_depth == 0 {
+        return;
+    }
+
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        // Skip hidden/system dirs
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        // Skip known non-project dirs
+        if should_skip_dir(&name_str) {
+            continue;
+        }
+
+        // Check if this dir is a project
+        if is_project_dir(&path) {
+            let path_str = path.to_string_lossy().to_string();
+            if let Ok(mut detected) = detect_local_project_inner(&path_str) {
+                detected.git_root = find_git_root(&path).map(|p| p.to_string_lossy().to_string());
+                results.push(detected);
+            }
+            // Don't recurse into project directories
+        } else {
+            // Not a project, recurse deeper
+            scan_directory(&path, remaining_depth - 1, results);
+        }
+    }
+}
+
+fn should_skip_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "node_modules"
+            | "target"
+            | "dist"
+            | "build"
+            | ".git"
+            | ".svn"
+            | ".hg"
+            | "__pycache__"
+            | ".venv"
+            | "venv"
+            | ".idea"
+            | ".vscode"
+            | ".cache"
+            | ".next"
+            | ".nuxt"
+            | "coverage"
+            | ".turbo"
+            | ".parcel-cache"
+    )
+}
+
+/// Walk up from `dir` to find the nearest ancestor containing a `.git` directory.
+fn find_git_root(dir: &Path) -> Option<PathBuf> {
+    let mut current = Some(dir);
+    while let Some(d) = current {
+        if d.join(".git").exists() {
+            return Some(d.to_path_buf());
+        }
+        current = d.parent();
+    }
+    None
+}
+
+/// Analyze scanned projects and assign group_id / parent_path based on relationships.
+/// Returns the list of discovered groups.
+fn detect_relationships(projects: &mut [DetectedProject]) -> Vec<ProjectGroup> {
+    let mut groups: Vec<ProjectGroup> = Vec::new();
+    let mut next_group_idx: usize = 0;
+
+    // --- Phase 1: Group by shared git root ---
+    // Collect (git_root, index) pairs
+    let mut git_groups: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
+    for (i, p) in projects.iter().enumerate() {
+        if let Some(ref root) = p.git_root {
+            git_groups.entry(root.clone()).or_default().push(i);
+        }
+    }
+
+    // Only create groups where multiple projects share the same git root
+    for (root, indices) in &git_groups {
+        if indices.len() > 1 {
+            let group_id = format!("git_{}", next_group_idx);
+            next_group_idx += 1;
+            let label = Path::new(root)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| root.clone());
+            groups.push(ProjectGroup {
+                id: group_id.clone(),
+                label,
+                group_type: "git".into(),
+            });
+            for &i in indices {
+                projects[i].group_id = Some(group_id.clone());
+            }
+        }
+    }
+
+    // --- Phase 2: Detect nested (parent-child) relationships ---
+    // Sort by path depth so shorter (parent) paths come first
+    let mut sorted_indices: Vec<usize> = (0..projects.len()).collect();
+    sorted_indices.sort_by_key(|&i| {
+        projects[i]
+            .local_path
+            .as_ref()
+            .map(|p| p.chars().filter(|c| *c == '\\' || *c == '/').count())
+            .unwrap_or(0)
+    });
+
+    for &i in &sorted_indices {
+        let child_path = match projects[i].local_path.as_ref() {
+            Some(p) => Path::new(p),
+            None => continue,
+        };
+        // Check if any already-grouped parent contains this child
+        for &j in &sorted_indices {
+            if i == j {
+                continue;
+            }
+            let parent_path = match projects[j].local_path.as_ref() {
+                Some(p) => Path::new(p),
+                None => continue,
+            };
+            if child_path.starts_with(parent_path) && child_path != parent_path {
+                // Child is nested inside parent
+                projects[i].parent_path = Some(parent_path.to_string_lossy().to_string());
+                // Inherit parent's group_id, or create a new "nested" group
+                if let Some(ref parent_group) = projects[j].group_id {
+                    projects[i].group_id = Some(parent_group.clone());
+                } else if projects[i].group_id.is_none() {
+                    let group_id = format!("nest_{}", next_group_idx);
+                    next_group_idx += 1;
+                    let label = projects[j]
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| "未命名".into());
+                    groups.push(ProjectGroup {
+                        id: group_id.clone(),
+                        label,
+                        group_type: "nested".into(),
+                    });
+                    projects[i].group_id = Some(group_id.clone());
+                    projects[j].group_id = Some(group_id);
+                }
+                break; // Only one direct parent
+            }
+        }
+    }
+
+    groups
+}
+
+/// Check if a directory looks like a project root by looking for marker files.
+fn is_project_dir(dir: &Path) -> bool {
+    let markers = [
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "pyproject.toml",
+        "requirements.txt",
+        "setup.py",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "Gemfile",
+        "composer.json",
+        "Dockerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+    ];
+
+    for marker in &markers {
+        if dir.join(marker).exists() {
+            return true;
+        }
+    }
+
+    // Check for .csproj, .xcodeproj, .xcworkspace (extension-based)
+    if has_file_extension(dir, "csproj")
+        || has_file_extension(dir, "xcodeproj")
+        || has_file_extension(dir, "xcworkspace")
+    {
+        return true;
+    }
+
+    false
 }
 
 // ==================== Internal Helpers ====================
@@ -393,4 +644,48 @@ fn has_file_extension(dir: &Path, ext: &str) -> bool {
             })
         })
         .unwrap_or(false)
+}
+
+fn detect_open_command(dir: &Path) -> Option<String> {
+    // 1. Node.js: package.json scripts (dev > start > serve)
+    if let Some(cmd) = detect_npm_script(dir) {
+        return Some(cmd);
+    }
+    // 2. Rust
+    if dir.join("Cargo.toml").exists() {
+        return Some("cargo run".into());
+    }
+    // 3. Go
+    if dir.join("go.mod").exists() {
+        return Some("go run .".into());
+    }
+    // 4. Python with manage.py (Django)
+    if dir.join("manage.py").exists() {
+        return Some("python manage.py runserver".into());
+    }
+    None
+}
+
+fn detect_npm_script(dir: &Path) -> Option<String> {
+    let pkg_path = dir.join("package.json");
+    let content = fs::read_to_string(&pkg_path).ok()?;
+    let pkg: JsonValue = serde_json::from_str(&content).ok()?;
+    let scripts = pkg.get("scripts")?.as_object()?;
+
+    // Priority: dev > start > serve
+    for name in &["dev", "start", "serve"] {
+        if scripts.get(*name).and_then(|v| v.as_str()).is_some() {
+            // Determine package manager
+            let pm = if dir.join("pnpm-lock.yaml").exists() {
+                "pnpm"
+            } else if dir.join("yarn.lock").exists() {
+                "yarn"
+            } else {
+                "npm run"
+            };
+            // Extract the script name (e.g. "vite" -> "dev", "next dev" -> "dev")
+            return Some(format!("{} {}", pm, name));
+        }
+    }
+    None
 }

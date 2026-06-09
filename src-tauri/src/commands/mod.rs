@@ -6,4 +6,5 @@ pub mod repos;
 pub mod search;
 pub mod tags;
 pub mod tasks;
+pub mod terminal;
 pub mod timeline;

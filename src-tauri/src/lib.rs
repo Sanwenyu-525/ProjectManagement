@@ -61,6 +61,9 @@ pub fn run() {
             commands::timeline::get_project_timeline,
             commands::detect::detect_local_project,
             commands::detect::detect_git_repo,
+            commands::terminal::terminal_start,
+            commands::terminal::terminal_stop,
+            commands::terminal::terminal_input,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,7 +3,7 @@ import { Card, Spin, Button, Space, Typography, List, Tag } from 'antd';
 import { FullscreenOutlined, ReloadOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { projectsApi, timelineApi } from '../../api';
-import { normalizeProjects } from '../../lib/normalize';
+
 
 const { Title, Text } = Typography;
 
@@ -38,7 +38,7 @@ export default function DataScreenPage() {
         projectsApi.list(),
         timelineApi.list({ limit: 100 }),
       ]);
-      setProjects(normalizeProjects(projData as any[]));
+      setProjects(projData);
       setActivityLogs(logData);
     } finally {
       setLoading(false);

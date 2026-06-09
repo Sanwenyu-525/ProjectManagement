@@ -1,4 +1,5 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { normalizeProject, normalizeProjects } from '../lib/normalize';
 
 // Type-safe wrapper — components already use `any` for API data
 const cmd = <T = any>(name: string, args?: Record<string, unknown>): Promise<T> =>
@@ -8,17 +9,17 @@ const cmd = <T = any>(name: string, args?: Record<string, unknown>): Promise<T> 
 
 export const projectsApi = {
   list: (params?: Record<string, string | undefined>) =>
-    cmd('projects_list', { params: params ?? null }),
+    cmd<any[]>('projects_list', { params: params ?? null }).then(normalizeProjects),
   getById: (id: string) =>
-    cmd('projects_get_by_id', { id }),
+    cmd<Record<string, any>>('projects_get_by_id', { id }).then(normalizeProject),
   create: (data: Record<string, unknown>) =>
-    cmd('projects_create', { data }),
+    cmd<Record<string, any>>('projects_create', { data }).then(normalizeProject),
   update: (id: string, data: Record<string, unknown>) =>
-    cmd('projects_update', { id, data }),
+    cmd<Record<string, any>>('projects_update', { id, data }).then(normalizeProject),
   delete: (id: string) =>
     cmd('projects_delete', { id }),
   updateStatus: (id: string, status: string) =>
-    cmd('projects_update_status', { id, status }),
+    cmd<Record<string, any>>('projects_update_status', { id, status }).then(normalizeProject),
   getStats: (id: string) =>
     cmd('projects_get_stats', { id }),
   open: (id: string) =>
@@ -108,6 +109,8 @@ export const detectApi = {
     cmd('detect_local_project', { path }),
   gitRepo: (repoUrl: string) =>
     cmd('detect_git_repo', { repoUrl }),
+  scanDirectory: (path: string, maxDepth?: number) =>
+    cmd('detect_scan_directory', { path, maxDepth: maxDepth ?? null }),
 };
 
 // ==================== Documents ====================
@@ -123,4 +126,15 @@ export const documentsApi = {
     cmd('documents_update', { id, data }),
   delete: (id: string) =>
     cmd('documents_delete', { id }),
+};
+
+// ==================== Terminal ====================
+
+export const terminalApi = {
+  start: (projectId: string, commandStr: string, cwd: string) =>
+    cmd<string>('terminal_start', { projectId, commandStr, cwd }),
+  stop: (terminalId: string) =>
+    cmd('terminal_stop', { terminalId }),
+  input: (terminalId: string, data: string) =>
+    cmd('terminal_input', { terminalId, data }),
 };

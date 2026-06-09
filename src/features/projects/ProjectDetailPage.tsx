@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Descriptions, Tag, Button, Space, Spin, Empty, message, Table, Modal, Form, Input, Select, Timeline } from 'antd';
-import { ArrowLeftOutlined, FolderOpenOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
-import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi } from '../../api';
+import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, StopOutlined } from '@ant-design/icons';
+import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi, terminalApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
 import KanbanBoard from '../../shared/KanbanBoard';
-import { normalizeProject } from '../../lib/normalize';
+import TerminalPanel from '../../shared/TerminalPanel';
+
 
 const STATUS_COLORS: Record<string, string> = {
   Idea: 'default', Planning: 'blue', Development: 'orange',
@@ -17,6 +18,11 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate();
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [cmdModalOpen, setCmdModalOpen] = useState(false);
+  const [cmdInput, setCmdInput] = useState('');
+  const [launching, setLaunching] = useState(false);
+  const [terminalId, setTerminalId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     if (id) loadProject(id);
@@ -25,12 +31,62 @@ export default function ProjectDetailPage() {
   async function loadProject(pid: string) {
     try {
       const data = await projectsApi.getById(pid);
-      setProject(normalizeProject(data as Record<string, any>));
+      setProject(data);
     } catch {
       message.error('项目不存在');
       navigate('/projects');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleLaunch() {
+    if (!project?.openCommand) {
+      setCmdInput('');
+      setCmdModalOpen(true);
+      return;
+    }
+    setLaunching(true);
+    try {
+      const tid = await terminalApi.start(project.id, project.openCommand, project.localPath);
+      setTerminalId(tid);
+      setActiveTab('terminal');
+      message.success('项目已启动');
+    } catch (e: unknown) {
+      message.warning(String(e) || '启动失败');
+    } finally {
+      setLaunching(false);
+    }
+  }
+
+  async function handleStop() {
+    if (!terminalId) return;
+    try {
+      await terminalApi.stop(terminalId);
+      message.info('已停止');
+    } catch (e: unknown) {
+      message.warning(String(e) || '停止失败');
+    }
+  }
+
+  async function handleCmdSubmit() {
+    if (!cmdInput.trim()) {
+      message.warning('请输入启动命令');
+      return;
+    }
+    try {
+      await projectsApi.update(project.id, { openCommand: cmdInput.trim() });
+      setCmdModalOpen(false);
+      // Reload project, then launch via terminal
+      const data = await projectsApi.getById(project.id);
+      const updated = data;
+      setProject(updated);
+      const tid = await terminalApi.start(project.id, cmdInput.trim(), updated.localPath);
+      setTerminalId(tid);
+      setActiveTab('terminal');
+      message.success('项目已启动');
+    } catch (e: unknown) {
+      message.error(String(e) || '操作失败');
     }
   }
 
@@ -94,11 +150,11 @@ export default function ProjectDetailPage() {
             </div>
           </div>
           {project.localPath && (
-            <button
-              onClick={() => projectsApi.open(project.id)
-                .then(() => message.success('正在打开...'))
-                .catch((e: unknown) => message.warning(String(e)))}
-              style={{
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={handleLaunch}
+                disabled={launching || !!terminalId}
+                style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -116,8 +172,33 @@ export default function ProjectDetailPage() {
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(245, 158, 11, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(245, 158, 11, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
             >
-              <FolderOpenOutlined /> 打开项目
-            </button>
+              <PlayCircleOutlined /> {launching ? '启动中...' : '启动项目'}
+              </button>
+              {terminalId && (
+                <button
+                  onClick={handleStop}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px 20px',
+                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 10,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(239, 68, 68, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                >
+                  <StopOutlined /> 停止
+                </button>
+              )}
+            </div>
           )}
         </div>
         {project.description && (
@@ -134,6 +215,8 @@ export default function ProjectDetailPage() {
         padding: '4px 24px 24px',
       }}>
         <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
           items={[
             { key: 'overview', label: '概览', children: <OverviewTab project={project} /> },
             { key: 'repos', label: `仓库 (${project.remoteRepos?.length || 0})`, children: <ReposTab projectId={project.id} repos={project.remoteRepos || []} onRefresh={() => loadProject(project.id)} /> },
@@ -141,9 +224,31 @@ export default function ProjectDetailPage() {
             { key: 'documents', label: `文档 (${project._count?.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
+            { key: 'terminal', label: '终端', children: <TerminalPanel terminalId={terminalId} /> },
           ]}
         />
       </div>
+
+      {/* 设置启动命令弹窗 */}
+      <Modal
+        title="设置启动命令"
+        open={cmdModalOpen}
+        onCancel={() => setCmdModalOpen(false)}
+        onOk={handleCmdSubmit}
+        okText="保存并启动"
+        cancelText="取消"
+      >
+        <p style={{ color: '#64748b', marginBottom: 12 }}>
+          该项目尚未配置启动命令，设置后可一键启动开发环境。
+        </p>
+        <Input
+          value={cmdInput}
+          onChange={e => setCmdInput(e.target.value)}
+          placeholder="如 npm run dev、cargo run、python manage.py runserver"
+          onPressEnter={handleCmdSubmit}
+          autoFocus
+        />
+      </Modal>
     </div>
   );
 }
@@ -160,7 +265,7 @@ function OverviewTab({ project }: { project: any }) {
         {project.techStack?.map((t: string) => <Tag key={t}>{t}</Tag>) || '-'}
       </Descriptions.Item>
       <Descriptions.Item label="本地路径">{project.localPath || '-'}</Descriptions.Item>
-      <Descriptions.Item label="打开命令">{project.openCommand || '-'}</Descriptions.Item>
+      <Descriptions.Item label="启动命令">{project.openCommand || '-'}</Descriptions.Item>
       <Descriptions.Item label="线上地址">
         {project.liveUrl ? <a href={project.liveUrl} target="_blank" rel="noopener noreferrer">{project.liveUrl}</a> : '-'}
       </Descriptions.Item>

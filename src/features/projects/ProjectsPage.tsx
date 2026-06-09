@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Dropdown, Divider, Alert } from 'antd';
-import { PlusOutlined, SearchOutlined, FolderOpenOutlined, MoreOutlined, ScanOutlined, LinkOutlined } from '@ant-design/icons';
+import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Dropdown, Divider, Alert, Table, InputNumber } from 'antd';
+import { PlusOutlined, SearchOutlined, FolderOpenOutlined, MoreOutlined, ScanOutlined, LinkOutlined, FolderOutlined } from '@ant-design/icons';
 import { projectsApi, detectApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
-import { normalizeProjects } from '../../lib/normalize';
+
 
 const STATUS_OPTIONS = ['Idea', 'Planning', 'Development', 'Testing', 'Deployed', 'Maintained', 'Archived'];
 const STATUS_COLORS: Record<string, string> = {
@@ -29,13 +29,23 @@ export default function ProjectsPage() {
   const [detecting, setDetecting] = useState(false);
   const [detectResult, setDetectResult] = useState<any>(null);
 
+  // Scan directory state
+  const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [scanPath, setScanPath] = useState('');
+  const [scanMaxDepth, setScanMaxDepth] = useState(1);
+  const [scanResults, setScanResults] = useState<any[]>([]);
+  const [scanGroups, setScanGroups] = useState<any[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+  const [importing, setImporting] = useState(false);
+
   const loadProjects = useCallback(async () => {
     try {
       const params: Record<string, string> = {};
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
       const data = await projectsApi.list(params);
-      setProjects(normalizeProjects(data as any[]));
+      setProjects(data);
     } catch {
       // ignore
     } finally {
@@ -75,6 +85,7 @@ export default function ProjectsPage() {
       if (result.source) updates.source = result.source;
       if (result.localPath) updates.localPath = result.localPath;
       if (result.repoUrl) updates.repoUrl = result.repoUrl;
+      if (result.openCommand) updates.openCommand = result.openCommand;
       form.setFieldsValue(updates);
 
       message.success(`检测完成，识别到 ${result.techStack?.length || 0} 项技术栈`);
@@ -86,6 +97,25 @@ export default function ProjectsPage() {
   };
 
   const handleCreate = async (values: any) => {
+    // Prompt user to set openCommand if localPath is set but no command configured
+    if (values.localPath?.trim() && !values.openCommand?.trim()) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: '设置启动命令',
+          content: '检测到项目路径但未设置启动命令，设置后可一键启动项目开发。是否现在设置？',
+          okText: '去设置',
+          cancelText: '跳过，用默认',
+          onOk: () => resolve(false),
+          onCancel: () => resolve(true),
+        });
+      });
+      if (!proceed) {
+        // Focus the openCommand field
+        form.scrollToField('openCommand');
+        return;
+      }
+    }
+
     try {
       const payload: Record<string, any> = {
         ...values,
@@ -122,13 +152,96 @@ export default function ProjectsPage() {
     setModalOpen(true);
   };
 
+  const handleBrowseFolder = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({ directory: true });
+      if (selected) {
+        setScanPath(selected as string);
+      }
+    } catch (err) {
+      message.error('无法打开文件夹选择器');
+    }
+  };
+
+  const handleScan = async () => {
+    if (!scanPath.trim()) {
+      message.warning('请输入或选择扫描路径');
+      return;
+    }
+    setScanning(true);
+    setScanResults([]);
+    setScanGroups([]);
+    setSelectedKeys([]);
+    try {
+      const result = await detectApi.scanDirectory(scanPath.trim(), scanMaxDepth) as any;
+      const projects = result.projects || [];
+      const groups = result.groups || [];
+      setScanResults(projects);
+      setScanGroups(groups);
+      if (projects.length === 0) {
+        message.info('未发现任何项目');
+      } else {
+        const groupedCount = projects.filter((p: any) => p.groupId).length;
+        message.success(`发现 ${projects.length} 个项目${groupedCount > 0 ? `，其中 ${groupedCount} 个存在关联` : ''}`);
+      }
+    } catch (err) {
+      message.error(`扫描失败: ${String(err)}`);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleImportSelected = async () => {
+    if (selectedKeys.length === 0) {
+      message.warning('请先选择要导入的项目');
+      return;
+    }
+    setImporting(true);
+    let successCount = 0;
+    let failCount = 0;
+    for (const key of selectedKeys) {
+      const project = scanResults[Number(key)];
+      if (!project) continue;
+      try {
+        await projectsApi.create({
+          name: project.name,
+          description: project.description,
+          techStack: project.techStack,
+          source: project.source,
+          localPath: project.localPath,
+          openCommand: project.openCommand,
+          priority: 'Medium',
+        });
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    setImporting(false);
+    if (successCount > 0) {
+      message.success(`成功导入 ${successCount} 个项目${failCount > 0 ? `，${failCount} 个失败` : ''}`);
+      setScanModalOpen(false);
+      setScanResults([]);
+      setSelectedKeys([]);
+      loadProjects();
+    } else {
+      message.error('导入失败');
+    }
+  };
+
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>项目管理</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>
-          新建项目
-        </Button>
+        <Space>
+          <Button icon={<ScanOutlined />} onClick={() => setScanModalOpen(true)}>
+            扫描目录
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>
+            新建项目
+          </Button>
+        </Space>
       </div>
 
       <Space style={{ marginBottom: 16 }} wrap>
@@ -160,7 +273,7 @@ export default function ProjectsPage() {
             <Col key={project.id} xs={24} sm={12} md={8} lg={6}>
               <Card
                 hoverable
-                onDoubleClick={() => projectsApi.open(project.id).then(() => message.success('正在打开项目...')).catch((e: unknown) => message.warning(String(e) || '打开失败'))}
+                onDoubleClick={() => projectsApi.open(project.id).then(() => message.success('正在启动项目...')).catch((e: unknown) => message.warning(String(e) || '启动失败'))}
                 onClick={() => navigate(`/projects/${project.id}`)}
                 style={{ borderRadius: 8 }}
                 actions={[
@@ -168,7 +281,10 @@ export default function ProjectsPage() {
                     key="more"
                     menu={{
                       items: [
-                        { key: 'open', label: '打开项目', icon: <FolderOpenOutlined /> },
+                        { key: 'open', label: '启动项目', icon: <FolderOpenOutlined />,
+                          onClick: () => projectsApi.open(project.id)
+                            .then(() => message.success('正在启动项目...'))
+                            .catch((e: unknown) => message.warning(String(e) || '启动失败')) },
                         { key: 'delete', label: '删除', danger: true, onClick: () => handleDelete(project.id) },
                       ],
                     }}
@@ -302,13 +418,152 @@ export default function ProjectsPage() {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="openCommand" label="打开命令">
-            <Input placeholder="code {path}" />
+          <Form.Item name="openCommand" label="启动命令" tooltip="检测后自动填充，支持 {path} 占位符">
+            <Input placeholder="如 npm run dev（检测后自动填充）" />
           </Form.Item>
           <Form.Item name="techStack" label="技术栈（逗号分隔）">
             <Input placeholder="React, TypeScript, Node.js（检测后自动填充）" />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 扫描目录弹窗 */}
+      <Modal
+        title="扫描目录"
+        open={scanModalOpen}
+        onCancel={() => { setScanModalOpen(false); setScanResults([]); setScanGroups([]); setSelectedKeys([]); }}
+        footer={null}
+        width={800}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Row gutter={8} align="middle">
+            <Col flex="auto">
+              <Input
+                placeholder="输入目录路径，如 D:\Develop"
+                value={scanPath}
+                onChange={e => setScanPath(e.target.value)}
+                prefix={<FolderOpenOutlined />}
+              />
+            </Col>
+            <Col>
+              <Button icon={<FolderOutlined />} onClick={handleBrowseFolder}>
+                浏览
+              </Button>
+            </Col>
+            <Col>
+              <InputNumber
+                min={1}
+                max={5}
+                value={scanMaxDepth}
+                onChange={v => setScanMaxDepth(v ?? 1)}
+                addonBefore="深度"
+                style={{ width: 100 }}
+              />
+            </Col>
+            <Col>
+              <Button type="primary" icon={<ScanOutlined />} loading={scanning} onClick={handleScan}>
+                {scanning ? '扫描中...' : '开始扫描'}
+              </Button>
+            </Col>
+          </Row>
+        </div>
+
+        {scanResults.length > 0 && (
+          <>
+            {scanGroups.length > 0 && (
+              <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(99, 102, 241, 0.06)', borderRadius: 6, fontSize: 13 }}>
+                <span style={{ marginRight: 12, color: '#666' }}>关联关系：</span>
+                {scanGroups.map(g => (
+                  <Tag
+                    key={g.id}
+                    color={g.groupType === 'git' ? 'blue' : 'orange'}
+                    style={{ marginRight: 8 }}
+                  >
+                    {g.groupType === 'git' ? '🔗 同仓库' : '📁 嵌套'} {g.label}
+                  </Tag>
+                ))}
+              </div>
+            )}
+            <Table
+              rowSelection={{
+                selectedRowKeys: selectedKeys,
+                onChange: setSelectedKeys,
+              }}
+              dataSource={scanResults.map((r, i) => ({ ...r, key: i }))}
+              rowKey="key"
+              pagination={false}
+              size="small"
+              scroll={{ y: 400 }}
+              columns={[
+                {
+                  title: '项目名',
+                  dataIndex: 'name',
+                  width: 150,
+                  ellipsis: true,
+                },
+                {
+                  title: '路径',
+                  dataIndex: 'localPath',
+                  ellipsis: true,
+                },
+                {
+                  title: '技术栈',
+                  dataIndex: 'techStack',
+                  width: 250,
+                  render: (stack: string[]) => (
+                    <Space size={2} wrap>
+                      {stack?.slice(0, 4).map(t => <Tag key={t} style={{ fontSize: 11 }}>{t}</Tag>)}
+                      {stack?.length > 4 && <Tag style={{ fontSize: 11 }}>+{stack.length - 4}</Tag>}
+                    </Space>
+                  ),
+                },
+                {
+                  title: '来源',
+                  dataIndex: 'source',
+                  width: 80,
+                  render: (s: string) => <Tag color={s === 'Hybrid' ? 'blue' : 'default'}>{s}</Tag>,
+                },
+                {
+                  title: '仓库',
+                  dataIndex: 'repoPlatform',
+                  width: 80,
+                  render: (p: string) => p ? <Tag color="green">{p}</Tag> : '-',
+                },
+                {
+                  title: '关联',
+                  dataIndex: 'groupId',
+                  width: 120,
+                  render: (groupId: string, record: any) => {
+                    if (!groupId) return <Tag>独立</Tag>;
+                    const group = scanGroups.find((g: any) => g.id === groupId);
+                    const color = group?.groupType === 'git' ? 'blue' : 'orange';
+                    const prefix = group?.groupType === 'git' ? '🔗' : '📁';
+                    return (
+                      <Tag color={color}>
+                        {prefix} {group?.label || '关联'}
+                      </Tag>
+                    );
+                  },
+                },
+              ]}
+            />
+            <div style={{ marginTop: 12, textAlign: 'right' }}>
+              <Space>
+                <span style={{ color: '#999' }}>
+                  已选择 {selectedKeys.length} / {scanResults.length} 项
+                </span>
+                <Button
+                  type="primary"
+                  loading={importing}
+                  disabled={selectedKeys.length === 0}
+                  onClick={handleImportSelected}
+                >
+                  导入选中项目
+                </Button>
+              </Space>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   );

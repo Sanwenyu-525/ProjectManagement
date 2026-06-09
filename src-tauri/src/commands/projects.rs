@@ -138,8 +138,8 @@ pub async fn projects_create(
     db: State<'_, Database>,
     data: CreateProjectInput,
 ) -> Result<JsonValue, String> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let id = crate::db::new_id();
+    let now = crate::db::now_str();
 
     // Auto-detect tech stack from local path if not provided
     let tech_stack_vec = match data.tech_stack {
@@ -245,7 +245,7 @@ pub async fn projects_update(
         if sets.is_empty() {
             // param_values dropped here, no .await after
         } else {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = crate::db::now_str();
             sets.push(format!("updatedAt = ?{}", idx));
             param_values.push(Box::new(now));
             idx += 1;
@@ -297,7 +297,7 @@ pub async fn projects_update_status(
         .unwrap_or("Unknown")
         .to_string();
 
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = crate::db::now_str();
     db.execute(
         "UPDATE projects SET status = ?1, updatedAt = ?2 WHERE id = ?3",
         rusqlite::params![status, now, id],
