@@ -13,6 +13,8 @@ import {
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/authStore';
 import { searchApi } from '../api';
+import GlobalTerminalPanel from './GlobalTerminalPanel';
+import SearchBox from './components/SearchBox';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -33,6 +35,7 @@ export default function MainLayout() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -64,14 +67,22 @@ export default function MainLayout() {
   )?.key || '/';
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#0b0f1a' }}>
+    <Layout className="bg-gradient-main" style={{ minHeight: '100vh', position: 'relative' }}>
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         width={220}
         collapsedWidth={64}
-        style={{ background: '#111827', borderRight: '1px solid #1e293b' }}
+        style={{
+          background: 'rgba(255, 255, 255, 0.3)',
+          borderRight: '1px solid rgba(255, 255, 255, 0.5)',
+          backdropFilter: 'blur(32px) saturate(1.3)',
+          WebkitBackdropFilter: 'blur(32px) saturate(1.3)',
+          position: 'relative',
+          zIndex: 10,
+          boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.4)',
+        }}
       >
         {/* Logo */}
         <div
@@ -81,7 +92,7 @@ export default function MainLayout() {
             alignItems: 'center',
             justifyContent: collapsed ? 'center' : 'flex-start',
             padding: collapsed ? 0 : '0 20px',
-            borderBottom: '1px solid #1e293b',
+            borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
             gap: 10,
             cursor: 'pointer',
           }}
@@ -96,13 +107,13 @@ export default function MainLayout() {
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            boxShadow: '0 0 12px rgba(34, 197, 94, 0.3)',
+            boxShadow: '0 2px 12px rgba(34, 197, 94, 0.2)',
           }}>
             <CodeOutlined style={{ color: '#fff', fontSize: 15 }} />
           </div>
           {!collapsed && (
             <span style={{
-              color: '#f1f5f9',
+              color: '#1a1f36',
               fontSize: 16,
               fontWeight: 700,
               fontFamily: "'Fira Code', monospace",
@@ -121,35 +132,38 @@ export default function MainLayout() {
         />
       </Sider>
 
-      <Layout>
+      <Layout style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
         <Header style={{
-          background: '#111827',
+          background: 'rgba(255, 255, 255, 0.08)',
           padding: '0 24px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '1px solid #1e293b',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
           height: 64,
           lineHeight: '64px',
+          backdropFilter: 'blur(40px) saturate(1.3)',
+          WebkitBackdropFilter: 'blur(40px) saturate(1.3)',
+          position: 'relative',
+          zIndex: 10,
+          boxShadow: 'inset 0 -1px 0 rgba(255, 255, 255, 0.4), 0 4px 12px rgba(0, 0, 0, 0.08)',
         }}>
-          <Input
-            placeholder="搜索项目、任务、文档..."
-            prefix={<SearchOutlined style={{ color: '#475569' }} />}
-            suffix={
-              <kbd style={{
-                fontSize: 11,
-                color: '#475569',
-                background: '#1e293b',
-                padding: '2px 6px',
-                borderRadius: 4,
-                border: '1px solid #2d3a52',
-                fontFamily: "'Fira Code', monospace",
-              }}>⌘K</kbd>
-            }
-            style={{ maxWidth: 360, background: '#0b0f1a', borderRadius: 8 }}
-            onClick={() => setSearchOpen(true)}
-            readOnly
-          />
+          {/* Logo和菜单 - 左侧 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {/* Logo已在Sider中，这里不需要添加 */}
+          </div>
+
+          {/* 搜索框 - 中间 */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}>
+            <SearchBox onClick={() => setSearchOpen(true)} />
+          </div>
+
+          {/* 用户菜单 - 右侧 */}
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
             <div style={{
               display: 'flex',
@@ -160,7 +174,7 @@ export default function MainLayout() {
               borderRadius: 8,
               transition: 'background 0.15s ease',
             }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#1a2235')}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.4)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               <Avatar
@@ -168,10 +182,10 @@ export default function MainLayout() {
                 icon={<UserOutlined />}
                 style={{
                   background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                  boxShadow: '0 0 8px rgba(34, 197, 94, 0.3)',
+                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.2)',
                 }}
               />
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#f1f5f9' }}>{user!.username}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1f36' }}>{user!.username}</span>
             </div>
           </Dropdown>
         </Header>
@@ -179,7 +193,7 @@ export default function MainLayout() {
         {/* Search modal */}
         <Modal
           title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f1f5f9' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#1a1f36' }}>
               <SearchOutlined style={{ color: '#22c55e' }} />
               <span style={{ fontWeight: 600 }}>全局搜索</span>
             </div>
@@ -202,12 +216,12 @@ export default function MainLayout() {
           {searchResults && (
             <div>
               {(searchResults.projects?.length || 0) + (searchResults.tasks?.length || 0) + (searchResults.documents?.length || 0) === 0 ? (
-                <div style={{ textAlign: 'center', padding: 32, color: '#64748b' }}>未找到匹配结果</div>
+                <div style={{ textAlign: 'center', padding: 32, color: '#9eadc0' }}>未找到匹配结果</div>
               ) : (
                 <>
                   {searchResults.projects.length > 0 && (
                     <>
-                      <Text style={{ display: 'block', marginBottom: 8, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                      <Text style={{ display: 'block', marginBottom: 8, color: '#9eadc0', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
                         项目 ({searchResults.projects.length})
                       </Text>
                       <List
@@ -215,7 +229,7 @@ export default function MainLayout() {
                         dataSource={searchResults.projects}
                         renderItem={(item: any) => (
                           <List.Item
-                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#f1f5f9' }}
+                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#1a1f36' }}
                             onClick={() => { navigate(`/projects/${item.id}`); setSearchOpen(false); }}
                           >
                             <Tag color="green" style={{ borderRadius: 4, fontSize: 11 }}>项目</Tag> {item.name}
@@ -227,7 +241,7 @@ export default function MainLayout() {
                   )}
                   {searchResults.tasks.length > 0 && (
                     <>
-                      <Text style={{ display: 'block', marginBottom: 8, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                      <Text style={{ display: 'block', marginBottom: 8, color: '#9eadc0', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
                         任务 ({searchResults.tasks.length})
                       </Text>
                       <List
@@ -235,11 +249,11 @@ export default function MainLayout() {
                         dataSource={searchResults.tasks}
                         renderItem={(item: any) => (
                           <List.Item
-                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#f1f5f9' }}
+                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#1a1f36' }}
                             onClick={() => { navigate(`/projects/${item.projectId}`); setSearchOpen(false); }}
                           >
                             <Tag color="amber" style={{ borderRadius: 4, fontSize: 11 }}>任务</Tag> {item.title}
-                            {item.projectName && <Text style={{ marginLeft: 8, color: '#64748b' }}>({item.projectName})</Text>}
+                            {item.projectName && <Text style={{ marginLeft: 8, color: '#9eadc0' }}>({item.projectName})</Text>}
                           </List.Item>
                         )}
                         style={{ marginBottom: 16 }}
@@ -248,7 +262,7 @@ export default function MainLayout() {
                   )}
                   {searchResults.documents.length > 0 && (
                     <>
-                      <Text style={{ display: 'block', marginBottom: 8, color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                      <Text style={{ display: 'block', marginBottom: 8, color: '#9eadc0', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
                         文档 ({searchResults.documents.length})
                       </Text>
                       <List
@@ -256,11 +270,11 @@ export default function MainLayout() {
                         dataSource={searchResults.documents}
                         renderItem={(item: any) => (
                           <List.Item
-                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#f1f5f9' }}
+                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#1a1f36' }}
                             onClick={() => { navigate(`/projects/${item.projectId}`); setSearchOpen(false); }}
                           >
-                            <Tag style={{ borderRadius: 4, fontSize: 11, background: '#1e293b', color: '#94a3b8' }}>文档</Tag> {item.title}
-                            {item.projectName && <Text style={{ marginLeft: 8, color: '#64748b' }}>({item.projectName})</Text>}
+                            <Tag style={{ borderRadius: 4, fontSize: 11, background: 'rgba(0, 0, 0, 0.05)', color: '#6b7a99' }}>文档</Tag> {item.title}
+                            {item.projectName && <Text style={{ marginLeft: 8, color: '#9eadc0' }}>({item.projectName})</Text>}
                           </List.Item>
                         )}
                       />
@@ -272,9 +286,24 @@ export default function MainLayout() {
           )}
         </Modal>
 
-        <Content style={{ background: '#0b0f1a', minHeight: 'calc(100vh - 64px)' }}>
+        <Content style={{ background: 'transparent', flex: 1, position: 'relative', zIndex: 1, overflow: 'auto' }}>
           <Outlet />
         </Content>
+
+        {/* Global terminal panel */}
+        <div
+          style={{
+            height: terminalOpen ? 300 : 0,
+            transition: 'height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            overflow: 'hidden',
+            position: 'relative',
+            zIndex: 10,
+            borderTop: terminalOpen ? '1px solid rgba(255, 255, 255, 0.4)' : 'none',
+            flexShrink: 0,
+          }}
+        >
+          <GlobalTerminalPanel visible={terminalOpen} />
+        </div>
       </Layout>
     </Layout>
   );
