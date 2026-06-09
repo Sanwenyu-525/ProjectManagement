@@ -69,6 +69,12 @@
   opacity: 0;
 }
 
+/* 骨架屏加载动画 */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
 /* Hover效果类 */
 .hover-lift {
   transition: transform var(--transition-spring), box-shadow var(--transition-normal);

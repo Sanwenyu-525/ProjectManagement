@@ -365,36 +365,6 @@ body {
   background: rgba(0, 0, 0, 0.2);
 }
 
-/* ==================== Animations ==================== */
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-}
-
-@keyframes scan-line {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
-}
-
-.animate-in {
-  animation: fadeIn 0.35s var(--ease) both;
-}
-
-.animate-in-delay-1 { animation-delay: 0.04s; }
-.animate-in-delay-2 { animation-delay: 0.08s; }
-.animate-in-delay-3 { animation-delay: 0.12s; }
-.animate-in-delay-4 { animation-delay: 0.16s; }
 
 /* Skeleton loading */
 .skeleton {
