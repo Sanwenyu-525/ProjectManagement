@@ -1,17 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Dropdown, Divider, Alert, Table, InputNumber } from 'antd';
-import { PlusOutlined, SearchOutlined, FolderOpenOutlined, MoreOutlined, ScanOutlined, LinkOutlined, FolderOutlined } from '@ant-design/icons';
+import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Divider, Alert, Table, InputNumber } from 'antd';
+import { PlusOutlined, SearchOutlined, FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined } from '@ant-design/icons';
 import { projectsApi, detectApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
+import { STATUS_COLORS, PROJECT_STATUSES, PRIORITY_OPTIONS } from '../../lib/constants';
 
-
-const STATUS_OPTIONS = ['Idea', 'Planning', 'Development', 'Testing', 'Deployed', 'Maintained', 'Archived'];
-const STATUS_COLORS: Record<string, string> = {
-  Idea: 'default', Planning: 'blue', Development: 'orange',
-  Testing: 'purple', Deployed: 'green', Maintained: 'cyan', Archived: 'default',
-};
-const PRIORITY_OPTIONS = ['Low', 'Medium', 'High', 'Critical'];
+const STATUS_OPTIONS = [...PROJECT_STATUSES];
 const SOURCE_OPTIONS = [
   { value: 'Local', label: '本地项目' },
   { value: 'Remote', label: '远程项目' },
@@ -198,13 +193,11 @@ export default function ProjectsPage() {
       return;
     }
     setImporting(true);
-    let successCount = 0;
-    let failCount = 0;
-    for (const key of selectedKeys) {
-      const project = scanResults[Number(key)];
-      if (!project) continue;
-      try {
-        await projectsApi.create({
+    const results = await Promise.allSettled(
+      selectedKeys.map((key) => {
+        const project = scanResults[Number(key)];
+        if (!project) return Promise.reject();
+        return projectsApi.create({
           name: project.name,
           description: project.description,
           techStack: project.techStack,
@@ -213,11 +206,10 @@ export default function ProjectsPage() {
           openCommand: project.openCommand,
           priority: 'Medium',
         });
-        successCount++;
-      } catch {
-        failCount++;
-      }
-    }
+      })
+    );
+    const successCount = results.filter(r => r.status === 'fulfilled').length;
+    const failCount = results.filter(r => r.status === 'rejected').length;
     setImporting(false);
     if (successCount > 0) {
       message.success(`成功导入 ${successCount} 个项目${failCount > 0 ? `，${failCount} 个失败` : ''}`);
@@ -275,25 +267,50 @@ export default function ProjectsPage() {
                 hoverable
                 onDoubleClick={() => projectsApi.open(project.id).then(() => message.success('正在启动项目...')).catch((e: unknown) => message.warning(String(e) || '启动失败'))}
                 onClick={() => navigate(`/projects/${project.id}`)}
-                style={{ borderRadius: 8 }}
-                actions={[
-                  <Dropdown
-                    key="more"
-                    menu={{
-                      items: [
-                        { key: 'open', label: '启动项目', icon: <FolderOpenOutlined />,
-                          onClick: () => projectsApi.open(project.id)
-                            .then(() => message.success('正在启动项目...'))
-                            .catch((e: unknown) => message.warning(String(e) || '启动失败')) },
-                        { key: 'delete', label: '删除', danger: true, onClick: () => handleDelete(project.id) },
-                      ],
-                    }}
-                    trigger={['click']}
-                  >
-                    <MoreOutlined onClick={e => e.stopPropagation()} />
-                  </Dropdown>,
-                ]}
+                style={{ borderRadius: 8, position: 'relative' }}
               >
+                {/* 右上角操作按钮 */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 12,
+                    right: 12,
+                    display: 'flex',
+                    gap: 8,
+                  }}
+                >
+                  <PlayCircleOutlined
+                    style={{
+                      fontSize: 18,
+                      color: '#8b95a5',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#52c41a')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#8b95a5')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      projectsApi.open(project.id)
+                        .then(() => message.success('正在启动项目...'))
+                        .catch((err: unknown) => message.warning(String(err) || '启动失败'));
+                    }}
+                  />
+                  <DeleteOutlined
+                    style={{
+                      fontSize: 18,
+                      color: '#8b95a5',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#ff4d4f')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#8b95a5')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(project.id);
+                    }}
+                  />
+                </div>
+
                 <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                   <ProjectIcon
                     name={project.name}
@@ -311,7 +328,7 @@ export default function ProjectsPage() {
                   </div>
                 </div>
                 {project.description && (
-                  <div style={{ color: '#999', fontSize: 13, marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ color: '#6b7a99', fontSize: 13, marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {project.description}
                   </div>
                 )}
@@ -472,7 +489,7 @@ export default function ProjectsPage() {
           <>
             {scanGroups.length > 0 && (
               <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(99, 102, 241, 0.06)', borderRadius: 6, fontSize: 13 }}>
-                <span style={{ marginRight: 12, color: '#666' }}>关联关系：</span>
+                <span style={{ marginRight: 12, color: '#6b7a99' }}>关联关系：</span>
                 {scanGroups.map(g => (
                   <Tag
                     key={g.id}
@@ -533,7 +550,7 @@ export default function ProjectsPage() {
                   title: '关联',
                   dataIndex: 'groupId',
                   width: 120,
-                  render: (groupId: string, record: any) => {
+                  render: (groupId: string) => {
                     if (!groupId) return <Tag>独立</Tag>;
                     const group = scanGroups.find((g: any) => g.id === groupId);
                     const color = group?.groupType === 'git' ? 'blue' : 'orange';
@@ -549,7 +566,7 @@ export default function ProjectsPage() {
             />
             <div style={{ marginTop: 12, textAlign: 'right' }}>
               <Space>
-                <span style={{ color: '#999' }}>
+                <span style={{ color: '#9eadc0' }}>
                   已选择 {selectedKeys.length} / {scanResults.length} 项
                 </span>
                 <Button

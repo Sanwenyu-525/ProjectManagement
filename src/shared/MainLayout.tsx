@@ -35,7 +35,7 @@ export default function MainLayout() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalOpen, _setTerminalOpen] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
