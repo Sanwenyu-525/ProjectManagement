@@ -1,90 +1,82 @@
 # DevHub — 开发者项目管理平台
 
-管理所有开发项目的全生命周期，支持多远程仓库关联、本地项目启动、数据大屏。
+为独立开发者设计的一站式桌面端项目管理工具。基于 Tauri 2.x + React 18 + Rust 构建。
+
+## 快速开始
+
+### 环境要求
+
+- [Node.js](https://nodejs.org/) >= 18
+- [Rust](https://www.rust-lang.org/tools/install) >= 1.75
+- Windows: 需要安装 [Visual Studio C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+
+### 安装依赖
+
+```bash
+npm install
+```
+
+### 开发模式
+
+```bash
+npm run tauri dev
+```
+
+首次运行会编译 Rust 依赖，需要几分钟。后续启动会快很多。
+
+### 构建安装包
+
+```bash
+npm run tauri build
+```
+
+产出物位于 `src-tauri/target/release/bundle/`：
+- Windows: `.msi` 安装包
+- macOS: `.dmg`
+- Linux: `.deb` / `.AppImage`
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | React 18 + TypeScript + Ant Design 5 + Zustand + ECharts |
-| 后端 | Express + TypeScript + Prisma ORM |
-| 数据库 | SQLite（开发） / PostgreSQL（生产） |
-| 部署 | Docker + docker-compose |
+| 前端框架 | React 18 + TypeScript |
+| 构建工具 | Vite 6 |
+| UI 组件 | Ant Design 5 |
+| 状态管理 | Zustand |
+| 图表 | ECharts |
+| 拖拽 | @dnd-kit |
+| 桌面框架 | Tauri 2.x |
+| 后端语言 | Rust |
+| 数据库 | SQLite (rusqlite) |
 
-## 快速开始
-
-### 本地开发
-
-```bash
-# 1. 后端
-cd server
-cp .env.example .env
-npm install
-npx prisma migrate dev --name init
-npm run dev
-
-# 2. 前端（新终端）
-cd client
-npm install
-npm run dev
-```
-
-- 前端: http://localhost:5173
-- 后端: http://localhost:3001
-- 数据库: server/prisma/devhub.db
-
-### Docker 一键启动
-
-```bash
-docker-compose up --build
-```
-
-## 目录结构
+## 项目结构
 
 ```
-ProjectManagement/
-├── client/                    # React 前端
-│   └── src/
-│       ├── api/               # API 客户端
-│       ├── features/          # 功能模块
-│       │   ├── auth/          # 登录/注册
-│       │   ├── dashboard/     # 仪表盘
-│       │   ├── projects/      # 项目管理
-│       │   ├── data-screen/   # 数据大屏
-│       │   └── ...
-│       ├── shared/            # 公共组件
-│       └── stores/            # Zustand 状态管理
-│
-├── server/                    # Express 后端
-│   ├── prisma/schema.prisma   # 数据库 Schema
-│   └── src/
-│       ├── modules/
-│       │   ├── auth/          # 认证
-│       │   ├── projects/      # 项目 CRUD + 图标 + 启动器
-│       │   ├── repos/         # 远程仓库管理
-│       │   ├── tasks/         # 任务管理
-│       │   └── documents/     # 文档管理
-│       ├── middleware/        # JWT 认证 + 错误处理
-│       └── utils/             # Prisma 客户端 + 响应格式
-│
-├── docker-compose.yml
-└── docs/                      # 项目分析文档
+├── src/                    # React 前端
+│   ├── api/                # API 层（Tauri invoke）
+│   ├── stores/             # Zustand 状态管理
+│   ├── shared/             # 公共组件
+│   └── features/           # 功能模块
+├── src-tauri/              # Rust 后端
+│   ├── src/
+│   │   ├── commands/       # Tauri 命令（API 端点）
+│   │   ├── db.rs           # 数据库管理
+│   │   ├── lib.rs          # Tauri 应用配置
+│   │   └── main.rs         # 入口
+│   ├── migrations/         # SQL 迁移
+│   └── Cargo.toml          # Rust 依赖
+├── vite.config.ts
+├── package.json
+└── tsconfig.json
 ```
 
-## 核心功能
+## 功能模块
 
-- **项目管理** — CRUD + 状态机 + 自动生成图标 + 双击打开项目
-- **多仓库关联** — 一个项目关联 GitHub/GitLab/Gitee 多个仓库，独立追踪同步状态
-- **任务看板** — Kanban 看板，任务可通过 repoScope 区分仓库归属
+- **仪表盘** — 项目统计概览、最近项目
+- **项目管理** — CRUD、状态流转、多仓库关联、自动图标生成
+- **任务看板** — 拖拽式看板、按仓库范围筛选
+- **里程碑** — 项目阶段目标管理
 - **文档中心** — Markdown 文档管理
-- **数据大屏** — 全屏暗色主题，项目状态分布、技术栈统计
-
-## API 概览
-
-| 模块 | 端点前缀 | 说明 |
-|------|---------|------|
-| 认证 | `/api/auth` | 注册/登录/当前用户 |
-| 项目 | `/api/projects` | 项目 CRUD + 状态变更 + 打开项目 |
-| 仓库 | `/api/repos` | 远程仓库关联/同步/移除 |
-| 任务 | `/api/tasks` | 任务 CRUD + 状态变更 |
-| 文档 | `/api/documents` | 文档 CRUD |
+- **活动时间线** — 全局/项目维度活动流
+- **数据大屏** — ECharts 全屏数据可视化
+- **全局搜索** — 跨项目/任务/文档搜索 (Ctrl+K)
