@@ -1,48 +1,51 @@
+@import './shared/styles/variables.css';
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* Dark OLED palette */
-  --bg-base: #0b0f1a;
-  --bg-surface: #111827;
-  --bg-elevated: #1a2235;
-  --bg-card: #151d2e;
-  --bg-card-hover: #1c2640;
-  --bg-input: #111827;
+  /* Light glassmorphism palette */
+  --bg-base: #f0f2f5;
+  --bg-surface: rgba(255, 255, 255, 0.6);
+  --bg-elevated: rgba(255, 255, 255, 0.42);
+  --bg-card: rgba(255, 255, 255, 0.55);
+  --bg-card-hover: rgba(255, 255, 255, 0.72);
+  --bg-input: rgba(255, 255, 255, 0.65);
+  --bg-glass-sidebar: rgba(255, 255, 255, 0.55);
+  --bg-glass-header: rgba(255, 255, 255, 0.5);
 
   /* Accent */
   --color-accent: #22c55e;
-  --color-accent-dim: rgba(34, 197, 94, 0.12);
-  --color-accent-glow: rgba(34, 197, 94, 0.25);
+  --color-accent-dim: rgba(34, 197, 94, 0.10);
+  --color-accent-glow: rgba(34, 197, 94, 0.20);
   --color-amber: #f59e0b;
-  --color-amber-dim: rgba(245, 158, 11, 0.12);
+  --color-amber-dim: rgba(245, 158, 11, 0.10);
 
   /* Text */
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-tertiary: #64748b;
-  --text-muted: #475569;
+  --text-primary: #1a1f36;
+  --text-secondary: #6b7a99;
+  --text-tertiary: #9eadc0;
+  --text-muted: #c4d0de;
 
   /* Borders */
-  --border: #1e293b;
-  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border: rgba(0, 0, 0, 0.06);
+  --border-subtle: rgba(0, 0, 0, 0.04);
   --border-focus: var(--color-accent);
 
   /* Status */
   --status-done: #22c55e;
   --status-progress: #f59e0b;
-  --status-todo: #64748b;
+  --status-todo: #9eadc0;
   --status-cancel: #ef4444;
 
   /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.08);
   --shadow-glow: 0 0 20px var(--color-accent-glow);
 
   /* Radius */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
 
   /* Timing */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -64,33 +67,38 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--text-primary);
-  background: var(--bg-base);
+  background: linear-gradient(135deg, #c7d2fe 0%, #ddd6fe 35%, #e9d5ff 65%, #fce7f3 100%);
+  background-attachment: fixed;
   line-height: 1.5;
+  min-height: 100vh;
 }
 
 #root {
   min-height: 100vh;
 }
 
-/* ==================== Ant Design Dark Theme Overrides ==================== */
+/* ==================== Ant Design Light Glass Theme Overrides ==================== */
 
 /* Card */
 .ant-card {
-  background: var(--bg-card) !important;
-  border: 1px solid var(--border) !important;
+  background: rgba(255, 255, 255, 0.35) !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
   border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-sm) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
   transition: all var(--duration) var(--ease) !important;
+  backdrop-filter: blur(24px) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.2) !important;
 }
 
 .ant-card:hover {
-  border-color: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
 }
 
 .ant-card-hoverable:hover {
   border-color: rgba(34, 197, 94, 0.3) !important;
-  box-shadow: var(--shadow-md), 0 0 20px rgba(34, 197, 94, 0.06) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
   transform: translateY(-2px) !important;
+  background: rgba(255, 255, 255, 0.5) !important;
 }
 
 /* Buttons */
@@ -102,15 +110,18 @@ body {
 }
 
 .ant-btn-default {
-  background: var(--bg-elevated) !important;
-  border-color: var(--border) !important;
+  background: rgba(255, 255, 255, 0.35) !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
   color: var(--text-secondary) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
 }
 
 .ant-btn-default:hover {
-  background: var(--bg-card-hover) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: rgba(255, 255, 255, 0.65) !important;
   color: var(--text-primary) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
 }
 
 .ant-btn-primary {
@@ -129,8 +140,11 @@ body {
 
 /* Sidebar */
 .ant-layout-sider {
-  background: var(--bg-surface) !important;
-  border-right: 1px solid var(--border) !important;
+  background: rgba(255, 255, 255, 0.3) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(32px) saturate(1.3) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(1.3) !important;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.4) !important;
 }
 
 .ant-layout-sider .ant-menu {
@@ -139,7 +153,7 @@ body {
 }
 
 .ant-layout-sider .ant-menu-item {
-  color: var(--text-tertiary) !important;
+  color: var(--text-secondary) !important;
   border-radius: 8px !important;
   margin: 2px 8px !important;
   height: 40px !important;
@@ -150,7 +164,7 @@ body {
 
 .ant-layout-sider .ant-menu-item:hover {
   color: var(--text-primary) !important;
-  background: var(--bg-elevated) !important;
+  background: rgba(255, 255, 255, 0.35) !important;
 }
 
 .ant-layout-sider .ant-menu-item-selected {
@@ -164,15 +178,18 @@ body {
 }
 
 .ant-layout-sider-trigger {
-  background: var(--bg-elevated) !important;
+  background: rgba(255, 255, 255, 0.25) !important;
   color: var(--text-tertiary) !important;
-  border-top: 1px solid var(--border) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.4) !important;
 }
 
 /* Header */
 .ant-layout-header {
-  background: var(--bg-surface) !important;
-  border-bottom: 1px solid var(--border) !important;
+  background: rgba(255, 255, 255, 0.3) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(32px) saturate(1.3) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(1.3) !important;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.4) !important;
 }
 
 /* Tabs */
@@ -201,10 +218,13 @@ body {
 /* Input */
 .ant-input,
 .ant-input-affix-wrapper {
-  background: var(--bg-input) !important;
-  border-color: var(--border) !important;
+  background: rgba(255, 255, 255, 0.4) !important;
+  border-color: rgba(255, 255, 255, 0.55) !important;
   color: var(--text-primary) !important;
   border-radius: var(--radius-sm) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
 }
 
 .ant-input::placeholder {
@@ -235,35 +255,37 @@ body {
 }
 
 .ant-table-thead > tr > th {
-  background: var(--bg-elevated) !important;
+  background: rgba(255, 255, 255, 0.3) !important;
   color: var(--text-tertiary) !important;
   font-weight: 600 !important;
   font-size: 11px !important;
   text-transform: uppercase !important;
   letter-spacing: 0.5px !important;
-  border-bottom: 1px solid var(--border) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.45) !important;
 }
 
 .ant-table-tbody > tr > td {
-  border-bottom: 1px solid var(--border-subtle) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3) !important;
   color: var(--text-secondary) !important;
 }
 
 .ant-table-tbody > tr:hover > td {
-  background: var(--bg-elevated) !important;
+  background: rgba(255, 255, 255, 0.25) !important;
 }
 
 /* Modal */
 .ant-modal-content {
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border) !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.6) !important;
   border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-lg) !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(40px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(1.4) !important;
 }
 
 .ant-modal-header {
   background: transparent !important;
-  border-bottom: 1px solid var(--border) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
 }
 
 .ant-modal-title {
@@ -272,10 +294,12 @@ body {
 
 /* Dropdown */
 .ant-dropdown-menu {
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border) !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.55) !important;
   border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-lg) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(36px) saturate(1.3) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(1.3) !important;
 }
 
 .ant-dropdown-menu-item {
@@ -283,21 +307,21 @@ body {
 }
 
 .ant-dropdown-menu-item:hover {
-  background: var(--bg-elevated) !important;
+  background: rgba(255, 255, 255, 0.4) !important;
   color: var(--text-primary) !important;
 }
 
 /* Descriptions */
 .ant-descriptions-bordered .ant-descriptions-item-label {
-  background: var(--bg-elevated) !important;
+  background: rgba(255, 255, 255, 0.3) !important;
   color: var(--text-tertiary) !important;
-  border-color: var(--border) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
 }
 
 .ant-descriptions-bordered .ant-descriptions-item-content {
-  background: var(--bg-card) !important;
+  background: rgba(255, 255, 255, 0.2) !important;
   color: var(--text-primary) !important;
-  border-color: var(--border) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
 }
 
 /* Spin */
@@ -312,9 +336,12 @@ body {
 
 /* Select */
 .ant-select-selector {
-  background: var(--bg-input) !important;
-  border-color: var(--border) !important;
+  background: rgba(255, 255, 255, 0.4) !important;
+  border-color: rgba(255, 255, 255, 0.55) !important;
   color: var(--text-primary) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
 }
 
 /* ==================== Scrollbar ==================== */
@@ -329,12 +356,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--text-muted);
+  background: rgba(0, 0, 0, 0.12);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 /* ==================== Animations ==================== */
@@ -370,10 +397,44 @@ body {
 
 /* Skeleton loading */
 .skeleton {
-  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-card-hover) 50%, var(--bg-elevated) 75%);
+  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
-  border-radius: 6px;
+  border-radius: 8px;
+}
+
+/* ==================== Gradient Background ==================== */
+
+.bg-gradient-main {
+  background: linear-gradient(135deg, #c7d2fe 0%, #ddd6fe 35%, #e9d5ff 65%, #fce7f3 100%);
+  background-attachment: fixed;
+  position: relative;
+  min-height: 100vh;
+}
+
+.bg-gradient-main::before,
+.bg-gradient-main::after {
+  content: '';
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-gradient-main::before {
+  width: 700px;
+  height: 700px;
+  top: -250px;
+  right: -150px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.18) 0%, transparent 65%);
+}
+
+.bg-gradient-main::after {
+  width: 600px;
+  height: 600px;
+  bottom: -200px;
+  left: -150px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.16) 0%, transparent 65%);
 }
 
 /* ==================== Code font ==================== */
@@ -385,8 +446,8 @@ body {
 /* ==================== Selection ==================== */
 
 ::selection {
-  background: rgba(34, 197, 94, 0.25);
-  color: #fff;
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--text-primary);
 }
 
 /* ==================== Focus visible ==================== */
