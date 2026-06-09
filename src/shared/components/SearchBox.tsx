@@ -12,6 +12,7 @@ export default function SearchBox({ onClick }: SearchBoxProps) {
 
   return (
     <div
+      tabIndex={0}
       onClick={onClick}
       style={{
         display: 'flex',
