@@ -5,6 +5,7 @@ import { ArrowLeftOutlined, FolderOpenOutlined, SyncOutlined, PlusOutlined, Dele
 import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
 import KanbanBoard from '../../shared/KanbanBoard';
+import { normalizeProject } from '../../lib/normalize';
 
 const STATUS_COLORS: Record<string, string> = {
   Idea: 'default', Planning: 'blue', Development: 'orange',
@@ -24,7 +25,7 @@ export default function ProjectDetailPage() {
   async function loadProject(pid: string) {
     try {
       const data = await projectsApi.getById(pid);
-      setProject(data);
+      setProject(normalizeProject(data as Record<string, any>));
     } catch {
       message.error('项目不存在');
       navigate('/projects');

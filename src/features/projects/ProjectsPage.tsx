@@ -4,6 +4,7 @@ import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message
 import { PlusOutlined, SearchOutlined, FolderOpenOutlined, MoreOutlined, ScanOutlined, LinkOutlined } from '@ant-design/icons';
 import { projectsApi, detectApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
+import { normalizeProjects } from '../../lib/normalize';
 
 const STATUS_OPTIONS = ['Idea', 'Planning', 'Development', 'Testing', 'Deployed', 'Maintained', 'Archived'];
 const STATUS_COLORS: Record<string, string> = {
@@ -34,7 +35,7 @@ export default function ProjectsPage() {
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
       const data = await projectsApi.list(params);
-      setProjects(data);
+      setProjects(normalizeProjects(data as any[]));
     } catch {
       // ignore
     } finally {

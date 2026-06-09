@@ -4,6 +4,7 @@ import { ProjectOutlined, CheckCircleOutlined, ClockCircleOutlined, PauseCircleO
 import { useNavigate } from 'react-router-dom';
 import { projectsApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
+import { normalizeProjects } from '../../lib/normalize';
 
 const { Title, Text } = Typography;
 
@@ -84,7 +85,7 @@ export default function DashboardPage() {
   async function loadProjects() {
     try {
       const data = await projectsApi.list();
-      setProjects(data);
+      setProjects(normalizeProjects(data as any[]));
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }
