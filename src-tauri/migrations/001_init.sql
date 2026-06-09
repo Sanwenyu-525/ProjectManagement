@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "users" (
+CREATE TABLE IF NOT EXISTS "users" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "username" TEXT NOT NULL,
     "email" TEXT NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
-CREATE TABLE "projects" (
+CREATE TABLE IF NOT EXISTS "projects" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "description" TEXT,
@@ -33,7 +33,7 @@ CREATE TABLE "projects" (
 );
 
 -- CreateTable
-CREATE TABLE "remote_repos" (
+CREATE TABLE IF NOT EXISTS "remote_repos" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "projectId" TEXT NOT NULL,
     "platform" TEXT NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE "remote_repos" (
 );
 
 -- CreateTable
-CREATE TABLE "tasks" (
+CREATE TABLE IF NOT EXISTS "tasks" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "title" TEXT NOT NULL,
     "description" TEXT,
@@ -73,7 +73,7 @@ CREATE TABLE "tasks" (
 );
 
 -- CreateTable
-CREATE TABLE "milestones" (
+CREATE TABLE IF NOT EXISTS "milestones" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "description" TEXT,
@@ -84,7 +84,7 @@ CREATE TABLE "milestones" (
 );
 
 -- CreateTable
-CREATE TABLE "documents" (
+CREATE TABLE IF NOT EXISTS "documents" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "title" TEXT NOT NULL,
     "content" TEXT NOT NULL DEFAULT '',
@@ -96,7 +96,7 @@ CREATE TABLE "documents" (
 );
 
 -- CreateTable
-CREATE TABLE "integrations" (
+CREATE TABLE IF NOT EXISTS "integrations" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "platform" TEXT NOT NULL,
     "accessToken" TEXT NOT NULL,
@@ -108,7 +108,7 @@ CREATE TABLE "integrations" (
 );
 
 -- CreateTable
-CREATE TABLE "tags" (
+CREATE TABLE IF NOT EXISTS "tags" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "color" TEXT NOT NULL DEFAULT '#6366F1',
@@ -117,7 +117,7 @@ CREATE TABLE "tags" (
 );
 
 -- CreateTable
-CREATE TABLE "project_tags" (
+CREATE TABLE IF NOT EXISTS "project_tags" (
     "projectId" TEXT NOT NULL,
     "tagId" TEXT NOT NULL,
     PRIMARY KEY ("projectId", "tagId"),
@@ -126,7 +126,7 @@ CREATE TABLE "project_tags" (
 );
 
 -- CreateTable
-CREATE TABLE "activity_logs" (
+CREATE TABLE IF NOT EXISTS "activity_logs" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "action" TEXT NOT NULL,
     "entityType" TEXT NOT NULL,
@@ -138,21 +138,21 @@ CREATE TABLE "activity_logs" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
-CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
-CREATE INDEX "projects_ownerId_idx" ON "projects"("ownerId");
-CREATE INDEX "projects_status_idx" ON "projects"("status");
-CREATE INDEX "remote_repos_projectId_idx" ON "remote_repos"("projectId");
-CREATE INDEX "remote_repos_platform_idx" ON "remote_repos"("platform");
-CREATE INDEX "tasks_projectId_idx" ON "tasks"("projectId");
-CREATE INDEX "tasks_status_idx" ON "tasks"("status");
-CREATE INDEX "tasks_repoScope_idx" ON "tasks"("repoScope");
-CREATE INDEX "milestones_projectId_idx" ON "milestones"("projectId");
-CREATE INDEX "documents_projectId_idx" ON "documents"("projectId");
-CREATE UNIQUE INDEX "integrations_userId_platform_key" ON "integrations"("userId", "platform");
-CREATE UNIQUE INDEX "tags_userId_name_key" ON "tags"("userId", "name");
-CREATE INDEX "activity_logs_projectId_idx" ON "activity_logs"("projectId");
-CREATE INDEX "activity_logs_createdAt_idx" ON "activity_logs"("createdAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key" ON "users"("username");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key" ON "users"("email");
+CREATE INDEX IF NOT EXISTS "projects_ownerId_idx" ON "projects"("ownerId");
+CREATE INDEX IF NOT EXISTS "projects_status_idx" ON "projects"("status");
+CREATE INDEX IF NOT EXISTS "remote_repos_projectId_idx" ON "remote_repos"("projectId");
+CREATE INDEX IF NOT EXISTS "remote_repos_platform_idx" ON "remote_repos"("platform");
+CREATE INDEX IF NOT EXISTS "tasks_projectId_idx" ON "tasks"("projectId");
+CREATE INDEX IF NOT EXISTS "tasks_status_idx" ON "tasks"("status");
+CREATE INDEX IF NOT EXISTS "tasks_repoScope_idx" ON "tasks"("repoScope");
+CREATE INDEX IF NOT EXISTS "milestones_projectId_idx" ON "milestones"("projectId");
+CREATE INDEX IF NOT EXISTS "documents_projectId_idx" ON "documents"("projectId");
+CREATE UNIQUE INDEX IF NOT EXISTS "integrations_userId_platform_key" ON "integrations"("userId", "platform");
+CREATE UNIQUE INDEX IF NOT EXISTS "tags_userId_name_key" ON "tags"("userId", "name");
+CREATE INDEX IF NOT EXISTS "activity_logs_projectId_idx" ON "activity_logs"("projectId");
+CREATE INDEX IF NOT EXISTS "activity_logs_createdAt_idx" ON "activity_logs"("createdAt");
 
 -- SeedDefaultUser
 INSERT OR IGNORE INTO "users" ("id", "username", "email", "passwordHash", "createdAt")
