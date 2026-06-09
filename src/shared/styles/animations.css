@@ -1,0 +1,89 @@
+/* src/shared/styles/animations.css */
+
+/* 页面载入动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 动画工具类 */
+.animate-in {
+  animation: fadeInUp 0.5s ease forwards;
+}
+
+.animate-in-delay-1 {
+  animation: fadeInUp 0.5s ease 0.1s forwards;
+  opacity: 0;
+}
+
+.animate-in-delay-2 {
+  animation: fadeInUp 0.5s ease 0.2s forwards;
+  opacity: 0;
+}
+
+.animate-in-delay-3 {
+  animation: fadeInUp 0.5s ease 0.3s forwards;
+  opacity: 0;
+}
+
+.animate-in-delay-4 {
+  animation: fadeInUp 0.5s ease 0.4s forwards;
+  opacity: 0;
+}
+
+/* Hover效果类 */
+.hover-lift {
+  transition: transform var(--transition-spring), box-shadow var(--transition-normal);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+/* 点击效果类 */
+.clickable {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.clickable:active {
+  transform: scale(0.97);
+}
