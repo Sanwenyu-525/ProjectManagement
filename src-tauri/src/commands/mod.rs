@@ -1,3 +1,4 @@
+pub mod detect;
 pub mod documents;
 pub mod milestones;
 pub mod projects;

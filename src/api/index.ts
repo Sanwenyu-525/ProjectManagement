@@ -101,6 +101,15 @@ export const milestonesApi = {
     cmd('milestones_delete', { id }),
 };
 
+// ==================== Detect ====================
+
+export const detectApi = {
+  local: (path: string) =>
+    cmd('detect_local_project', { path }),
+  gitRepo: (repoUrl: string) =>
+    cmd('detect_git_repo', { repoUrl }),
+};
+
 // ==================== Documents ====================
 
 export const documentsApi = {
