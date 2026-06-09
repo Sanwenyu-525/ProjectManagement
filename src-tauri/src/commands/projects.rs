@@ -140,10 +140,23 @@ pub async fn projects_create(
 ) -> Result<JsonValue, String> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let tech_stack = data
-        .tech_stack
-        .map(|ts| serde_json::to_string(&ts).unwrap_or_else(|_| "[]".into()))
-        .unwrap_or_else(|| "[]".into());
+
+    // Auto-detect tech stack from local path if not provided
+    let tech_stack_vec = match data.tech_stack {
+        Some(ts) if !ts.is_empty() => ts,
+        _ => {
+            if let Some(ref path) = data.local_path {
+                if let Ok(detected) = super::detect::detect_local_project(path.clone()).await {
+                    detected.tech_stack
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            }
+        }
+    };
+    let tech_stack = serde_json::to_string(&tech_stack_vec).unwrap_or_else(|_| "[]".into());
 
     db.execute(
         "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, liveUrl, domainName, techStack, startDate, targetDate, ownerId, createdAt, updatedAt)
@@ -349,9 +362,8 @@ pub async fn projects_open(
     let local_path = project.get("localPath").and_then(|v| v.as_str());
     let open_command = project.get("openCommand").and_then(|v| v.as_str());
 
-    let path = local_path.ok_or("NO_LOCAL_PATH")?;
-    let cmd = open_command.ok_or("NO_OPEN_COMMAND")?;
-
+    let path = local_path.ok_or("NO_LOCAL_PATH: 请先设置本地路径")?;
+    let cmd = open_command.unwrap_or("explorer {path}");
     let command_str = cmd.replace("{path}", path);
 
     // Execute the command using shell
