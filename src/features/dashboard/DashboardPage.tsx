@@ -4,6 +4,7 @@ import { ProjectOutlined, CheckCircleOutlined, ClockCircleOutlined, PauseCircleO
 import { useNavigate } from 'react-router-dom';
 import { projectsApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
+import GlassCard from '../../shared/components/GlassCard';
 
 const { Title, Text } = Typography;
 
@@ -13,10 +14,10 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STAT_CONFIG = [
-  { key: 'total', title: '项目总数', icon: ProjectOutlined, gradient: 'linear-gradient(135deg, #1e293b, #0f172a)', border: '#2d3a52' },
-  { key: 'active', title: '进行中', icon: ClockCircleOutlined, gradient: 'linear-gradient(135deg, #422006, #78350f)', border: '#92400e' },
-  { key: 'deployed', title: '已部署', icon: CheckCircleOutlined, gradient: 'linear-gradient(135deg, #052e16, #14532d)', border: '#166534' },
-  { key: 'archived', title: '已归档', icon: PauseCircleOutlined, gradient: 'linear-gradient(135deg, #1e293b, #1e293b)', border: '#334155' },
+  { key: 'total', title: '项目总数', icon: ProjectOutlined, gradient: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08))', border: 'rgba(99, 102, 241, 0.15)' },
+  { key: 'active', title: '进行中', icon: ClockCircleOutlined, gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.10), rgba(251, 191, 36, 0.08))', border: 'rgba(245, 158, 11, 0.18)' },
+  { key: 'deployed', title: '已部署', icon: CheckCircleOutlined, gradient: 'linear-gradient(135deg, rgba(34, 197, 94, 0.10), rgba(74, 222, 128, 0.08))', border: 'rgba(34, 197, 94, 0.18)' },
+  { key: 'archived', title: '已归档', icon: PauseCircleOutlined, gradient: 'linear-gradient(135deg, rgba(148, 163, 184, 0.08), rgba(203, 213, 225, 0.06))', border: 'rgba(148, 163, 184, 0.15)' },
 ];
 
 function StatCard({ title, value, icon: Icon, gradient, border, delay }: {
@@ -33,9 +34,9 @@ function StatCard({ title, value, icon: Icon, gradient, border, delay }: {
         position: 'relative',
         overflow: 'hidden',
         cursor: 'default',
-        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
       }}
-      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)'; }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.08)'; }}
       onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
     >
       {/* Glow dot */}
@@ -51,10 +52,10 @@ function StatCard({ title, value, icon: Icon, gradient, border, delay }: {
       }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>
+          <div style={{ fontSize: 12, color: '#6b7a99', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>
             {title}
           </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#f1f5f9', fontFamily: "'Fira Code', monospace", letterSpacing: '-1px', lineHeight: 1 }}>
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#1a1f36', fontFamily: "'Fira Code', monospace", letterSpacing: '-1px', lineHeight: 1 }}>
             {value}
           </div>
         </div>
@@ -62,12 +63,12 @@ function StatCard({ title, value, icon: Icon, gradient, border, delay }: {
           width: 36,
           height: 36,
           borderRadius: 8,
-          background: 'rgba(255,255,255,0.06)',
+          background: 'rgba(0, 0, 0, 0.04)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}>
-          <Icon style={{ fontSize: 18, color: '#64748b' }} />
+          <Icon style={{ fontSize: 18, color: '#9eadc0' }} />
         </div>
       </div>
     </div>
@@ -111,8 +112,8 @@ export default function DashboardPage() {
   return (
     <div style={{ padding: '28px 32px' }}>
       <div className="animate-in" style={{ marginBottom: 28 }}>
-        <Title level={3} style={{ margin: 0, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.3px' }}>仪表盘</Title>
-        <Text style={{ color: '#64748b', fontSize: 14 }}>概览你的所有项目和开发状态</Text>
+        <Title level={3} style={{ margin: 0, fontWeight: 700, color: '#1a1f36', letterSpacing: '-0.3px' }}>仪表盘</Title>
+        <Text style={{ color: '#9eadc0', fontSize: 14 }}>概览你的所有项目和开发状态</Text>
       </div>
 
       {/* Stat cards */}
@@ -132,17 +133,17 @@ export default function DashboardPage() {
       </Row>
 
       {/* Recent projects */}
-      <div className="animate-in animate-in-delay-3" style={{
-        background: '#151d2e',
-        borderRadius: 12,
-        border: '1px solid #1e293b',
-        overflow: 'hidden',
-      }}>
-        <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e293b' }}>
-          <Text strong style={{ fontSize: 14, color: '#f1f5f9' }}>最近活跃项目</Text>
+      <GlassCard
+        className="animate-in animate-in-delay-3"
+        style={{
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(0, 0, 0, 0.04)' }}>
+          <Text strong style={{ fontSize: 14, color: '#1a1f36' }}>最近活跃项目</Text>
         </div>
         {recentProjects.length === 0 ? (
-          <div style={{ padding: 48 }}><Empty description={<span style={{ color: '#64748b' }}>还没有项目</span>} /></div>
+          <div style={{ padding: 48 }}><Empty description={<span style={{ color: '#9eadc0' }}>还没有项目</span>} /></div>
         ) : (
           <List
             grid={{ gutter: 0, xs: 1, sm: 2, md: 3 }}
@@ -154,11 +155,11 @@ export default function DashboardPage() {
                   style={{
                     padding: '18px 24px',
                     cursor: 'pointer',
-                    borderRight: index % 3 !== 2 ? '1px solid #1e293b' : 'none',
-                    borderBottom: index < recentProjects.length - 3 ? '1px solid #1e293b' : 'none',
+                    borderRight: index % 3 !== 2 ? '1px solid rgba(0, 0, 0, 0.04)' : 'none',
+                    borderBottom: index < recentProjects.length - 3 ? '1px solid rgba(0, 0, 0, 0.04)' : 'none',
                     transition: 'background 0.15s ease',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(34, 197, 94, 0.03)')}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(34, 197, 94, 0.04)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
@@ -178,7 +179,7 @@ export default function DashboardPage() {
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
-                        color: '#f1f5f9',
+                        color: '#1a1f36',
                       }}>
                         {project.name}
                       </div>
@@ -187,7 +188,7 @@ export default function DashboardPage() {
                           {project.status}
                         </Tag>
                         {project.techStack?.slice(0, 2).map((t: string) => (
-                          <Tag key={t} style={{ fontSize: 11, margin: 0, background: '#1e293b', color: '#94a3b8' }}>{t}</Tag>
+                          <Tag key={t} style={{ fontSize: 11, margin: 0, background: 'rgba(0, 0, 0, 0.05)', color: '#6b7a99' }}>{t}</Tag>
                         ))}
                       </div>
                     </div>
@@ -197,7 +198,7 @@ export default function DashboardPage() {
             )}
           />
         )}
-      </div>
+      </GlassCard>
     </div>
   );
 }
