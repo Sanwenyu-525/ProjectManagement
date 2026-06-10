@@ -139,7 +139,7 @@ export default function MainLayout() {
         />
       </Sider>
 
-      <Layout style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <Layout style={{ display: 'flex', flexDirection: 'column', flex: 1, marginLeft: collapsed ? 64 : 220 }}>
         <Header style={{
           background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)',
           padding: '0 24px',
@@ -151,7 +151,8 @@ export default function MainLayout() {
           lineHeight: '64px',
           backdropFilter: 'blur(20px) saturate(1.8)',
           WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
-          position: 'relative',
+          position: 'sticky',
+          top: 0,
           zIndex: 10,
           boxShadow: 'inset 0 -1px 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(0, 0, 0, 0.06)',
           flexWrap: 'nowrap',
@@ -325,7 +326,6 @@ export default function MainLayout() {
           position: 'relative',
           zIndex: 1,
           overflow: 'auto',
-          marginLeft: collapsed ? 64 : 220,
         }}>
           <Outlet />
         </Content>
