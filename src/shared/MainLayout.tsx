@@ -35,13 +35,17 @@ export default function MainLayout() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [terminalOpen, _setTerminalOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
         setSearchOpen(true);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault();
+        setTerminalOpen(prev => !prev);
       }
     };
     window.addEventListener('keydown', handler);
@@ -75,13 +79,16 @@ export default function MainLayout() {
         width={220}
         collapsedWidth={64}
         style={{
-          background: 'rgba(255, 255, 255, 0.3)',
-          borderRight: '1px solid rgba(255, 255, 255, 0.5)',
-          backdropFilter: 'blur(32px) saturate(1.3)',
-          WebkitBackdropFilter: 'blur(32px) saturate(1.3)',
-          position: 'relative',
+          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 100%), rgba(255, 255, 255, 0.3)',
+          borderRight: '1px solid rgba(255, 255, 255, 0.45)',
+          backdropFilter: 'blur(20px) saturate(1.8)',
+          WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100vh',
           zIndex: 10,
-          boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.4)',
+          boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 16px rgba(0, 0, 0, 0.06)',
         }}
       >
         {/* Logo */}
@@ -134,19 +141,19 @@ export default function MainLayout() {
 
       <Layout style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
         <Header style={{
-          background: 'rgba(255, 255, 255, 0.08)',
+          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)',
           padding: '0 24px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.45)',
           height: 64,
           lineHeight: '64px',
-          backdropFilter: 'blur(40px) saturate(1.3)',
-          WebkitBackdropFilter: 'blur(40px) saturate(1.3)',
+          backdropFilter: 'blur(20px) saturate(1.8)',
+          WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
           position: 'relative',
           zIndex: 10,
-          boxShadow: 'inset 0 -1px 0 rgba(255, 255, 255, 0.4), 0 4px 12px rgba(0, 0, 0, 0.08)',
+          boxShadow: 'inset 0 -1px 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(0, 0, 0, 0.06)',
           flexWrap: 'nowrap',
         }}>
           {/* Logo和菜单 - 左侧 */}
@@ -161,10 +168,34 @@ export default function MainLayout() {
             justifyContent: 'center',
             alignItems: 'center',
           }}>
-            <SearchBox onClick={() => setSearchOpen(true)} />
+            <SearchBox />
           </div>
 
           {/* 用户菜单 - 右侧 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={() => setTerminalOpen(prev => !prev)}
+              title="终端 (Ctrl+`)"
+              style={{
+                background: terminalOpen ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                border: terminalOpen ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid transparent',
+                color: terminalOpen ? '#16a34a' : '#6b7a99',
+                cursor: 'pointer',
+                padding: '6px 10px',
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)'; e.currentTarget.style.color = '#16a34a'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = terminalOpen ? 'rgba(34, 197, 94, 0.15)' : 'transparent'; e.currentTarget.style.color = terminalOpen ? '#16a34a' : '#6b7a99'; }}
+            >
+              <CodeOutlined style={{ fontSize: 14 }} />
+              <span>终端</span>
+            </button>
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
             <div style={{
               display: 'flex',
@@ -189,6 +220,7 @@ export default function MainLayout() {
               <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1f36' }}>{user!.username}</span>
             </div>
           </Dropdown>
+          </div>
         </Header>
 
         {/* Search modal */}
@@ -287,7 +319,14 @@ export default function MainLayout() {
           )}
         </Modal>
 
-        <Content style={{ background: 'transparent', flex: 1, position: 'relative', zIndex: 1, overflow: 'auto' }}>
+        <Content style={{
+          background: 'transparent',
+          flex: 1,
+          position: 'relative',
+          zIndex: 1,
+          overflow: 'auto',
+          marginLeft: collapsed ? 64 : 220,
+        }}>
           <Outlet />
         </Content>
 
