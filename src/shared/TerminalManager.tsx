@@ -80,14 +80,6 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
     };
 
     await terminalApi.startShell(id, shell, cwd);
-
-    // Set UTF-8 encoding on Windows PowerShell after shell starts
-    if (isWin) {
-      setTimeout(() => {
-        terminalApi.input(id, '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r');
-      }, 500);
-    }
-
     setTerminals(prev => [...prev, newTerminal]);
     setActiveId(id);
   }, [terminals.length]);
