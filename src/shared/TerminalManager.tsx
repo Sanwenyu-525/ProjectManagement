@@ -12,6 +12,8 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [theme, setTheme] = useState<TerminalTheme>('dark');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
 
   // Restore theme and clean up stale terminal state on mount
   useEffect(() => {
@@ -129,7 +131,6 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
   // These are exposed via the component's actions for parent consumption
   // (e.g., through context or imperative handle). Silencing unused warnings
   // until they are wired into the render tree.
-  void renameTerminal;
   void setTerminalTheme;
 
   const handleTerminalInput = useCallback((terminalId: string, data: string) => {
@@ -162,6 +163,11 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
           <div
             key={t.id}
             onClick={() => switchTerminal(t.id)}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setEditingId(t.id);
+              setEditingLabel(t.label);
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -186,7 +192,37 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
               }
             }}
           >
-            <span>{t.label}</span>
+            {editingId === t.id ? (
+              <input
+                autoFocus
+                value={editingLabel}
+                onChange={(e) => setEditingLabel(e.target.value)}
+                onBlur={() => {
+                  renameTerminal(editingId, editingLabel);
+                  setEditingId(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    renameTerminal(editingId, editingLabel);
+                    setEditingId(null);
+                  } else if (e.key === 'Escape') {
+                    setEditingId(null);
+                  }
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #007acc',
+                  color: '#fff',
+                  padding: '2px 4px',
+                  fontSize: 12,
+                  width: 80,
+                  outline: 'none',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span>{t.label}</span>
+            )}
             <CloseOutlined
               onClick={(e) => {
                 e.stopPropagation();
