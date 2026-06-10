@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { terminalApi } from '../api';
 import TerminalInstance from './TerminalInstance';
 import { Terminal, TerminalTheme } from './terminalTypes';
@@ -14,6 +14,8 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
   const [theme, setTheme] = useState<TerminalTheme>('dark');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
+  const terminalsRef = useRef(terminals);
+  terminalsRef.current = terminals;
 
   // Restore theme and clean up stale terminal state on mount
   useEffect(() => {
@@ -46,6 +48,14 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
       });
     }
   }, [visible, terminals]);
+
+  // Auto-create a terminal when panel opens with no active terminals
+  useEffect(() => {
+    if (visible && terminals.length === 0) {
+      createTerminal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   const createTerminal = useCallback(async (label?: string) => {
     if (terminals.length >= 10) {
@@ -81,16 +91,13 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
       // Terminal may have already exited
     }
 
-    const remaining = terminals.filter(t => t.id !== id);
-    setTerminals(remaining);
-
-    if (activeId === id) {
-      const newActiveId = remaining.length > 0
-        ? remaining[remaining.length - 1].id
-        : null;
-      setActiveId(newActiveId);
-    }
-  }, [activeId, terminals]);
+    setTerminals(prev => prev.filter(t => t.id !== id));
+    setActiveId(prev => {
+      if (prev !== id) return prev;
+      const remaining = terminalsRef.current.filter(t => t.id !== id);
+      return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+    });
+  }, []);
 
   const switchTerminal = useCallback((id: string) => {
     setActiveId(id);
