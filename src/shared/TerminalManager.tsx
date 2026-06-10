@@ -105,6 +105,27 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
     localStorage.setItem('terminal-theme', newTheme);
   }, []);
 
+  // Clear screen function - sends Ctrl+L character to active terminal
+  const clearTerminal = useCallback(() => {
+    if (activeId) {
+      terminalApi.input(activeId, '\x0c').catch(console.error);
+    }
+  }, [activeId]);
+
+  // Keyboard shortcut for clear screen (Ctrl+L)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+L: Clear screen
+      if (e.ctrlKey && e.key === 'l') {
+        e.preventDefault();
+        clearTerminal();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [clearTerminal]);
+
   // These are exposed via the component's actions for parent consumption
   // (e.g., through context or imperative handle). Silencing unused warnings
   // until they are wired into the render tree.
