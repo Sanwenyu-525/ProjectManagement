@@ -11,6 +11,24 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
+            // 设置窗口图标
+            let icon_path = app
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|p| p.join("icons/icon.ico"))
+                .filter(|p| p.exists())
+                .unwrap_or_else(|| {
+                    std::env::current_dir()
+                        .unwrap_or_default()
+                        .join("src-tauri/icons/icon.ico")
+                });
+            if let Ok(icon) = tauri::image::Image::from_path(&icon_path) {
+                if let Some(window) = app.webview_windows().values().next() {
+                    window.set_icon(icon).ok();
+                }
+            }
+
             let app_dir = app
                 .path()
                 .app_data_dir()
@@ -30,6 +48,8 @@ pub fn run() {
             commands::projects::projects_delete,
             commands::projects::projects_update_status,
             commands::projects::projects_get_stats,
+            commands::projects::projects_open,
+            commands::projects::projects_refresh,
             commands::projects::projects_open,
             commands::tasks::tasks_list,
             commands::tasks::tasks_create,
@@ -61,9 +81,17 @@ pub fn run() {
             commands::timeline::get_project_timeline,
             commands::detect::detect_local_project,
             commands::detect::detect_git_repo,
+            commands::detect::detect_scan_directory,
             commands::terminal::terminal_start,
             commands::terminal::terminal_stop,
             commands::terminal::terminal_input,
+            commands::terminal::terminal_start_shell,
+            commands::terminal::terminal_resize,
+            // Dependency detection
+            commands::dependencies::detect_project_dependencies,
+            commands::dependencies::get_launch_order,
+            commands::dependencies::analyze_docker_compose,
+            commands::dependencies::detect_monorepo_structure,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

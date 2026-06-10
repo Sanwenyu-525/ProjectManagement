@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { listen } from '@tauri-apps/api/event';
+import { terminalApi } from '../api';
 import { Terminal as TerminalType, TerminalTheme, TerminalOutputEvent, TerminalExitEvent } from './terminalTypes';
 import { getThemeColors } from './terminalThemes';
 import '@xterm/xterm/css/xterm.css';
@@ -44,10 +45,14 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
       fitAddon.fit();
     }, 350);
 
-    // ResizeObserver to re-fit when container size changes
+    // ResizeObserver to re-fit and notify backend PTY
     const observer = new ResizeObserver(() => {
-      if (fitAddonRef.current) {
+      if (fitAddonRef.current && termRef.current) {
         fitAddonRef.current.fit();
+        const dims = fitAddonRef.current.proposeDimensions();
+        if (dims) {
+          terminalApi.resize(terminal.id, dims.cols, dims.rows).catch(() => {});
+        }
       }
     });
     observer.observe(containerRef.current);
@@ -96,9 +101,13 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
 
   // Re-fit when becoming active (handles tab switching)
   useEffect(() => {
-    if (isActive && fitAddonRef.current) {
+    if (isActive && fitAddonRef.current && termRef.current) {
       const timer = setTimeout(() => {
         fitAddonRef.current?.fit();
+        const dims = fitAddonRef.current?.proposeDimensions();
+        if (dims) {
+          terminalApi.resize(terminal.id, dims.cols, dims.rows).catch(() => {});
+        }
       }, 50);
       return () => clearTimeout(timer);
     }

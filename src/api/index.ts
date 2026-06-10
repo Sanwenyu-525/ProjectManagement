@@ -137,6 +137,7 @@ interface TerminalApi {
   startShell: (terminalId: string, shell: string, cwd: string, args?: string[]) => Promise<string>;
   stop: (terminalId: string) => Promise<any>;
   input: (terminalId: string, data: string) => Promise<any>;
+  resize: (terminalId: string, cols: number, rows: number) => Promise<any>;
 }
 
 export const terminalApi: TerminalApi = {
@@ -148,6 +149,8 @@ export const terminalApi: TerminalApi = {
     cmd('terminal_stop', { terminalId }),
   input: (terminalId: string, data: string) =>
     cmd('terminal_input', { terminalId, data }),
+  resize: (terminalId: string, cols: number, rows: number) =>
+    cmd('terminal_resize', { terminalId, cols, rows }),
 };
 
 // ==================== Dependencies ====================
