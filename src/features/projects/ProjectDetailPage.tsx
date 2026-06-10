@@ -16,11 +16,6 @@ function TerminalTab({ project }: { project: any }) {
     setTerminalOpen(true);
   }, [project, setDefaultCwd, setTerminalOpen]);
 
-  // 每次渲染时都确保终端是打开的
-  useEffect(() => {
-    setTerminalOpen(true);
-  });
-
   return null;
 }
 
