@@ -36,10 +36,21 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
     term.loadAddon(fitAddon);
 
     term.open(containerRef.current);
-    fitAddon.fit();
-
     termRef.current = term;
     fitAddonRef.current = fitAddon;
+
+    // Delay initial fit to ensure container has proper dimensions after animation
+    const fitTimer = setTimeout(() => {
+      fitAddon.fit();
+    }, 350);
+
+    // ResizeObserver to re-fit when container size changes
+    const observer = new ResizeObserver(() => {
+      if (fitAddonRef.current) {
+        fitAddonRef.current.fit();
+      }
+    });
+    observer.observe(containerRef.current);
 
     // Handle user input
     const inputDisposable = term.onData((data) => {
@@ -65,6 +76,8 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
     });
 
     return () => {
+      clearTimeout(fitTimer);
+      observer.disconnect();
       inputDisposable.dispose();
       unlistenOutput.then((fn) => fn());
       unlistenExit.then((fn) => fn());
@@ -81,13 +94,12 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
     }
   }, [theme]);
 
-  // Fit terminal when becoming active
+  // Re-fit when becoming active (handles tab switching)
   useEffect(() => {
     if (isActive && fitAddonRef.current) {
-      // Delay fit to ensure container is visible
       const timer = setTimeout(() => {
         fitAddonRef.current?.fit();
-      }, 0);
+      }, 50);
       return () => clearTimeout(timer);
     }
   }, [isActive]);
@@ -97,7 +109,7 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
       ref={containerRef}
       style={{
         height: '100%',
-        minHeight: 300,
+        minHeight: 200,
         display: isActive ? 'block' : 'none',
       }}
     />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Avatar, Dropdown, Input, Modal, List, Tag, Typography } from 'antd';
 import {
@@ -36,6 +36,9 @@ export default function MainLayout() {
   const [searchResults, setSearchResults] = useState<any>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(400);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ dragging: false, startY: 0, startHeight: 0 });
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -64,6 +67,34 @@ export default function MainLayout() {
       setSearchResults(data);
     } catch { setSearchResults(null); }
     finally { setSearchLoading(false); }
+  };
+
+  // Terminal drag-to-resize handlers
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { dragging: true, startY: e.clientY, startHeight: terminalHeight };
+    setIsDragging(true);
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleDragMove = (ev: MouseEvent) => {
+      if (!dragRef.current.dragging) return;
+      const delta = dragRef.current.startY - ev.clientY;
+      const newHeight = Math.min(Math.max(dragRef.current.startHeight + delta, 150), window.innerHeight * 0.7);
+      setTerminalHeight(newHeight);
+    };
+
+    const handleDragEnd = () => {
+      dragRef.current.dragging = false;
+      setIsDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleDragMove);
+      document.removeEventListener('mouseup', handleDragEnd);
+    };
+
+    document.addEventListener('mousemove', handleDragMove);
+    document.addEventListener('mouseup', handleDragEnd);
   };
 
   const selectedKey = menuItems.find(item =>
@@ -333,8 +364,8 @@ export default function MainLayout() {
         {/* Global terminal panel */}
         <div
           style={{
-            height: terminalOpen ? 400 : 0,
-            transition: 'height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            height: terminalOpen ? terminalHeight : 0,
+            transition: isDragging ? 'none' : 'height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
             overflow: 'hidden',
             position: 'relative',
             zIndex: 10,
@@ -342,6 +373,32 @@ export default function MainLayout() {
             flexShrink: 0,
           }}
         >
+          {/* Drag handle */}
+          <div
+            onMouseDown={handleDragStart}
+            style={{
+              height: 6,
+              cursor: 'row-resize',
+              background: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              position: 'relative',
+              zIndex: 11,
+            }}
+          >
+            <div style={{
+              width: 40,
+              height: 3,
+              borderRadius: 2,
+              background: 'rgba(255, 255, 255, 0.2)',
+              transition: 'background 0.15s',
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.5)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+            />
+          </div>
           <GlobalTerminalPanel visible={terminalOpen} />
         </div>
       </Layout>
