@@ -208,18 +208,11 @@ pub async fn terminal_start_shell(
         cmd.env("TERM", "xterm-256color");
         cmd.env("PYTHONUTF8", "1");
         cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("LANG", "en_US.UTF-8");
         // Force child process console to use UTF-8 codepage
         use std::os::windows::process::CommandExt;
         const CREATE_UNICODE_ENVIRONMENT: u32 = 0x00000400;
         cmd.creation_flags(CREATE_UNICODE_ENVIRONMENT);
-        // If launching PowerShell, force UTF-8 console encoding before profile loads
-        let shell_lower = shell.to_lowercase();
-        if shell_lower.contains("powershell") {
-            cmd.args([
-                "-NoExit", "-Command",
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8"
-            ]);
-        }
     }
 
     let mut child = cmd.spawn().map_err(|e| format!("启动 shell 失败: {}", e))?;
