@@ -41,12 +41,14 @@ export default function TerminalManager({ visible, defaultCwd }: TerminalManager
     }
   }, [terminals, activeId]);
 
-  // Stop all terminal processes when the panel becomes hidden
+  // Stop all terminal processes and clear state when the panel becomes hidden
   useEffect(() => {
     if (!visible && terminals.length > 0) {
       terminals.forEach(t => {
         terminalApi.stop(t.id).catch(() => {});
       });
+      setTerminals([]);
+      setActiveId(null);
     }
   }, [visible, terminals]);
 
