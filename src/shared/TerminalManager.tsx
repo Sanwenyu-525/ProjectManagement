@@ -53,20 +53,13 @@ export default function TerminalManager({ visible, defaultCwd }: TerminalManager
   }, [visible, terminals]);
 
   // Auto-create a terminal when panel opens with no active terminals
+  // If defaultCwd is provided, use it; otherwise use default path
   useEffect(() => {
     if (visible && terminals.length === 0) {
-      createTerminal();
+      createTerminal(undefined, defaultCwd || undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
-
-  // Create a terminal with defaultCwd when requested externally (only if no active terminal)
-  useEffect(() => {
-    if (visible && defaultCwd && terminals.length === 0) {
-      createTerminal(undefined, defaultCwd);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, defaultCwd]);
 
   const createTerminal = useCallback(async (label?: string, cwdOverride?: string) => {
     if (terminals.length >= 10) {
