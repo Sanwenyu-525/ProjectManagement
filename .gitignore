@@ -49,3 +49,18 @@ temp/
 
 # User-specific files
 ChatGPT Image*
+
+# Claude Code
+CLAUDE.md
+
+# Superpowers
+.superpowers/
+docs/superpowers/
+
+# Design System
+design-system/
+
+# Development docs
+docs/features/
+docs/project-analysis.md
+docs/ui-optimization.md
