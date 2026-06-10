@@ -139,7 +139,7 @@ export default function MainLayout() {
         />
       </Sider>
 
-      <Layout style={{ display: 'flex', flexDirection: 'column', flex: 1, marginLeft: collapsed ? 64 : 220 }}>
+      <Layout style={{ display: 'flex', flexDirection: 'column', flex: 1, marginLeft: collapsed ? 64 : 220, height: '100vh', overflow: 'hidden' }}>
         <Header style={{
           background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)',
           padding: '0 24px',
