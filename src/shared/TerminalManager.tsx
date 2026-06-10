@@ -66,6 +66,7 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
     const id = `global-${Math.random().toString(36).slice(2, 10)}`;
     const isWin = navigator.platform.includes('Win');
     const shell = isWin ? 'powershell.exe' : 'bash';
+    const shellArgs = isWin ? ['-NoProfile'] : undefined;
     const cwd = isWin
       ? (import.meta.env.USERPROFILE || 'C:\\')
       : (import.meta.env.HOME || '/');
@@ -79,7 +80,7 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
       status: 'running',
     };
 
-    await terminalApi.startShell(id, shell, cwd);
+    await terminalApi.startShell(id, shell, cwd, shellArgs);
     setTerminals(prev => [...prev, newTerminal]);
     setActiveId(id);
   }, [terminals.length]);

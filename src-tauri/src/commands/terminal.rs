@@ -195,9 +195,13 @@ pub async fn terminal_start_shell(
     app: AppHandle,
     terminal_id: String,
     shell: String,
+    args: Option<Vec<String>>,
     cwd: String,
 ) -> Result<String, String> {
     let mut cmd = Command::new(&shell);
+    if let Some(ref shell_args) = args {
+        cmd.args(shell_args);
+    }
     cmd.current_dir(&cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -206,10 +210,6 @@ pub async fn terminal_start_shell(
     #[cfg(target_os = "windows")]
     {
         cmd.env("TERM", "xterm-256color");
-        cmd.env("PYTHONUTF8", "1");
-        cmd.env("PYTHONIOENCODING", "utf-8");
-        cmd.env("LANG", "en_US.UTF-8");
-        // Force child process console to use UTF-8 codepage
         use std::os::windows::process::CommandExt;
         const CREATE_UNICODE_ENVIRONMENT: u32 = 0x00000400;
         cmd.creation_flags(CREATE_UNICODE_ENVIRONMENT);

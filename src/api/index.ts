@@ -134,7 +134,7 @@ export const documentsApi = {
 
 interface TerminalApi {
   start: (projectId: string, commandStr: string, cwd: string) => Promise<string>;
-  startShell: (terminalId: string, shell: string, cwd: string) => Promise<string>;
+  startShell: (terminalId: string, shell: string, cwd: string, args?: string[]) => Promise<string>;
   stop: (terminalId: string) => Promise<any>;
   input: (terminalId: string, data: string) => Promise<any>;
 }
@@ -142,8 +142,8 @@ interface TerminalApi {
 export const terminalApi: TerminalApi = {
   start: (projectId: string, commandStr: string, cwd: string) =>
     cmd<string>('terminal_start', { projectId, commandStr, cwd }),
-  startShell: (terminalId: string, shell: string, cwd: string) =>
-    cmd<string>('terminal_start_shell', { terminalId, shell, cwd }),
+  startShell: (terminalId: string, shell: string, cwd: string, args?: string[]) =>
+    cmd<string>('terminal_start_shell', { terminalId, shell, args: args ?? null, cwd }),
   stop: (terminalId: string) =>
     cmd('terminal_stop', { terminalId }),
   input: (terminalId: string, data: string) =>
