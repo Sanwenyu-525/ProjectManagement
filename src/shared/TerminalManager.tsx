@@ -13,11 +13,17 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [theme, setTheme] = useState<TerminalTheme>('dark');
 
-  // Load saved theme on mount
+  // Restore theme and clean up stale terminal state on mount
   useEffect(() => {
     const savedTheme = localStorage.getItem('terminal-theme');
     if (savedTheme && ['dark', 'modern', 'matrix', 'light'].includes(savedTheme)) {
       setTheme(savedTheme as TerminalTheme);
+    }
+
+    // Terminal processes don't survive app restarts, so discard any saved state
+    const savedState = localStorage.getItem('terminal-state');
+    if (savedState) {
+      localStorage.removeItem('terminal-state');
     }
   }, []);
 
@@ -29,6 +35,15 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
       localStorage.removeItem('terminal-state');
     }
   }, [terminals, activeId]);
+
+  // Stop all terminal processes when the panel becomes hidden
+  useEffect(() => {
+    if (!visible && terminals.length > 0) {
+      terminals.forEach(t => {
+        terminalApi.stop(t.id).catch(() => {});
+      });
+    }
+  }, [visible, terminals]);
 
   const createTerminal = useCallback(async (label?: string) => {
     if (terminals.length >= 10) {
@@ -64,17 +79,16 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
       // Terminal may have already exited
     }
 
-    setTerminals(prev => {
-      const remaining = prev.filter(t => t.id !== id);
-      if (activeId === id) {
-        const newActiveId = remaining.length > 0
-          ? remaining[remaining.length - 1].id
-          : null;
-        setActiveId(newActiveId);
-      }
-      return remaining;
-    });
-  }, [activeId]);
+    const remaining = terminals.filter(t => t.id !== id);
+    setTerminals(remaining);
+
+    if (activeId === id) {
+      const newActiveId = remaining.length > 0
+        ? remaining[remaining.length - 1].id
+        : null;
+      setActiveId(newActiveId);
+    }
+  }, [activeId, terminals]);
 
   const switchTerminal = useCallback((id: string) => {
     setActiveId(id);
