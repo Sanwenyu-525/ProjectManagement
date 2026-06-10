@@ -1,52 +1,185 @@
 /* src/shared/styles/glassmorphism.css */
 
-/* 玻璃效果基类 */
+/* ==================== 玻璃磨砂效果增强版 ==================== */
+
+/* 基础玻璃效果 - 多层叠加 */
 .glass {
-  background: var(--color-bg-glass);
-  backdrop-filter: blur(40px) saturate(1.3);
-  -webkit-backdrop-filter: blur(40px) saturate(1.3);
-  border: 1px solid var(--color-border-glass);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%),
+    rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    var(--shadow-md);
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.08);
+  position: relative;
+}
+
+/* 玻璃效果 - 带高光 */
+.glass::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0) 100%);
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 /* 强化玻璃效果 */
 .glass-strong {
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(48px) saturate(1.5);
-  -webkit-backdrop-filter: blur(48px) saturate(1.5);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 100%),
+    rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(24px) saturate(2);
+  -webkit-backdrop-filter: blur(24px) saturate(2);
+  border: 1px solid rgba(255, 255, 255, 0.45);
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.5),
-    0 8px 32px rgba(0, 0, 0, 0.15);
+    inset 0 2px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -2px 0 rgba(255, 255, 255, 0.3),
+    0 8px 32px rgba(0, 0, 0, 0.12);
+  position: relative;
 }
 
-/* 玻璃卡片 */
+.glass-strong::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 100%);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* 玻璃卡片 - 最强效果 */
 .glass-card {
-  background: var(--color-bg-glass);
-  backdrop-filter: blur(40px) saturate(1.3);
-  -webkit-backdrop-filter: blur(40px) saturate(1.3);
-  border: 1px solid var(--color-border-glass);
-  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.2) 100%),
+    rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 12px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    var(--shadow-md);
-  padding: var(--space-5);
-  transition: transform var(--transition-spring), box-shadow var(--transition-normal);
+    inset 0 2px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.3),
+    0 8px 32px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 100%);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.glass-card::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 50%);
+  pointer-events: none;
 }
 
 .glass-card:hover {
   transform: translateY(-4px);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    var(--shadow-lg),
-    var(--shadow-glow);
+    inset 0 2px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    0 16px 48px rgba(0, 0, 0, 0.15),
+    0 0 24px rgba(34, 197, 94, 0.1);
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
 /* 导航菜单active状态 */
 .glass-menu-item-active {
-  background: var(--color-primary-light);
-  border-left: 3px solid var(--color-primary);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: rgba(34, 197, 94, 0.12);
+  border-left: 3px solid #22c55e;
+  border-radius: 0 8px 8px 0;
+}
+
+/* 玻璃按钮 */
+.glass-btn {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%),
+    rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.glass-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 100%);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.glass-btn:hover {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.2) 100%),
+    rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 玻璃输入框 */
+.glass-input {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.1) 100%),
+    rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #1a1f36;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.glass-input::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0) 100%);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
 }

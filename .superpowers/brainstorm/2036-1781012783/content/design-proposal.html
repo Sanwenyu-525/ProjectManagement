@@ -1,0 +1,84 @@
+<h2>设计方案确认</h2>
+<p class="subtitle">基于你的选择，以下是完整的设计方案</p>
+
+<div class="mockup">
+  <div class="mockup-header">DevHub 设计优化方案</div>
+  <div class="mockup-body" style="padding: 32px;">
+    <div style="background: linear-gradient(135deg, #0f172a, #1e293b); border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid rgba(255, 255, 255, 0.1);">
+      <h3 style="color: #e2e8f0; margin-bottom: 16px; font-size: 18px;">✓ 核心改进</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div style="background: rgba(255, 255, 255, 0.08); padding: 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.15);">
+          <div style="font-size: 12px; color: #22c55e; margin-bottom: 8px; font-weight: 600;">搜索框</div>
+          <div style="color: #e2e8f0; font-size: 14px;">移至Header中心，使用精致玻璃效果</div>
+        </div>
+        <div style="background: rgba(255, 255, 255, 0.08); padding: 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.15);">
+          <div style="font-size: 12px; color: #22c55e; margin-bottom: 8px; font-weight: 600;">玻璃效果</div>
+          <div style="color: #e2e8f0; font-size: 14px;">blur 32px → 40px，内发光，精致阴影</div>
+        </div>
+        <div style="background: rgba(255, 255, 255, 0.08); padding: 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.15);">
+          <div style="font-size: 12px; color: #22c55e; margin-bottom: 8px; font-weight: 600;">动画</div>
+          <div style="color: #e2e8f0; font-size: 14px;">0.3-0.4s过渡，光晕效果，spring缓动</div>
+        </div>
+        <div style="background: rgba(255, 255, 255, 0.08); padding: 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.15);">
+          <div style="font-size: 12px; color: #22c55e; margin-bottom: 8px; font-weight: 600;">视觉</div>
+          <div style="color: #e2e8f0; font-size: 14px;">卡片阴影、光效、精致渐变</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 24px; border: 1px solid rgba(255, 255, 255, 0.1);">
+      <h3 style="color: #e2e8f0; margin-bottom: 16px; font-size: 18px;">📐 Header布局</h3>
+      <div style="background: #0f172a; border-radius: 8px; padding: 20px; border: 1px solid rgba(255, 255, 255, 0.1);">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #22c55e, #16a34a); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+              <span style="color: white; font-size: 14px;">{}</span>
+            </div>
+            <span style="color: #e2e8f0; font-weight: 700; font-size: 16px;">DevHub</span>
+          </div>
+
+          <div style="background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 10px 24px; min-width: 300px;">
+            <div style="color: #9eadc0; font-size: 14px; text-align: center;">🔍 搜索项目、任务、文档...</div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #22c55e, #16a34a); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+              <span style="color: white; font-size: 14px;">👤</span>
+            </div>
+            <span style="color: #e2e8f0; font-size: 14px;">用户</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: linear-gradient(135deg, #22c55e10, #22c55e05); border-radius: 12px; padding: 24px; margin-top: 24px; border: 1px solid rgba(34, 197, 94, 0.2);">
+      <h3 style="color: #22c55e; margin-bottom: 16px; font-size: 18px;">✨ 卡片设计</h3>
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+        <div style="background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);">
+          <div style="font-size: 11px; color: #9eadc0; margin-bottom: 6px;">项目总数</div>
+          <div style="font-size: 32px; font-weight: 700; color: #1a1f36;">24</div>
+        </div>
+        <div style="background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);">
+          <div style="font-size: 11px; color: #9eadc0; margin-bottom: 6px;">进行中</div>
+          <div style="font-size: 32px; font-weight: 700; color: #1a1f36;">12</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 24px; margin-top: 24px; border: 1px solid rgba(255, 255, 255, 0.1);">
+      <h3 style="color: #e2e8f0; margin-bottom: 16px; font-size: 18px;">🎯 优化清单</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; color: #94a3b8; font-size: 14px;">
+        <div>✓ Header搜索框居中</div>
+        <div>✓ 玻璃效果增强（40px blur）</div>
+        <div>✓ 卡片hover上浮 + 光晕</div>
+        <div>✓ 按钮点击涟漪效果</div>
+        <div>✓ 页面载入动画</div>
+        <div>✓ 导航菜单active高亮</div>
+        <div>✓ 响应式布局优化</div>
+        <div>✓ 全局阴影系统统一</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top: 32px;">这个设计方案是否符合你的预期？</h3>

@@ -1,84 +1,234 @@
 import { useState, useEffect } from 'react';
-import { Row, Col, Typography, List, Tag, Spin, Empty } from 'antd';
-import { ProjectOutlined, CheckCircleOutlined, ClockCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
+import { Row, Col, Typography, Card, Tag, Empty, Button, Tooltip, Statistic, Progress, Space, Spin } from 'antd';
+import {
+  CheckCircleOutlined,
+  ArrowRightOutlined,
+  PlusOutlined,
+  FolderOutlined,
+  RocketOutlined,
+  DatabaseOutlined,
+  ClockCircleOutlined,
+  CodeOutlined,
+  ReloadOutlined,
+  DashboardOutlined,
+  WarningOutlined,
+  CloseCircleOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { projectsApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
-import GlassCard from '../../shared/components/GlassCard';
+import { STATUS_COLORS } from '../../lib/constants';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
-const STATUS_COLORS: Record<string, string> = {
-  Idea: 'default', Planning: 'blue', Development: 'orange',
-  Testing: 'purple', Deployed: 'green', Maintained: 'cyan', Archived: 'default',
-};
-
+// 统计卡片配置
 const STAT_CONFIG = [
-  { key: 'total', title: '项目总数', icon: ProjectOutlined, gradient: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08))', border: 'rgba(99, 102, 241, 0.15)' },
-  { key: 'active', title: '进行中', icon: ClockCircleOutlined, gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.10), rgba(251, 191, 36, 0.08))', border: 'rgba(245, 158, 11, 0.18)' },
-  { key: 'deployed', title: '已部署', icon: CheckCircleOutlined, gradient: 'linear-gradient(135deg, rgba(34, 197, 94, 0.10), rgba(74, 222, 128, 0.08))', border: 'rgba(34, 197, 94, 0.18)' },
-  { key: 'archived', title: '已归档', icon: PauseCircleOutlined, gradient: 'linear-gradient(135deg, rgba(148, 163, 184, 0.08), rgba(203, 213, 225, 0.06))', border: 'rgba(148, 163, 184, 0.15)' },
+  { key: 'total', title: '项目总数', icon: FolderOutlined, iconColor: '#6366f1' },
+  { key: 'active', title: '进行中', icon: RocketOutlined, iconColor: '#f59e0b' },
+  { key: 'deployed', title: '已部署', icon: CheckCircleOutlined, iconColor: '#22c55e' },
+  { key: 'archived', title: '已归档', icon: DatabaseOutlined, iconColor: '#94a3b8' },
 ];
 
-function StatCard({ title, value, icon: Icon, gradient, border, delay }: {
-  title: string; value: number; icon: any; gradient: string; border: string; delay: number;
+// 状态监控配置
+const STATUS_MONITOR_CONFIG = [
+  { key: 'running', title: '运行中', icon: CheckCircleOutlined, color: '#52c41a' },
+  { key: 'stopped', title: '已停止', icon: CloseCircleOutlined, color: '#8b95a5' },
+  { key: 'error', title: '异常', icon: WarningOutlined, color: '#ff4d4f' },
+  { key: 'total', title: '总数', icon: DashboardOutlined, color: '#3b82f6' },
+];
+
+// 统计卡片
+function StatCard({ title, value, icon: Icon, iconColor, delay }: {
+  title: string; value: number; icon: any; iconColor: string; delay: number;
 }) {
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
-    <div
+    <Card
       className={`animate-in animate-in-delay-${delay}`}
+      hoverable
       style={{
-        background: gradient,
         borderRadius: 12,
-        padding: '22px 20px',
-        border: `1px solid ${border}`,
-        position: 'relative',
-        overflow: 'hidden',
-        cursor: 'default',
-        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        height: 120,
+        borderColor: isHovered ? `${iconColor}40` : undefined,
+        boxShadow: isHovered ? `0 4px 12px ${iconColor}15` : undefined,
+        transition: 'all 0.3s ease',
       }}
-      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.08)'; }}
-      onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
+      bodyStyle={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Glow dot */}
-      <div style={{
-        position: 'absolute',
-        right: -10,
-        top: -10,
-        width: 80,
-        height: 80,
-        borderRadius: '50%',
-        background: 'rgba(34, 197, 94, 0.06)',
-        filter: 'blur(20px)',
-      }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ fontSize: 12, color: '#6b7a99', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>
-            {title}
-          </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#1a1f36', fontFamily: "'Fira Code', monospace", letterSpacing: '-1px', lineHeight: 1 }}>
-            {value}
-          </div>
+      <div style={{ fontSize: 13, color: '#6b7a99' }}>{title}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div style={{ fontSize: 28, fontWeight: 700, color: '#1a1f36', fontFamily: "'Fira Code', monospace" }}>
+          {value}
         </div>
         <div style={{
-          width: 36,
-          height: 36,
-          borderRadius: 8,
-          background: 'rgba(0, 0, 0, 0.04)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          width: 36, height: 36, borderRadius: 8,
+          background: `${iconColor}10`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Icon style={{ fontSize: 18, color: '#9eadc0' }} />
+          <Icon style={{ fontSize: 16, color: iconColor }} />
         </div>
       </div>
-    </div>
+    </Card>
   );
+}
+
+// 状态监控卡片
+function StatusMonitorCard({ title, value, icon: Icon, color, delay }: {
+  title: string; value: number; icon: any; color: string; delay: number;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <Card
+      className={`animate-in animate-in-delay-${delay}`}
+      hoverable
+      style={{
+        borderRadius: 12,
+        height: 100,
+        background: `linear-gradient(135deg, ${color}08 0%, ${color}02 100%)`,
+        border: `1px solid ${color}20`,
+        boxShadow: isHovered ? `0 4px 12px ${color}15` : undefined,
+        transition: 'all 0.3s ease',
+      }}
+      bodyStyle={{ padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icon style={{ fontSize: 16, color }} />
+        <span style={{ fontSize: 13, color: '#6b7a99' }}>{title}</span>
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 700, color, fontFamily: "'Fira Code', monospace" }}>
+        {value}
+      </div>
+    </Card>
+  );
+}
+
+// 项目状态卡片
+function ProjectStatusCard({ project }: { project: any }) {
+  const navigate = useNavigate();
+  const isRunning = project.status === 'Running';
+  const statusColor = isRunning ? '#52c41a' : '#8b95a5';
+  const healthScore = calculateHealthScore(project);
+
+  return (
+    <Col xs={24} sm={12} md={8} lg={6}>
+      <Card
+        hoverable
+        onClick={() => navigate(`/projects/${project.id}`)}
+        style={{
+          borderRadius: 12,
+          height: 200,
+          border: `1px solid ${statusColor}20`,
+          boxShadow: `0 2px 8px ${statusColor}10`,
+          transition: 'all 0.3s ease',
+        }}
+        bodyStyle={{ padding: 16, height: '100%', display: 'flex', flexDirection: 'column' }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ProjectIcon name={project.name} techStack={project.techStack} size={32} />
+            <div>
+              <Tooltip title={project.name}>
+                <div style={{ fontWeight: 600, fontSize: 14, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {project.name}
+                </div>
+              </Tooltip>
+              <Tag
+                color={statusColor}
+                style={{ fontSize: 11, margin: 0, padding: '0 6px' }}
+              >
+                {isRunning ? '运行中' : '已停止'}
+              </Tag>
+            </div>
+          </div>
+          {isRunning ? (
+            <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />
+          ) : (
+            <CloseCircleOutlined style={{ color: '#8b95a5', fontSize: 18 }} />
+          )}
+        </div>
+
+        {/* Info */}
+        <div style={{ flex: 1, marginBottom: 12, fontSize: 12, color: '#6b7a99' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span>运行时间</span>
+            <span style={{ color: '#1a1f36' }}>{isRunning ? '2h 30m' : 'N/A'}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>端口</span>
+            <span style={{ color: '#1a1f36' }}>{extractPortFromCommand(project.openCommand) || 'N/A'}</span>
+          </div>
+        </div>
+
+        {/* Health Score */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: '#6b7a99' }}>健康度</span>
+          <Progress
+            type="circle"
+            percent={healthScore}
+            size={36}
+            strokeColor={getHealthColor(healthScore)}
+            format={(percent) => `${percent}`}
+          />
+        </div>
+      </Card>
+    </Col>
+  );
+}
+
+// 辅助函数
+function extractPortFromCommand(command?: string): number | undefined {
+  if (!command) return undefined;
+  const portMatch = command.match(/PORT=(\d+)/);
+  if (portMatch) return parseInt(portMatch[1], 10);
+  return 3000;
+}
+
+function calculateHealthScore(project: any): number {
+  // 活跃度 (40分): 按最后更新时间衰减
+  const updated = new Date(project.updatedAt).getTime();
+  const daysSinceUpdate = (Date.now() - updated) / (1000 * 60 * 60 * 24);
+  let activity = 0;
+  if (daysSinceUpdate <= 1) activity = 40;
+  else if (daysSinceUpdate <= 7) activity = 40 - (daysSinceUpdate - 1) * (20 / 6);
+  else if (daysSinceUpdate <= 30) activity = 20 - (daysSinceUpdate - 7) * (15 / 23);
+  else activity = Math.max(0, 5 - (daysSinceUpdate - 30) * (5 / 60));
+
+  // 项目状态 (30分)
+  const statusMap: Record<string, number> = {
+    Running: 30, Deployed: 25, Maintained: 25,
+    InProgress: 20, Planning: 15, Idea: 10,
+    Paused: 5, Archived: 0, Cancelled: 0,
+  };
+  const statusScore = statusMap[project.status] ?? 5;
+
+  // 信息完整度 (30分)
+  let completeness = 0;
+  if (project.description) completeness += 10;
+  if (project.techStack?.length) completeness += 10;
+  if (project.openCommand) completeness += 10;
+
+  return Math.round(Math.max(0, Math.min(100, activity + statusScore + completeness)));
+}
+
+function getHealthColor(score: number): string {
+  if (score >= 90) return '#52c41a';
+  if (score >= 70) return '#3b82f6';
+  if (score >= 50) return '#f59e0b';
+  return '#ff4d4f';
 }
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { loadProjects(); }, []);
 
@@ -90,11 +240,24 @@ export default function DashboardPage() {
     finally { setLoading(false); }
   }
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadProjects();
+    setRefreshing(false);
+  };
+
   const stats = {
     total: projects.length,
     active: projects.filter(p => !['Archived', 'Idea'].includes(p.status)).length,
     deployed: projects.filter(p => p.status === 'Deployed' || p.status === 'Maintained').length,
     archived: projects.filter(p => p.status === 'Archived').length,
+  };
+
+  const statusStats = {
+    running: projects.filter(p => p.status === 'Running').length,
+    stopped: projects.filter(p => p.status !== 'Running').length,
+    error: 0, // Will be calculated based on actual errors
+    total: projects.length,
   };
 
   const recentProjects = [...projects]
@@ -103,102 +266,132 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 100 }}>
-        <Spin size="large" />
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 100, gap: 16 }}>
+        <div style={{
+          width: 40, height: 40,
+          border: '3px solid rgba(34, 197, 94, 0.2)', borderTopColor: '#22c55e',
+          borderRadius: '50%', animation: 'spin 1s linear infinite',
+        }} />
+        <Text style={{ color: '#9eadc0' }}>加载中...</Text>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '28px 32px' }}>
-      <div className="animate-in" style={{ marginBottom: 28 }}>
-        <Title level={3} style={{ margin: 0, fontWeight: 700, color: '#1a1f36', letterSpacing: '-0.3px' }}>仪表盘</Title>
-        <Text style={{ color: '#9eadc0', fontSize: 14 }}>概览你的所有项目和开发状态</Text>
+    <div style={{ padding: 24 }}>
+      {/* Header */}
+      <div className="animate-in" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24,
+        paddingBottom: 16,
+        borderBottom: '1px solid rgba(0,0,0,0.06)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <DashboardOutlined style={{ fontSize: 24, color: '#3b82f6' }} />
+          <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>仪表盘</h2>
+        </div>
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={handleRefresh}
+          loading={refreshing}
+          size="large"
+        >
+          刷新
+        </Button>
       </div>
 
-      {/* Stat cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 28 }}>
+      {/* Stats Overview */}
+      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
         {STAT_CONFIG.map((cfg, i) => (
           <Col xs={12} sm={6} key={cfg.key}>
             <StatCard
               title={cfg.title}
               value={stats[cfg.key as keyof typeof stats]}
               icon={cfg.icon}
-              gradient={cfg.gradient}
-              border={cfg.border}
+              iconColor={cfg.iconColor}
               delay={i + 1}
             />
           </Col>
         ))}
       </Row>
 
-      {/* Recent projects */}
-      <GlassCard
-        className="animate-in animate-in-delay-3"
-        style={{
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(0, 0, 0, 0.04)' }}>
-          <Text strong style={{ fontSize: 14, color: '#1a1f36' }}>最近活跃项目</Text>
+      {/* Status Monitor */}
+      <div className="animate-in animate-in-delay-3" style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <DashboardOutlined style={{ color: '#3b82f6' }} />
+          <span style={{ fontWeight: 600, fontSize: 16 }}>项目状态监控</span>
         </div>
+        <Row gutter={[16, 16]}>
+          {STATUS_MONITOR_CONFIG.map((cfg, i) => (
+            <Col xs={12} sm={6} key={cfg.key}>
+              <StatusMonitorCard
+                title={cfg.title}
+                value={statusStats[cfg.key as keyof typeof statusStats]}
+                icon={cfg.icon}
+                color={cfg.color}
+                delay={i + 1}
+              />
+            </Col>
+          ))}
+        </Row>
+      </div>
+
+      {/* Project Status Grid */}
+      <div className="animate-in animate-in-delay-4" style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CheckCircleOutlined style={{ color: '#52c41a' }} />
+            <span style={{ fontWeight: 600 }}>项目状态</span>
+            <Tag style={{ fontSize: 11, background: 'rgba(52, 196, 26, 0.1)', color: '#52c41a', border: 'none' }}>
+              {statusStats.running} 运行中
+            </Tag>
+          </div>
+        </div>
+        <Row gutter={[16, 16]}>
+          {projects.slice(0, 8).map((project) => (
+            <ProjectStatusCard key={project.id} project={project} />
+          ))}
+        </Row>
+      </div>
+
+      {/* Recent Active Projects */}
+      <div className="animate-in animate-in-delay-5">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ClockCircleOutlined style={{ color: '#6b7a99' }} />
+            <span style={{ fontWeight: 600 }}>最近活跃项目</span>
+            <Tag style={{ fontSize: 11, background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', border: 'none' }}>
+              {recentProjects.length}
+            </Tag>
+          </div>
+          {recentProjects.length > 0 && (
+            <Button type="link" size="small" onClick={() => navigate('/projects')} style={{ padding: 0 }}>
+              查看全部 <ArrowRightOutlined />
+            </Button>
+          )}
+        </div>
+
         {recentProjects.length === 0 ? (
-          <div style={{ padding: 48 }}><Empty description={<span style={{ color: '#9eadc0' }}>还没有项目</span>} /></div>
+          <Card style={{ borderRadius: 12 }}>
+            <Empty
+              description={<span style={{ color: '#9eadc0' }}>还没有项目，点击"新建项目"开始</span>}
+            >
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/projects/new')}>
+                新建项目
+              </Button>
+            </Empty>
+          </Card>
         ) : (
-          <List
-            grid={{ gutter: 0, xs: 1, sm: 2, md: 3 }}
-            dataSource={recentProjects}
-            renderItem={(project, index) => (
-              <List.Item style={{ padding: 0 }}>
-                <div
-                  onClick={() => navigate(`/projects/${project.id}`)}
-                  style={{
-                    padding: '18px 24px',
-                    cursor: 'pointer',
-                    borderRight: index % 3 !== 2 ? '1px solid rgba(0, 0, 0, 0.04)' : 'none',
-                    borderBottom: index < recentProjects.length - 3 ? '1px solid rgba(0, 0, 0, 0.04)' : 'none',
-                    transition: 'background 0.15s ease',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(34, 197, 94, 0.04)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                    <ProjectIcon
-                      name={project.name}
-                      techStack={project.techStack}
-                      iconType={project.iconType}
-                      iconUrl={project.iconUrl}
-                      iconColor={project.iconColor}
-                      size={40}
-                    />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{
-                        fontWeight: 600,
-                        fontSize: 13,
-                        marginBottom: 6,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        color: '#1a1f36',
-                      }}>
-                        {project.name}
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        <Tag color={STATUS_COLORS[project.status] || 'default'} style={{ fontSize: 11, margin: 0 }}>
-                          {project.status}
-                        </Tag>
-                        {project.techStack?.slice(0, 2).map((t: string) => (
-                          <Tag key={t} style={{ fontSize: 11, margin: 0, background: 'rgba(0, 0, 0, 0.05)', color: '#6b7a99' }}>{t}</Tag>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </List.Item>
-            )}
-          />
+          <Row gutter={[16, 16]}>
+            {recentProjects.map((project) => (
+              <ProjectStatusCard key={project.id} project={project} />
+            ))}
+          </Row>
         )}
-      </GlassCard>
+      </div>
     </div>
   );
 }

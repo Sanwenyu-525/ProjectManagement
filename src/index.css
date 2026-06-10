@@ -1,10 +1,12 @@
 @import './shared/styles/variables.css';
 @import './shared/styles/animations.css';
 @import './shared/styles/glassmorphism.css';
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ==================== DevHub Custom Overrides ==================== */
 
 :root {
-  /* Light glassmorphism palette - 使用 variables.css 中的统一变量 */
+  /* Light glassmorphism palette */
   --bg-base: var(--color-bg-base);
   --bg-surface: var(--color-bg-surface);
   --bg-elevated: var(--color-bg-elevated);
@@ -14,365 +16,21 @@
   --bg-glass-sidebar: var(--color-bg-glass-sidebar);
   --bg-glass-header: var(--color-bg-glass-header);
 
-  /* Accent - 使用 variables.css 中的统一命名 */
-  --color-accent: var(--color-primary);
-  --color-accent-dim: var(--color-primary-light);
-  --color-accent-glow: var(--color-primary-glow);
-  --color-amber: var(--color-amber);
-  --color-amber-dim: var(--color-amber-light);
-
-  /* Text - 使用 variables.css 中的统一命名 */
-  --text-primary: var(--color-text-primary);
-  --text-secondary: var(--color-text-secondary);
-  --text-tertiary: var(--color-text-tertiary);
-  --text-muted: var(--color-text-muted);
-
-  /* Borders - 使用 variables.css 中的统一命名 */
-  --border: var(--color-border);
-  --border-subtle: var(--color-border-subtle);
-  --border-focus: var(--color-primary);
-
-  /* Status - 使用 variables.css 中的统一命名 */
+  /* Status colors */
   --status-done: var(--color-status-done);
   --status-progress: var(--color-status-progress);
   --status-todo: var(--color-status-todo);
   --status-cancel: var(--color-status-cancel);
-
-  /* Shadows - 使用 variables.css 中的统一命名 */
-  --shadow-sm: var(--shadow-sm);
-  --shadow-md: var(--shadow-md);
-  --shadow-lg: var(--shadow-lg);
-  --shadow-glow: var(--shadow-glow);
-
-  /* Radius - 使用 variables.css 中的统一命名 */
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
-
-  /* Timing */
-  --ease: var(--ease);
-  --duration: var(--duration);
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-html {
-  font-size: 16px;
 }
 
 body {
-  font-family: 'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  color: var(--text-primary);
+  font-family: 'Inter', 'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   background: linear-gradient(135deg, var(--color-gradient-start) 0%, var(--color-gradient-mid) 35%, var(--color-gradient-end) 65%, var(--color-gradient-accent) 100%);
   background-attachment: fixed;
-  line-height: 1.5;
-  min-height: 100vh;
 }
 
 #root {
   min-height: 100vh;
-}
-
-/* ==================== Ant Design Light Glass Theme Overrides ==================== */
-
-/* Card */
-.ant-card {
-  background: rgba(255, 255, 255, 0.35) !important;
-  border: 1px solid rgba(255, 255, 255, 0.45) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
-  transition: all var(--duration) var(--ease) !important;
-  backdrop-filter: blur(24px) saturate(1.2) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(1.2) !important;
-}
-
-.ant-card:hover {
-  border-color: rgba(0, 0, 0, 0.08) !important;
-}
-
-.ant-card-hoverable:hover {
-  border-color: rgba(34, 197, 94, 0.3) !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
-  transform: translateY(-2px) !important;
-  background: rgba(255, 255, 255, 0.5) !important;
-}
-
-/* Buttons */
-.ant-btn {
-  border-radius: var(--radius-sm) !important;
-  font-weight: 500 !important;
-  font-family: 'Fira Sans', sans-serif !important;
-  transition: all var(--duration) var(--ease) !important;
-}
-
-.ant-btn-default {
-  background: rgba(255, 255, 255, 0.35) !important;
-  border-color: rgba(255, 255, 255, 0.5) !important;
-  color: var(--text-secondary) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-}
-
-.ant-btn-default:hover {
-  background: rgba(255, 255, 255, 0.55) !important;
-  border-color: rgba(255, 255, 255, 0.65) !important;
-  color: var(--text-primary) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-}
-
-.ant-btn-primary {
-  background: var(--color-accent) !important;
-  border-color: var(--color-accent) !important;
-  color: #000 !important;
-  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3) !important;
-  font-weight: 600 !important;
-}
-
-.ant-btn-primary:hover {
-  background: #16a34a !important;
-  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4) !important;
-  transform: translateY(-1px) !important;
-}
-
-/* Sidebar */
-.ant-layout-sider {
-  background: rgba(255, 255, 255, 0.3) !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.5) !important;
-  backdrop-filter: blur(32px) saturate(1.3) !important;
-  -webkit-backdrop-filter: blur(32px) saturate(1.3) !important;
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.4) !important;
-}
-
-.ant-layout-sider .ant-menu {
-  background: transparent !important;
-  border-right: none !important;
-}
-
-.ant-layout-sider .ant-menu-item {
-  color: var(--text-secondary) !important;
-  border-radius: 8px !important;
-  margin: 2px 8px !important;
-  height: 40px !important;
-  line-height: 40px !important;
-  transition: all var(--duration) var(--ease) !important;
-  font-size: 13px !important;
-}
-
-.ant-layout-sider .ant-menu-item:hover {
-  color: var(--text-primary) !important;
-  background: rgba(255, 255, 255, 0.35) !important;
-}
-
-.ant-layout-sider .ant-menu-item-selected {
-  color: var(--color-accent) !important;
-  background: var(--color-accent-dim) !important;
-  font-weight: 500 !important;
-}
-
-.ant-layout-sider .ant-menu-item-selected::after {
-  display: none !important;
-}
-
-.ant-layout-sider-trigger {
-  background: rgba(255, 255, 255, 0.25) !important;
-  color: var(--text-tertiary) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.4) !important;
-}
-
-/* Header */
-.ant-layout-header {
-  background: rgba(255, 255, 255, 0.3) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
-  backdrop-filter: blur(32px) saturate(1.3) !important;
-  -webkit-backdrop-filter: blur(32px) saturate(1.3) !important;
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.4) !important;
-}
-
-/* Tabs */
-.ant-tabs .ant-tabs-tab {
-  color: var(--text-tertiary) !important;
-  font-weight: 500 !important;
-  transition: color var(--duration) var(--ease) !important;
-  font-family: 'Fira Sans', sans-serif !important;
-}
-
-.ant-tabs .ant-tabs-tab:hover {
-  color: var(--text-secondary) !important;
-}
-
-.ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: var(--color-accent) !important;
-  font-weight: 600 !important;
-}
-
-.ant-tabs .ant-tabs-ink-bar {
-  background: var(--color-accent) !important;
-  border-radius: 2px !important;
-  height: 2px !important;
-}
-
-/* Input */
-.ant-input,
-.ant-input-affix-wrapper {
-  background: rgba(255, 255, 255, 0.4) !important;
-  border-color: rgba(255, 255, 255, 0.55) !important;
-  color: var(--text-primary) !important;
-  border-radius: var(--radius-sm) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
-}
-
-.ant-input::placeholder {
-  color: var(--text-tertiary) !important;
-}
-
-.ant-input:focus,
-.ant-input-focused,
-.ant-input-affix-wrapper:focus,
-.ant-input-affix-wrapper-focused {
-  border-color: var(--color-accent) !important;
-  box-shadow: 0 0 0 2px var(--color-accent-dim) !important;
-}
-
-/* Tag */
-.ant-tag {
-  border-radius: 4px !important;
-  font-weight: 500 !important;
-  border: none !important;
-  font-size: 11px !important;
-  padding: 1px 8px !important;
-  line-height: 20px !important;
-}
-
-/* Table */
-.ant-table {
-  background: transparent !important;
-}
-
-.ant-table-thead > tr > th {
-  background: rgba(255, 255, 255, 0.3) !important;
-  color: var(--text-tertiary) !important;
-  font-weight: 600 !important;
-  font-size: 11px !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.5px !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.45) !important;
-}
-
-.ant-table-tbody > tr > td {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.3) !important;
-  color: var(--text-secondary) !important;
-}
-
-.ant-table-tbody > tr:hover > td {
-  background: rgba(255, 255, 255, 0.25) !important;
-}
-
-/* Modal */
-.ant-modal-content {
-  background: rgba(255, 255, 255, 0.55) !important;
-  border: 1px solid rgba(255, 255, 255, 0.6) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
-  backdrop-filter: blur(40px) saturate(1.4) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(1.4) !important;
-}
-
-.ant-modal-header {
-  background: transparent !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
-}
-
-.ant-modal-title {
-  color: var(--text-primary) !important;
-}
-
-/* Dropdown */
-.ant-dropdown-menu {
-  background: rgba(255, 255, 255, 0.55) !important;
-  border: 1px solid rgba(255, 255, 255, 0.55) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
-  backdrop-filter: blur(36px) saturate(1.3) !important;
-  -webkit-backdrop-filter: blur(36px) saturate(1.3) !important;
-}
-
-.ant-dropdown-menu-item {
-  color: var(--text-secondary) !important;
-}
-
-.ant-dropdown-menu-item:hover {
-  background: rgba(255, 255, 255, 0.4) !important;
-  color: var(--text-primary) !important;
-}
-
-/* Descriptions */
-.ant-descriptions-bordered .ant-descriptions-item-label {
-  background: rgba(255, 255, 255, 0.3) !important;
-  color: var(--text-tertiary) !important;
-  border-color: rgba(255, 255, 255, 0.4) !important;
-}
-
-.ant-descriptions-bordered .ant-descriptions-item-content {
-  background: rgba(255, 255, 255, 0.2) !important;
-  color: var(--text-primary) !important;
-  border-color: rgba(255, 255, 255, 0.4) !important;
-}
-
-/* Spin */
-.ant-spin-dot-item {
-  background-color: var(--color-accent) !important;
-}
-
-/* Empty */
-.ant-empty-description {
-  color: var(--text-tertiary) !important;
-}
-
-/* Select */
-.ant-select-selector {
-  background: rgba(255, 255, 255, 0.4) !important;
-  border-color: rgba(255, 255, 255, 0.55) !important;
-  color: var(--text-primary) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
-}
-
-/* ==================== Scrollbar ==================== */
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.2);
-}
-
-
-/* Skeleton loading */
-.skeleton {
-  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 8px;
 }
 
 /* ==================== Gradient Background ==================== */
@@ -427,4 +85,111 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+/* ==================== Scrollbar ==================== */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ==================== Skeleton loading ==================== */
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ==================== Glass Card Enhancement ==================== */
+
+.ant-card {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.2) 100%),
+    rgba(255, 255, 255, 0.35) !important;
+  backdrop-filter: blur(20px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.3),
+    0 8px 32px rgba(0, 0, 0, 0.1) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.ant-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 100%);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ant-card:hover {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.3) 100%),
+    rgba(255, 255, 255, 0.45) !important;
+  border-color: rgba(255, 255, 255, 0.55) !important;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    0 16px 48px rgba(0, 0, 0, 0.15),
+    0 0 24px rgba(34, 197, 94, 0.1) !important;
+  transform: translateY(-4px);
+}
+
+.ant-card-hoverable:hover {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.3) 100%),
+    rgba(255, 255, 255, 0.45) !important;
+  border-color: rgba(34, 197, 94, 0.3) !important;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    0 16px 48px rgba(0, 0, 0, 0.15),
+    0 0 24px rgba(34, 197, 94, 0.15) !important;
+  transform: translateY(-4px);
+}
+
+/* ==================== Sider Collapse Button Override ==================== */
+
+.ant-layout-sider-trigger {
+  background: transparent !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.3) !important;
+  backdrop-filter: blur(20px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.8) !important;
+  color: #1a1f36 !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.ant-layout-sider-trigger:hover {
+  background: rgba(255, 255, 255, 0.35) !important;
+  color: var(--color-accent) !important;
 }

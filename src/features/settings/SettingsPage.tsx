@@ -78,7 +78,7 @@ function IntegrationSettings() {
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: p.color }} />
                   <Text strong>{p.name}</Text>
                 </Space>
-                <div style={{ color: '#999', marginTop: 4 }}>{p.description}</div>
+                <div style={{ color: '#6b7a99', marginTop: 4 }}>{p.description}</div>
               </div>
               <Button icon={<KeyOutlined />} onClick={() => handleConnect(p.name)}>配置 Token</Button>
             </div>
@@ -100,7 +100,7 @@ function IntegrationSettings() {
           <Form.Item name="username" label="用户名（可选）">
             <Input placeholder="用于验证 Token 有效性" />
           </Form.Item>
-          <div style={{ background: '#f6f8fa', padding: 12, borderRadius: 6, fontSize: 13, color: '#666' }}>
+          <div style={{ background: 'rgba(34, 197, 94, 0.06)', padding: 12, borderRadius: 6, fontSize: 13, color: '#6b7a99' }}>
             {selectedPlatform === 'GitHub' && '前往 GitHub → Settings → Developer settings → Personal access tokens 生成 Token，需要 repo 权限。'}
             {selectedPlatform === 'GitLab' && '前往 GitLab → User Settings → Access Tokens 生成 Token，需要 api 权限。'}
             {selectedPlatform === 'Gitee' && '前往 Gitee → 设置 → 私人令牌 生成 Token，需要 projects 权限。'}
@@ -130,7 +130,7 @@ function PreferenceSettings() {
             onChange={e => setDefaultCmd(e.target.value)}
             placeholder="code {path}"
           />
-          <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
+          <div style={{ color: '#6b7a99', fontSize: 12, marginTop: 4 }}>
             {'{path}'} 会被替换为项目本地路径。常用: code {'{path}'}、webstorm {'{path}'}
           </div>
         </Form.Item>

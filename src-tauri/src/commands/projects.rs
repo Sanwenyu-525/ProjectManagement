@@ -38,8 +38,8 @@ pub async fn projects_list(
         }
         if let Some(ref search) = p.search {
             sql.push_str(&format!(
-                " AND (p.name LIKE '%' || ?{} || '%' OR p.description LIKE '%' || ?{} || '%')",
-                param_idx, param_idx
+                " AND (p.name LIKE '%' || ?{} || '%' OR p.description LIKE '%' || ?{} || '%' OR p.techStack LIKE '%' || ?{} || '%' OR p.localPath LIKE '%' || ?{} || '%')",
+                param_idx, param_idx, param_idx, param_idx
             ));
             param_values.push(Box::new(search.clone()));
             param_idx += 1;
@@ -131,6 +131,9 @@ pub struct CreateProjectInput {
     pub tech_stack: Option<Vec<String>>,
     pub start_date: Option<String>,
     pub target_date: Option<String>,
+    pub icon_type: Option<String>,
+    pub icon_url: Option<String>,
+    pub icon_color: Option<String>,
 }
 
 #[command]
@@ -158,9 +161,31 @@ pub async fn projects_create(
     };
     let tech_stack = serde_json::to_string(&tech_stack_vec).unwrap_or_else(|_| "[]".into());
 
+    // Auto-detect icon if not provided
+    let (icon_type, icon_url, icon_color) = match (&data.icon_type, &data.icon_url) {
+        (Some(t), url) if t == "Custom" && url.is_some() => {
+            (t.clone(), url.clone(), data.icon_color.clone())
+        }
+        _ => {
+            if let Some(ref path) = data.local_path {
+                if let Ok(detected) = super::detect::detect_local_project(path.clone()).await {
+                    (
+                        detected.icon_type.unwrap_or_else(|| "Auto".into()),
+                        detected.icon_url,
+                        detected.icon_color,
+                    )
+                } else {
+                    ("Auto".into(), None, None)
+                }
+            } else {
+                ("Auto".into(), None, None)
+            }
+        }
+    };
+
     db.execute(
-        "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, liveUrl, domainName, techStack, startDate, targetDate, ownerId, createdAt, updatedAt)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15)",
+        "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, liveUrl, domainName, techStack, startDate, targetDate, iconType, iconUrl, iconColor, ownerId, createdAt, updatedAt)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
         rusqlite::params![
             id,
             data.name,
@@ -175,6 +200,9 @@ pub async fn projects_create(
             tech_stack,
             data.start_date,
             data.target_date,
+            icon_type,
+            icon_url,
+            icon_color,
             DEFAULT_USER_ID,
             now,
         ],
@@ -201,6 +229,9 @@ pub struct UpdateProjectInput {
     pub tech_stack: Option<Vec<String>>,
     pub start_date: Option<String>,
     pub target_date: Option<String>,
+    pub icon_type: Option<String>,
+    pub icon_url: Option<String>,
+    pub icon_color: Option<String>,
 }
 
 #[command]
@@ -235,6 +266,9 @@ pub async fn projects_update(
         add_field!(domain_name, "domainName");
         add_field!(start_date, "startDate");
         add_field!(target_date, "targetDate");
+        add_field!(icon_type, "iconType");
+        add_field!(icon_url, "iconUrl");
+        add_field!(icon_color, "iconColor");
 
         if let Some(ts) = data.tech_stack {
             sets.push(format!("techStack = ?{}", idx));
@@ -274,6 +308,59 @@ pub async fn projects_delete(
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[command]
+pub async fn projects_refresh(
+    db: State<'_, Database>,
+    id: String,
+) -> Result<JsonValue, String> {
+    let project = db
+        .query_one_json(
+            "SELECT localPath, techStack FROM projects WHERE id = ?1 AND ownerId = ?2",
+            rusqlite::params![id, DEFAULT_USER_ID],
+        )
+        .map_err(|e| e.to_string())?
+        .ok_or("PROJECT_NOT_FOUND")?;
+
+    let local_path = project.get("localPath").and_then(|v| v.as_str());
+
+    let path = local_path.ok_or("NO_LOCAL_PATH: 项目没有本地路径，无法检测")?;
+
+    // Re-detect project info
+    let detected = super::detect::detect_local_project(path.to_string()).await
+        .map_err(|e| format!("检测失败: {}", e))?;
+
+    // Update project with detected info
+    let now = crate::db::now_str();
+    let tech_stack = serde_json::to_string(&detected.tech_stack).unwrap_or_else(|_| "[]".into());
+
+    db.execute(
+        "UPDATE projects SET
+            name = COALESCE(?1, name),
+            description = COALESCE(?2, description),
+            techStack = ?3,
+            openCommand = COALESCE(?4, openCommand),
+            iconType = ?5,
+            iconUrl = ?6,
+            iconColor = ?7,
+            updatedAt = ?8
+         WHERE id = ?9",
+        rusqlite::params![
+            detected.name,
+            detected.description,
+            tech_stack,
+            detected.open_command,
+            detected.icon_type.unwrap_or_else(|| "Auto".into()),
+            detected.icon_url,
+            detected.icon_color,
+            now,
+            id,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    projects_get_by_id(db, id).await
 }
 
 #[command]

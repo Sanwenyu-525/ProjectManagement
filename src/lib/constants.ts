@@ -41,11 +41,9 @@ export function parseActivityDetails(action: string, detailsStr: string | null):
     const details = JSON.parse(detailsStr);
     switch (action) {
       case 'status_change':
-        return `${details.from || ''} → ${details.to || ''}`;
-      case 'task_created':
-        return details.title || '';
       case 'task_status_change':
         return `${details.from || ''} → ${details.to || ''}`;
+      case 'task_created':
       case 'repo_synced':
         return details.repo || '';
       default:

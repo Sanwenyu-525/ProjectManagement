@@ -16,10 +16,10 @@ const COLUMNS = [
 ];
 
 const PRIORITY_STYLES: Record<string, { color: string; bg: string }> = {
-  Low: { color: '#94a3b8', bg: '#1e293b' },
-  Medium: { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
-  High: { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
-  Critical: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.12)' },
+  Low: { color: '#9eadc0', bg: 'rgba(158, 173, 192, 0.12)' },
+  Medium: { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.10)' },
+  High: { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.10)' },
+  Critical: { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.10)' },
 };
 
 interface Task {
@@ -47,26 +47,29 @@ function SortableTaskCard({ task }: { task: Task }) {
         {...attributes}
         {...listeners}
         style={{
-          background: '#151d2e',
+          background: 'rgba(255, 255, 255, 0.35)',
           borderRadius: 8,
           padding: '12px 14px',
           marginBottom: 8,
           cursor: 'grab',
-          border: '1px solid #1e293b',
+          border: '1px solid rgba(255, 255, 255, 0.45)',
           transition: 'all 0.15s ease',
+          backdropFilter: 'blur(16px) saturate(1.2)',
+          WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.5)',
         }}
         onMouseEnter={e => {
-          e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.2)';
-          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+          e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.25)';
+          e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7)';
         }}
         onMouseLeave={e => {
-          e.currentTarget.style.borderColor = '#1e293b';
+          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.45)';
           e.currentTarget.style.boxShadow = 'none';
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-          <Text strong style={{ flex: 1, marginRight: 8, fontSize: 13, lineHeight: 1.5, color: '#f1f5f9' }}>{task.title}</Text>
-          <HolderOutlined style={{ color: '#475569', flexShrink: 0, marginTop: 2 }} />
+          <Text strong style={{ flex: 1, marginRight: 8, fontSize: 13, lineHeight: 1.5, color: '#1a1f36' }}>{task.title}</Text>
+          <HolderOutlined style={{ color: '#9eadc0', flexShrink: 0, marginTop: 2 }} />
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{
@@ -80,12 +83,12 @@ function SortableTaskCard({ task }: { task: Task }) {
             {task.priority}
           </span>
           {task.scopedRepo && (
-            <span style={{ fontSize: 11, color: '#94a3b8', background: '#1e293b', padding: '2px 8px', borderRadius: 4 }}>
+            <span style={{ fontSize: 11, color: '#6b7a99', background: 'rgba(0, 0, 0, 0.05)', padding: '2px 8px', borderRadius: 4 }}>
               {task.scopedRepo.platform}
             </span>
           )}
           {task.dueDate && (
-            <span style={{ fontSize: 11, color: '#64748b', fontFamily: "'Fira Code', monospace" }}>
+            <span style={{ fontSize: 11, color: '#9eadc0', fontFamily: "'Fira Code', monospace" }}>
               {new Date(task.dueDate).toLocaleDateString('zh-CN')}
             </span>
           )}
@@ -99,14 +102,16 @@ function TaskOverlayCard({ task }: { task: Task }) {
   return (
     <div style={{
       width: 260,
-      background: '#1a2235',
+      background: 'rgba(255, 255, 255, 0.55)',
       borderRadius: 8,
       padding: '12px 14px',
-      boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
-      border: '1px solid rgba(34, 197, 94, 0.3)',
+      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
+      border: '1px solid rgba(34, 197, 94, 0.25)',
       transform: 'rotate(1.5deg)',
+      backdropFilter: 'blur(32px) saturate(1.3)',
+      WebkitBackdropFilter: 'blur(32px) saturate(1.3)',
     }}>
-      <Text strong style={{ fontSize: 13, color: '#f1f5f9' }}>{task.title}</Text>
+      <Text strong style={{ fontSize: 13, color: '#1a1f36' }}>{task.title}</Text>
       <div style={{ marginTop: 6 }}>
         <span style={{ fontSize: 11, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)', padding: '2px 8px', borderRadius: 4 }}>
           {task.priority}
@@ -127,10 +132,10 @@ function KanbanColumn({ column, tasks }: { column: typeof COLUMNS[0]; tasks: Tas
         padding: '8px 12px',
         background: column.bg,
         borderRadius: 8,
-        border: '1px solid rgba(255, 255, 255, 0.04)',
+        border: '1px solid rgba(0, 0, 0, 0.04)',
       }}>
         <div style={{ width: 7, height: 7, borderRadius: '50%', background: column.dot, boxShadow: `0 0 6px ${column.dot}40` }} />
-        <Text strong style={{ fontSize: 12, color: '#f1f5f9', letterSpacing: '0.3px' }}>{column.label}</Text>
+        <Text strong style={{ fontSize: 12, color: '#1a1f36', letterSpacing: '0.3px' }}>{column.label}</Text>
         <span style={{
           marginLeft: 'auto',
           fontSize: 11,
@@ -151,9 +156,9 @@ function KanbanColumn({ column, tasks }: { column: typeof COLUMNS[0]; tasks: Tas
           <div style={{
             textAlign: 'center',
             padding: '28px 16px',
-            color: '#334155',
+            color: '#9eadc0',
             fontSize: 12,
-            border: '1px dashed #1e293b',
+            border: '1px dashed rgba(0, 0, 0, 0.1)',
             borderRadius: 8,
           }}>
             拖拽任务到此处

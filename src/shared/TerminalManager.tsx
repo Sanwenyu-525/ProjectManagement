@@ -6,9 +6,10 @@ import { PlusOutlined, CloseOutlined } from '@ant-design/icons';
 
 interface TerminalManagerProps {
   visible: boolean;
+  defaultCwd?: string | null;
 }
 
-export default function TerminalManager({ visible }: TerminalManagerProps) {
+export default function TerminalManager({ visible, defaultCwd }: TerminalManagerProps) {
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [theme, setTheme] = useState<TerminalTheme>('dark');
@@ -57,7 +58,15 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const createTerminal = useCallback(async (label?: string) => {
+  // Create a terminal with defaultCwd when requested externally
+  useEffect(() => {
+    if (visible && defaultCwd) {
+      createTerminal(undefined, defaultCwd);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, defaultCwd]);
+
+  const createTerminal = useCallback(async (label?: string, cwdOverride?: string) => {
     if (terminals.length >= 10) {
       console.warn('Max terminals reached');
       return;
@@ -67,9 +76,9 @@ export default function TerminalManager({ visible }: TerminalManagerProps) {
     const isWin = navigator.platform.includes('Win');
     const shell = isWin ? 'powershell.exe' : 'bash';
     const shellArgs = isWin ? ['-NoProfile'] : undefined;
-    const cwd = isWin
+    const cwd = cwdOverride || (isWin
       ? (import.meta.env.USERPROFILE || 'C:\\')
-      : (import.meta.env.HOME || '/');
+      : (import.meta.env.HOME || '/'));
 
     const newTerminal: Terminal = {
       id,

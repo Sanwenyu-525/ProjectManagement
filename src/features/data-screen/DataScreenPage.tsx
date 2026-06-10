@@ -3,22 +3,16 @@ import { Card, Spin, Button, Space, Typography, List, Tag } from 'antd';
 import { FullscreenOutlined, ReloadOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { projectsApi, timelineApi } from '../../api';
-
+import { STATUS_HEX_COLORS, ACTIVITY_ACTION_CONFIG } from '../../lib/constants';
 
 const { Title, Text } = Typography;
 
-const STATUS_COLORS: Record<string, string> = {
-  Idea: '#d9d9d9', Planning: '#1677ff', Development: '#fa8c16',
-  Testing: '#722ed1', Deployed: '#52c41a', Maintained: '#13c2c2', Archived: '#8c8c8c',
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  status_change: '状态变更', task_created: '创建任务',
-  task_status_change: '任务状态变更', repo_synced: '仓库同步',
-};
+const ACTION_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(ACTIVITY_ACTION_CONFIG).map(([k, v]) => [k, v.label])
+);
 
 function cardStyle(extend?: React.CSSProperties): React.CSSProperties {
-  return { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, ...extend };
+  return { background: 'rgba(255, 255, 255, 0.35)', border: '1px solid rgba(255, 255, 255, 0.45)', borderRadius: 12, backdropFilter: 'blur(24px) saturate(1.2)', WebkitBackdropFilter: 'blur(24px) saturate(1.2)', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6)', ...extend };
 }
 
 export default function DataScreenPage() {
@@ -98,16 +92,16 @@ export default function DataScreenPage() {
     ];
   }, [projects]);
 
-  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 100, background: '#0f172a', minHeight: '100vh' }}><Spin size="large" /></div>;
+  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 100, minHeight: '100vh' }}><Spin size="large" /></div>;
 
   return (
-    <div style={{ background: '#0f172a', minHeight: '100vh', color: '#e2e8f0', padding: 32 }}>
+    <div style={{ minHeight: '100vh', color: '#1a1f36', padding: 32 }}>
       {/* 头部 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-        <Title level={2} style={{ color: '#e2e8f0', margin: 0 }}>DevHub 数据大屏</Title>
+        <Title level={2} style={{ color: '#1a1f36', margin: 0 }}>DevHub 数据大屏</Title>
         <Space>
-          <Button ghost icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-          <Button ghost icon={<FullscreenOutlined />} onClick={toggleFullscreen}>全屏</Button>
+          <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
+          <Button icon={<FullscreenOutlined />} onClick={toggleFullscreen}>全屏</Button>
         </Space>
       </div>
 
@@ -120,7 +114,7 @@ export default function DataScreenPage() {
           { label: '远程仓库', value: repoCount, color: '#1677ff' },
         ].map((item, i) => (
           <Card key={i} style={cardStyle()}>
-            <div style={{ color: '#94a3b8', fontSize: 14, marginBottom: 8 }}>{item.label}</div>
+            <div style={{ color: '#6b7a99', fontSize: 14, marginBottom: 8 }}>{item.label}</div>
             <div style={{ color: item.color, fontSize: 40, fontWeight: 700 }}>{item.value}</div>
           </Card>
         ))}
@@ -130,15 +124,15 @@ export default function DataScreenPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* 状态分布饼图 */}
         <Card style={cardStyle()}>
-          <Title level={4} style={{ color: '#e2e8f0' }}>项目状态分布</Title>
+          <Title level={4} style={{ color: '#1a1f36' }}>项目状态分布</Title>
           <ReactECharts style={{ height: 300 }} option={{
             tooltip: { trigger: 'item' },
             series: [{
               type: 'pie', radius: ['40%', '70%'],
               itemStyle: { borderRadius: 8 },
-              label: { color: '#e2e8f0' },
+              label: { color: '#1a1f36' },
               data: Object.entries(statusCounts).map(([name, value]) => ({
-                name, value, itemStyle: { color: STATUS_COLORS[name] },
+                name, value, itemStyle: { color: STATUS_HEX_COLORS[name] },
               })),
             }],
           }} />
@@ -146,11 +140,11 @@ export default function DataScreenPage() {
 
         {/* 技术栈柱状图 */}
         <Card style={cardStyle()}>
-          <Title level={4} style={{ color: '#e2e8f0' }}>技术栈使用统计</Title>
+          <Title level={4} style={{ color: '#1a1f36' }}>技术栈使用统计</Title>
           <ReactECharts style={{ height: 300 }} option={{
             tooltip: { trigger: 'axis' },
-            xAxis: { type: 'value', axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } } },
-            yAxis: { type: 'category', data: techCounts.map(d => d[0]).reverse(), axisLabel: { color: '#e2e8f0' } },
+            xAxis: { type: 'value', axisLabel: { color: '#6b7a99' }, splitLine: { lineStyle: { color: 'rgba(0, 0, 0, 0.06)' } } },
+            yAxis: { type: 'category', data: techCounts.map(d => d[0]).reverse(), axisLabel: { color: '#1a1f36' } },
             series: [{ type: 'bar', data: techCounts.map(d => d[1]).reverse(), itemStyle: { color: '#6366F1', borderRadius: [0, 4, 4, 0] } }],
           }} />
         </Card>
@@ -160,16 +154,16 @@ export default function DataScreenPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* 健康度雷达图 */}
         <Card style={cardStyle()}>
-          <Title level={4} style={{ color: '#e2e8f0' }}>项目健康度</Title>
+          <Title level={4} style={{ color: '#1a1f36' }}>项目健康度</Title>
           {healthScores && (
             <ReactECharts style={{ height: 300 }} option={{
               tooltip: {},
               radar: {
                 indicator: healthScores.map(s => ({ name: s.name, max: 100 })),
-                axisName: { color: '#e2e8f0' },
-                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
-                splitArea: { areaStyle: { color: ['rgba(99,102,241,0.05)', 'rgba(99,102,241,0.1)'] } },
-                axisLine: { lineStyle: { color: 'rgba(255,255,255,0.2)' } },
+                axisName: { color: '#1a1f36' },
+                splitLine: { lineStyle: { color: 'rgba(0, 0, 0, 0.06)' } },
+                splitArea: { areaStyle: { color: ['rgba(99,102,241,0.03)', 'rgba(99,102,241,0.06)'] } },
+                axisLine: { lineStyle: { color: 'rgba(0, 0, 0, 0.08)' } },
               },
               series: [{
                 type: 'radar',
@@ -187,24 +181,24 @@ export default function DataScreenPage() {
 
         {/* 活动热力图 */}
         <Card style={cardStyle()}>
-          <Title level={4} style={{ color: '#e2e8f0' }}>30天活动热力图</Title>
+          <Title level={4} style={{ color: '#1a1f36' }}>30天活动热力图</Title>
           <ReactECharts style={{ height: 300 }} option={{
             tooltip: { formatter: (p: any) => `${p.data[0]}: ${p.data[1]} 次活动` },
             xAxis: {
               type: 'category',
               data: heatmapData.map(d => (d[0] as string).slice(5)),
-              axisLabel: { color: '#94a3b8', rotate: 45, fontSize: 10 },
+              axisLabel: { color: '#6b7a99', rotate: 45, fontSize: 10 },
             },
-            yAxis: { type: 'value', axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } } },
+            yAxis: { type: 'value', axisLabel: { color: '#6b7a99' }, splitLine: { lineStyle: { color: 'rgba(0, 0, 0, 0.06)' } } },
             series: [{
               type: 'bar',
               data: heatmapData.map(d => d[1]),
               itemStyle: {
                 color: (params: any) => {
                   const v = params.value as number;
-                  if (v === 0) return 'rgba(99,102,241,0.1)';
-                  if (v <= 2) return 'rgba(99,102,241,0.3)';
-                  if (v <= 5) return 'rgba(99,102,241,0.6)';
+                  if (v === 0) return 'rgba(99,102,241,0.08)';
+                  if (v <= 2) return 'rgba(99,102,241,0.25)';
+                  if (v <= 5) return 'rgba(99,102,241,0.5)';
                   return '#6366F1';
                 },
                 borderRadius: [2, 2, 0, 0],
@@ -215,18 +209,18 @@ export default function DataScreenPage() {
 
         {/* 实时活动流 */}
         <Card style={{ ...cardStyle(), maxHeight: 370, overflow: 'auto' }}>
-          <Title level={4} style={{ color: '#e2e8f0' }}>最近活动</Title>
+          <Title level={4} style={{ color: '#1a1f36' }}>最近活动</Title>
           <List
             size="small"
             dataSource={activityLogs.slice(0, 15)}
             renderItem={(log: any) => (
-              <List.Item style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '8px 0' }}>
+              <List.Item style={{ borderBottom: '1px solid rgba(0, 0, 0, 0.04)', padding: '8px 0' }}>
                 <div style={{ width: '100%' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Tag color="blue" style={{ fontSize: 11 }}>{ACTION_LABELS[log.action] || log.action}</Tag>
-                    <Text style={{ color: '#94a3b8', fontSize: 11 }}>{new Date(log.createdAt).toLocaleString('zh-CN')}</Text>
+                    <Text style={{ color: '#6b7a99', fontSize: 11 }}>{new Date(log.createdAt).toLocaleString('zh-CN')}</Text>
                   </div>
-                  <div style={{ color: '#e2e8f0', fontSize: 13, marginTop: 4 }}>{log.project?.name}</div>
+                  <div style={{ color: '#1a1f36', fontSize: 13, marginTop: 4 }}>{log.project?.name}</div>
                 </div>
               </List.Item>
             )}

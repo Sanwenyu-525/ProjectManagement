@@ -28,9 +28,9 @@
   --color-border: rgba(0, 0, 0, 0.06);
   --color-border-subtle: rgba(0, 0, 0, 0.04);
 
-  /* 玻璃效果 */
-  --color-bg-glass: rgba(255, 255, 255, 0.08);
-  --color-border-glass: rgba(255, 255, 255, 0.15);
+  /* 玻璃效果 - 增强版 */
+  --color-bg-glass: rgba(255, 255, 255, 0.15);
+  --color-border-glass: rgba(255, 255, 255, 0.25);
 
   /* 状态 */
   --color-status-done: #22c55e;

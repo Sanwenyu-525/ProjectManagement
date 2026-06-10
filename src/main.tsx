@@ -1,9 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { ConfigProvider, theme } from 'antd';
+import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import App from './App';
+import './styles/design-system.css';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -11,84 +12,83 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ConfigProvider
       locale={zhCN}
       theme={{
-        algorithm: theme.darkAlgorithm,
         token: {
           colorPrimary: '#22c55e',
           colorSuccess: '#22c55e',
           colorWarning: '#f59e0b',
           colorError: '#ef4444',
           colorInfo: '#22c55e',
-          colorBgBase: '#111827',
-          colorBgContainer: '#151d2e',
-          colorBgElevated: '#1a2235',
-          colorBgLayout: '#0b0f1a',
-          colorBorder: '#1e293b',
-          colorBorderSecondary: '#1a2235',
-          colorText: '#f1f5f9',
-          colorTextSecondary: '#94a3b8',
-          colorTextTertiary: '#64748b',
-          borderRadius: 8,
+          colorBgBase: '#ffffff',
+          colorBgContainer: 'rgba(255, 255, 255, 0.55)',
+          colorBgElevated: 'rgba(255, 255, 255, 0.72)',
+          colorBgLayout: 'transparent',
+          colorBorder: 'rgba(0, 0, 0, 0.06)',
+          colorBorderSecondary: 'rgba(0, 0, 0, 0.04)',
+          colorText: '#1a1f36',
+          colorTextSecondary: '#6b7a99',
+          colorTextTertiary: '#9eadc0',
+          borderRadius: 10,
           fontFamily: "'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif",
           fontSize: 14,
           lineHeight: 1.5,
           controlHeight: 38,
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.3)',
-          boxShadowSecondary: '0 4px 16px rgba(0, 0, 0, 0.4)',
+          boxShadow: '0 2px 12px rgba(0, 0, 0, 0.04)',
+          boxShadowSecondary: '0 6px 24px rgba(0, 0, 0, 0.06)',
         },
         components: {
           Button: {
             controlHeight: 38,
-            borderRadius: 8,
+            borderRadius: 10,
             fontWeight: 500,
-            primaryShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
+            primaryShadow: '0 2px 8px rgba(34, 197, 94, 0.25)',
           },
           Card: {
-            borderRadiusLG: 10,
+            borderRadiusLG: 12,
             paddingLG: 20,
-            colorBgContainer: '#151d2e',
+            colorBgContainer: 'rgba(255, 255, 255, 0.55)',
           },
           Input: {
             controlHeight: 38,
-            borderRadius: 8,
-            colorBgContainer: '#111827',
+            borderRadius: 10,
+            colorBgContainer: 'rgba(255, 255, 255, 0.65)',
             activeBorderColor: '#22c55e',
           },
           Select: {
             controlHeight: 38,
-            borderRadius: 8,
-            colorBgContainer: '#111827',
+            borderRadius: 10,
+            colorBgContainer: 'rgba(255, 255, 255, 0.65)',
           },
           Table: {
-            borderRadius: 10,
+            borderRadius: 12,
             colorBgContainer: 'transparent',
-            headerBg: '#1a2235',
-            headerColor: '#64748b',
-            rowHoverBg: '#1a2235',
-            colorBorderSecondary: '#1e293b',
+            headerBg: 'rgba(0, 0, 0, 0.03)',
+            headerColor: '#9eadc0',
+            rowHoverBg: 'rgba(0, 0, 0, 0.02)',
+            colorBorderSecondary: 'rgba(0, 0, 0, 0.04)',
           },
           Menu: {
             itemBorderRadius: 8,
             itemMarginInline: 8,
             itemHeight: 40,
-            darkItemBg: 'transparent',
-            darkItemSelectedBg: 'rgba(34, 197, 94, 0.12)',
-            darkItemSelectedColor: '#22c55e',
-            darkItemColor: '#64748b',
-            darkItemHoverColor: '#f1f5f9',
-            darkItemHoverBg: '#1a2235',
+            itemBg: 'transparent',
+            itemSelectedBg: 'rgba(34, 197, 94, 0.10)',
+            itemSelectedColor: '#22c55e',
+            itemColor: '#6b7a99',
+            itemHoverColor: '#1a1f36',
+            itemHoverBg: 'rgba(0, 0, 0, 0.04)',
           },
           Tabs: {
-            borderRadius: 8,
+            borderRadius: 10,
           },
           Modal: {
-            contentBg: '#111827',
-            headerBg: '#111827',
+            contentBg: 'rgba(255, 255, 255, 0.85)',
+            headerBg: 'transparent',
           },
           Dropdown: {
-            colorBgElevated: '#111827',
+            colorBgElevated: 'rgba(255, 255, 255, 0.88)',
           },
           Descriptions: {
-            colorBgContainer: '#151d2e',
+            colorBgContainer: 'rgba(255, 255, 255, 0.45)',
           },
         },
       }}
