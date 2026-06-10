@@ -72,7 +72,7 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
       termRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [terminal.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [terminal.id, onInput]);
 
   // Update theme when it changes
   useEffect(() => {
