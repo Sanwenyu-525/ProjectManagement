@@ -24,6 +24,8 @@ export const projectsApi = {
     cmd('projects_get_stats', { id }),
   open: (id: string) =>
     cmd('projects_open', { id }),
+  refresh: (id: string) =>
+    cmd<Record<string, any>>('projects_refresh', { id }).then(normalizeProject),
 };
 
 // ==================== Tasks ====================
@@ -130,11 +132,33 @@ export const documentsApi = {
 
 // ==================== Terminal ====================
 
-export const terminalApi = {
+interface TerminalApi {
+  start: (projectId: string, commandStr: string, cwd: string) => Promise<string>;
+  startShell: (terminalId: string, shell: string, cwd: string) => Promise<string>;
+  stop: (terminalId: string) => Promise<any>;
+  input: (terminalId: string, data: string) => Promise<any>;
+}
+
+export const terminalApi: TerminalApi = {
   start: (projectId: string, commandStr: string, cwd: string) =>
     cmd<string>('terminal_start', { projectId, commandStr, cwd }),
+  startShell: (terminalId: string, shell: string, cwd: string) =>
+    cmd<string>('terminal_start_shell', { terminalId, shell, cwd }),
   stop: (terminalId: string) =>
     cmd('terminal_stop', { terminalId }),
   input: (terminalId: string, data: string) =>
     cmd('terminal_input', { terminalId, data }),
+};
+
+// ==================== Dependencies ====================
+
+export const dependenciesApi = {
+  detect: (projectIds: string[]) =>
+    cmd('detect_project_dependencies', { projectIds }),
+  getLaunchOrder: (projectIds: string[], respectDependencies: boolean) =>
+    cmd<string[]>('get_launch_order', { projectIds, respectDependencies }),
+  analyzeDockerCompose: (path: string) =>
+    cmd('analyze_docker_compose', { path }),
+  detectMonorepo: (path: string) =>
+    cmd('detect_monorepo_structure', { path }),
 };
