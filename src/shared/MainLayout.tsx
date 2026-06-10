@@ -333,7 +333,7 @@ export default function MainLayout() {
         {/* Global terminal panel */}
         <div
           style={{
-            height: terminalOpen ? 300 : 0,
+            height: terminalOpen ? 400 : 0,
             transition: 'height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
             overflow: 'hidden',
             position: 'relative',
