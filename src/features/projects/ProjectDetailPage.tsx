@@ -8,6 +8,17 @@ import KanbanBoard from '../../shared/KanbanBoard';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { STATUS_COLORS } from '../../lib/constants';
 
+function TerminalTab({ project }: { project: any }) {
+  const { setTerminalOpen, setDefaultCwd } = useTerminalStore();
+
+  useEffect(() => {
+    setDefaultCwd(project.localPath);
+    setTerminalOpen(true);
+  }, [project, setDefaultCwd, setTerminalOpen]);
+
+  return null;
+}
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -337,28 +348,7 @@ export default function ProjectDetailPage() {
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
             { key: 'terminal', label: '终端', children: (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, color: '#6b7a99' }}>
-                <CodeOutlined style={{ fontSize: 32, marginBottom: 12, color: '#9eadc0' }} />
-                <div style={{ fontSize: 14, marginBottom: 8 }}>终端已在全局面板中打开</div>
-                <button
-                  onClick={() => {
-                    setDefaultCwd(project.localPath);
-                    setTerminalOpen(true);
-                  }}
-                  style={{
-                    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '8px 16px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: 500,
-                  }}
-                >
-                  <CodeOutlined /> 在全局终端中打开
-                </button>
-              </div>
+              <TerminalTab project={project} />
             ) },
           ]}
         />
