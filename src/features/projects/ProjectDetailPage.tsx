@@ -8,17 +8,6 @@ import KanbanBoard from '../../shared/KanbanBoard';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { STATUS_COLORS } from '../../lib/constants';
 
-function TerminalTab({ project }: { project: any }) {
-  const { setTerminalOpen, setDefaultCwd } = useTerminalStore();
-
-  useEffect(() => {
-    setDefaultCwd(project.localPath);
-    setTerminalOpen(true);
-  }, [project, setDefaultCwd, setTerminalOpen]);
-
-  return null;
-}
-
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -319,6 +308,31 @@ export default function ProjectDetailPage() {
             >
               <PlayCircleOutlined /> {launching ? '启动中...' : '启动项目'}
               </button>
+              <button
+                onClick={() => {
+                  setDefaultCwd(project.localPath);
+                  setTerminalOpen(true);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 10,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(34, 197, 94, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+              >
+                <CodeOutlined /> 打开终端
+              </button>
             </div>
           )}
         </div>
@@ -339,13 +353,7 @@ export default function ProjectDetailPage() {
       }}>
         <Tabs
           activeKey={activeTab}
-          onChange={(key) => {
-            setActiveTab(key);
-            if (key === 'terminal') {
-              setDefaultCwd(project.localPath);
-              setTerminalOpen(true);
-            }
-          }}
+          onChange={setActiveTab}
           items={[
             { key: 'overview', label: '概览', children: <OverviewTab project={project} /> },
             { key: 'repos', label: `仓库 (${project.remoteRepos?.length || 0})`, children: <ReposTab projectId={project.id} repos={project.remoteRepos || []} onRefresh={() => loadProject(project.id)} /> },
@@ -353,9 +361,6 @@ export default function ProjectDetailPage() {
             { key: 'documents', label: `文档 (${project._count?.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
-            { key: 'terminal', label: '终端', children: (
-              <TerminalTab project={project} />
-            ) },
           ]}
         />
       </div>
