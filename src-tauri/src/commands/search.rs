@@ -9,7 +9,7 @@ pub async fn global_search(db: State<'_, Database>, q: String) -> Result<JsonVal
 
     let projects = db
         .query_json(
-            "SELECT id, name, description, status FROM projects
+            "SELECT id, name, description, status, iconType, iconUrl, iconColor, techStack FROM projects
              WHERE ownerId = ?1 AND (name LIKE ?2 OR description LIKE ?2)
              LIMIT 10",
             rusqlite::params![DEFAULT_USER_ID, pattern],

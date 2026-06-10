@@ -1,17 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Descriptions, Tag, Button, Space, Spin, Empty, message, Table, Modal, Form, Input, Select, Timeline } from 'antd';
-import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, StopOutlined } from '@ant-design/icons';
-import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi, terminalApi } from '../../api';
+import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined } from '@ant-design/icons';
+import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
 import KanbanBoard from '../../shared/KanbanBoard';
-import TerminalPanel from '../../shared/TerminalPanel';
-
-
-const STATUS_COLORS: Record<string, string> = {
-  Idea: 'default', Planning: 'blue', Development: 'orange',
-  Testing: 'purple', Deployed: 'green', Maintained: 'cyan', Archived: 'default',
-};
+import { useTerminalStore } from '../../stores/terminalStore';
+import { STATUS_COLORS } from '../../lib/constants';
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,8 +16,73 @@ export default function ProjectDetailPage() {
   const [cmdModalOpen, setCmdModalOpen] = useState(false);
   const [cmdInput, setCmdInput] = useState('');
   const [launching, setLaunching] = useState(false);
-  const [terminalId, setTerminalId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const { setTerminalOpen, setDefaultCwd } = useTerminalStore();
   const [activeTab, setActiveTab] = useState('overview');
+
+  // Generate launch hints based on project tech stack and characteristics
+  const getLaunchHints = (proj: any): string[] => {
+    const hints: string[] = [];
+    const techStack = proj.techStack || [];
+    const command = proj.openCommand || '';
+
+    // Mobile app development hints
+    if (techStack.some((t: string) => /react.native|flutter|ionic/i.test(t))) {
+      hints.push('移动端项目：启动后需要在模拟器或真机上运行');
+    }
+
+    // React Native specific
+    if (techStack.some((t: string) => /react.native/i.test(t))) {
+      if (command.includes('android')) {
+        hints.push('Android 调试：确保已连接设备或启动模拟器');
+      }
+      if (command.includes('ios')) {
+        hints.push('iOS 调试：需要在 macOS 上运行，确保 Xcode 已安装');
+      }
+      if (!command.includes('android') && !command.includes('ios')) {
+        hints.push('React Native：请确保已启动模拟器或连接真机');
+      }
+    }
+
+    // Flutter specific
+    if (techStack.some((t: string) => /flutter/i.test(t))) {
+      hints.push('Flutter：确保 Flutter SDK 已安装，设备已连接');
+    }
+
+    // Electron/Desktop app hints
+    if (techStack.some((t: string) => /electron|tauri/i.test(t))) {
+      hints.push('桌面应用：将启动独立的桌面窗口');
+    }
+
+    // Server/Backend hints
+    if (techStack.some((t: string) => /express|fastify|nest|django|flask|spring|rails/i.test(t))) {
+      hints.push('后端服务：启动后可通过浏览器访问应用');
+    }
+
+    // Docker hints
+    if (techStack.some((t: string) => /docker|kubernetes|k8s/i.test(t))) {
+      hints.push('容器化应用：确保 Docker 已安装并运行');
+    }
+
+    // Python specific
+    if (techStack.some((t: string) => /python|flask|django/i.test(t))) {
+      hints.push('Python 项目：确保已激活虚拟环境');
+    }
+
+    // Database required
+    if (techStack.some((t: string) => /postgres|mysql|mongodb|redis|sql/i.test(t))) {
+      hints.push('数据库依赖：确保数据库服务已启动');
+    }
+
+    // Node.js specific
+    if (techStack.some((t: string) => /node|express|fastify|nest/i.test(t))) {
+      if (command.includes('dev')) {
+        hints.push('开发服务器：启动后支持热重载');
+      }
+    }
+
+    return hints;
+  };
 
   useEffect(() => {
     if (id) loadProject(id);
@@ -46,11 +106,56 @@ export default function ProjectDetailPage() {
       setCmdModalOpen(true);
       return;
     }
+
+    // Show launch confirmation with special hints
+    const launchHints = getLaunchHints(project);
+
+    if (launchHints.length > 0) {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: '启动项目',
+          icon: <PlayCircleOutlined style={{ color: '#52c41a' }} />,
+          width: 520,
+          content: (
+            <div>
+              <div style={{ marginBottom: 12, color: '#6b7a99', fontSize: 13 }}>
+                即将启动项目：<strong style={{ color: '#1a1f36' }}>{project.name}</strong>
+              </div>
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                borderRadius: 8,
+                padding: '12px 14px',
+                marginBottom: 12,
+              }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#d97706' }}>
+                  <ClockCircleOutlined style={{ marginRight: 6 }} />
+                  启动提示
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, lineHeight: 2, color: '#92400e' }}>
+                  {launchHints.map((hint, i) => (
+                    <li key={i}>{hint}</li>
+                  ))}
+                </ul>
+              </div>
+              <div style={{ fontSize: 12, color: '#9eadc0' }}>
+                启动命令：<code style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{project.openCommand}</code>
+              </div>
+            </div>
+          ),
+          okText: '继续启动',
+          cancelText: '取消',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      });
+      if (!confirmed) return;
+    }
+
     setLaunching(true);
     try {
-      const tid = await terminalApi.start(project.id, project.openCommand, project.localPath);
-      setTerminalId(tid);
-      setActiveTab('terminal');
+      setDefaultCwd(project.localPath);
+      setTerminalOpen(true);
       message.success('项目已启动');
     } catch (e: unknown) {
       message.warning(String(e) || '启动失败');
@@ -59,13 +164,21 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function handleStop() {
-    if (!terminalId) return;
+  async function handleRefresh() {
+    if (!project?.localPath) {
+      message.warning('项目没有本地路径，无法检测');
+      return;
+    }
+
+    setRefreshing(true);
     try {
-      await terminalApi.stop(terminalId);
-      message.info('已停止');
+      const updated = await projectsApi.refresh(project.id);
+      setProject(updated);
+      message.success('项目信息已更新');
     } catch (e: unknown) {
-      message.warning(String(e) || '停止失败');
+      message.warning(String(e) || '刷新失败');
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -75,15 +188,11 @@ export default function ProjectDetailPage() {
       return;
     }
     try {
-      await projectsApi.update(project.id, { openCommand: cmdInput.trim() });
+      const updated = await projectsApi.update(project.id, { openCommand: cmdInput.trim() });
       setCmdModalOpen(false);
-      // Reload project, then launch via terminal
-      const data = await projectsApi.getById(project.id);
-      const updated = data;
       setProject(updated);
-      const tid = await terminalApi.start(project.id, cmdInput.trim(), updated.localPath);
-      setTerminalId(tid);
-      setActiveTab('terminal');
+      setDefaultCwd(updated.localPath);
+      setTerminalOpen(true);
       message.success('项目已启动');
     } catch (e: unknown) {
       message.error(String(e) || '操作失败');
@@ -102,7 +211,7 @@ export default function ProjectDetailPage() {
           display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
-          color: '#64748b',
+          color: '#6b7a99',
           fontSize: 13,
           fontWeight: 500,
           cursor: 'pointer',
@@ -111,20 +220,22 @@ export default function ProjectDetailPage() {
           borderRadius: 6,
           transition: 'all 0.15s ease',
         }}
-        onMouseEnter={e => { e.currentTarget.style.color = '#0f111a'; e.currentTarget.style.background = '#f1f5f9'; }}
-        onMouseLeave={e => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = 'transparent'; }}
+        onMouseEnter={e => { e.currentTarget.style.color = '#1a1f36'; e.currentTarget.style.background = 'rgba(0, 0, 0, 0.04)'; }}
+        onMouseLeave={e => { e.currentTarget.style.color = '#6b7a99'; e.currentTarget.style.background = 'transparent'; }}
       >
         <ArrowLeftOutlined /> 返回项目列表
       </div>
 
       {/* Project header card */}
       <div className="animate-in" style={{
-        background: '#fff',
+        background: 'rgba(255, 255, 255, 0.35)',
         borderRadius: 14,
-        border: '1px solid #f1f5f9',
-        boxShadow: '0 1px 3px rgba(15, 17, 26, 0.04)',
+        border: '1px solid rgba(255, 255, 255, 0.45)',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
         padding: '28px 32px',
         marginBottom: 20,
+        backdropFilter: 'blur(24px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(24px) saturate(1.2)',
       }}>
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <ProjectIcon
@@ -137,23 +248,46 @@ export default function ProjectDetailPage() {
             style={{ borderRadius: 14 }}
           />
           <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', color: '#0f111a' }}>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', color: '#1a1f36' }}>
               {project.name}
             </h2>
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
               <Tag color={STATUS_COLORS[project.status]}>{project.status}</Tag>
-              <Tag style={{ background: '#f1f5f9', color: '#64748b' }}>{project.priority}</Tag>
-              <Tag style={{ background: '#f1f5f9', color: '#64748b' }}>{project.source}</Tag>
+              <Tag style={{ background: 'rgba(0, 0, 0, 0.05)', color: '#6b7a99' }}>{project.priority}</Tag>
+              <Tag style={{ background: 'rgba(0, 0, 0, 0.05)', color: '#6b7a99' }}>{project.source}</Tag>
               {project.techStack?.slice(0, 3).map((t: string) => (
-                <Tag key={t} style={{ background: '#fef3c7', color: '#92400e' }}>{t}</Tag>
+                <Tag key={t} style={{ background: 'rgba(245, 158, 11, 0.10)', color: '#b45309' }}>{t}</Tag>
               ))}
             </div>
           </div>
           {project.localPath && (
             <div style={{ display: 'flex', gap: 8 }}>
               <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 10,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(139, 92, 246, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(139, 92, 246, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+              >
+                <ReloadOutlined spin={refreshing} /> {refreshing ? '检测中...' : '刷新信息'}
+              </button>
+              <button
                 onClick={handleLaunch}
-                disabled={launching || !!terminalId}
+                disabled={launching}
                 style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -167,52 +301,30 @@ export default function ProjectDetailPage() {
                 fontWeight: 600,
                 cursor: 'pointer',
                 boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
-                transition: 'all 0.2s ease',
+                transition: 'all 0.15s ease',
               }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(245, 158, 11, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(245, 158, 11, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
             >
               <PlayCircleOutlined /> {launching ? '启动中...' : '启动项目'}
               </button>
-              {terminalId && (
-                <button
-                  onClick={handleStop}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '10px 20px',
-                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 10,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(239, 68, 68, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-                >
-                  <StopOutlined /> 停止
-                </button>
-              )}
             </div>
           )}
         </div>
         {project.description && (
-          <p style={{ color: '#64748b', marginTop: 16, fontSize: 14, lineHeight: 1.6 }}>{project.description}</p>
+          <p style={{ color: '#6b7a99', marginTop: 16, fontSize: 14, lineHeight: 1.6 }}>{project.description}</p>
         )}
       </div>
 
       {/* Tabs content */}
       <div className="animate-in animate-in-delay-2" style={{
-        background: '#fff',
+        background: 'rgba(255, 255, 255, 0.35)',
         borderRadius: 14,
-        border: '1px solid #f1f5f9',
-        boxShadow: '0 1px 3px rgba(15, 17, 26, 0.04)',
+        border: '1px solid rgba(255, 255, 255, 0.45)',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
         padding: '4px 24px 24px',
+        backdropFilter: 'blur(24px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(24px) saturate(1.2)',
       }}>
         <Tabs
           activeKey={activeTab}
@@ -224,7 +336,30 @@ export default function ProjectDetailPage() {
             { key: 'documents', label: `文档 (${project._count?.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
-            { key: 'terminal', label: '终端', children: <TerminalPanel terminalId={terminalId} /> },
+            { key: 'terminal', label: '终端', children: (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, color: '#6b7a99' }}>
+                <CodeOutlined style={{ fontSize: 32, marginBottom: 12, color: '#9eadc0' }} />
+                <div style={{ fontSize: 14, marginBottom: 8 }}>终端已在全局面板中打开</div>
+                <button
+                  onClick={() => {
+                    setDefaultCwd(project.localPath);
+                    setTerminalOpen(true);
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  <CodeOutlined /> 在全局终端中打开
+                </button>
+              </div>
+            ) },
           ]}
         />
       </div>
@@ -238,7 +373,7 @@ export default function ProjectDetailPage() {
         okText="保存并启动"
         cancelText="取消"
       >
-        <p style={{ color: '#64748b', marginBottom: 12 }}>
+        <p style={{ color: '#6b7a99', marginBottom: 12 }}>
           该项目尚未配置启动命令，设置后可一键启动开发环境。
         </p>
         <Input
@@ -692,9 +827,9 @@ function ProjectTimelineTab({ projectId }: { projectId: string }) {
               <Space>
                 <Tag color={action.color}>{action.label}</Tag>
                 <span>{log.entityType}</span>
-                {details && <span style={{ color: '#666' }}>- {details}</span>}
+                {details && <span style={{ color: '#6b7a99' }}>- {details}</span>}
               </Space>
-              <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: '#9eadc0', marginTop: 2 }}>
                 {new Date(log.createdAt).toLocaleString('zh-CN')}
               </div>
             </div>

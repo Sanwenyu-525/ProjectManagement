@@ -1,23 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Avatar, Dropdown, Input, Modal, List, Tag, Typography } from 'antd';
+import { Layout, Menu, Avatar, Dropdown } from 'antd';
 import {
   DashboardOutlined,
   ProjectOutlined,
   BarChartOutlined,
   UserOutlined,
   FieldTimeOutlined,
-  SearchOutlined,
   SettingOutlined,
   CodeOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/authStore';
-import { searchApi } from '../api';
+import { useTerminalStore } from '../stores/terminalStore';
 import GlobalTerminalPanel from './GlobalTerminalPanel';
 import SearchBox from './components/SearchBox';
 
 const { Header, Sider, Content } = Layout;
-const { Text } = Typography;
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
@@ -31,43 +29,25 @@ export default function MainLayout() {
   const location = useLocation();
   const { user } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any>(null);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const { terminalOpen, setTerminalOpen, defaultCwd } = useTerminalStore();
   const [terminalHeight, setTerminalHeight] = useState(400);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ dragging: false, startY: 0, startHeight: 0 });
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
       if ((e.ctrlKey || e.metaKey) && e.key === '`') {
         e.preventDefault();
-        setTerminalOpen(prev => !prev);
+        setTerminalOpen(!terminalOpen);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [terminalOpen, setTerminalOpen]);
 
   const userMenuItems = [
     { key: 'settings', icon: <SettingOutlined />, label: '设置', onClick: () => navigate('/settings') },
   ];
-
-  const handleSearch = async (value: string) => {
-    if (!value.trim()) { setSearchResults(null); return; }
-    setSearchLoading(true);
-    try {
-      const data = await searchApi.search(value);
-      setSearchResults(data);
-    } catch { setSearchResults(null); }
-    finally { setSearchLoading(false); }
-  };
 
   // Terminal drag-to-resize handlers
   const handleDragStart = (e: React.MouseEvent) => {
@@ -206,7 +186,7 @@ export default function MainLayout() {
           {/* 用户菜单 - 右侧 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
-              onClick={() => setTerminalOpen(prev => !prev)}
+              onClick={() => setTerminalOpen(!terminalOpen)}
               title="终端 (Ctrl+`)"
               style={{
                 background: terminalOpen ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
@@ -229,20 +209,32 @@ export default function MainLayout() {
               <span>终端</span>
             </button>
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              cursor: 'pointer',
-              padding: '6px 12px',
-              borderRadius: 8,
-              transition: 'background 0.15s ease',
-            }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.4)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                padding: '6px 10px',
+                borderRadius: 8,
+                border: '1px solid transparent',
+                background: 'transparent',
+                color: '#1a1f36',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)';
+                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+                e.currentTarget.style.color = '#16a34a';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'transparent';
+                e.currentTarget.style.color = '#1a1f36';
+              }}
             >
               <Avatar
-                size={32}
+                size={26}
                 icon={<UserOutlined />}
                 style={{
                   background: 'linear-gradient(135deg, #22c55e, #16a34a)',
@@ -254,102 +246,6 @@ export default function MainLayout() {
           </Dropdown>
           </div>
         </Header>
-
-        {/* Search modal */}
-        <Modal
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#1a1f36' }}>
-              <SearchOutlined style={{ color: '#22c55e' }} />
-              <span style={{ fontWeight: 600 }}>全局搜索</span>
-            </div>
-          }
-          open={searchOpen}
-          onCancel={() => { setSearchOpen(false); setSearchQuery(''); setSearchResults(null); }}
-          footer={null}
-          width={520}
-        >
-          <Input.Search
-            placeholder="输入关键词搜索..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onSearch={handleSearch}
-            loading={searchLoading}
-            size="large"
-            style={{ marginBottom: 16, borderRadius: 8 }}
-            autoFocus
-          />
-          {searchResults && (
-            <div>
-              {(searchResults.projects?.length || 0) + (searchResults.tasks?.length || 0) + (searchResults.documents?.length || 0) === 0 ? (
-                <div style={{ textAlign: 'center', padding: 32, color: '#9eadc0' }}>未找到匹配结果</div>
-              ) : (
-                <>
-                  {searchResults.projects.length > 0 && (
-                    <>
-                      <Text style={{ display: 'block', marginBottom: 8, color: '#9eadc0', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
-                        项目 ({searchResults.projects.length})
-                      </Text>
-                      <List
-                        size="small"
-                        dataSource={searchResults.projects}
-                        renderItem={(item: any) => (
-                          <List.Item
-                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#1a1f36' }}
-                            onClick={() => { navigate(`/projects/${item.id}`); setSearchOpen(false); }}
-                          >
-                            <Tag color="green" style={{ borderRadius: 4, fontSize: 11 }}>项目</Tag> {item.name}
-                          </List.Item>
-                        )}
-                        style={{ marginBottom: 16 }}
-                      />
-                    </>
-                  )}
-                  {searchResults.tasks.length > 0 && (
-                    <>
-                      <Text style={{ display: 'block', marginBottom: 8, color: '#9eadc0', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
-                        任务 ({searchResults.tasks.length})
-                      </Text>
-                      <List
-                        size="small"
-                        dataSource={searchResults.tasks}
-                        renderItem={(item: any) => (
-                          <List.Item
-                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#1a1f36' }}
-                            onClick={() => { navigate(`/projects/${item.projectId}`); setSearchOpen(false); }}
-                          >
-                            <Tag color="amber" style={{ borderRadius: 4, fontSize: 11 }}>任务</Tag> {item.title}
-                            {item.projectName && <Text style={{ marginLeft: 8, color: '#9eadc0' }}>({item.projectName})</Text>}
-                          </List.Item>
-                        )}
-                        style={{ marginBottom: 16 }}
-                      />
-                    </>
-                  )}
-                  {searchResults.documents.length > 0 && (
-                    <>
-                      <Text style={{ display: 'block', marginBottom: 8, color: '#9eadc0', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
-                        文档 ({searchResults.documents.length})
-                      </Text>
-                      <List
-                        size="small"
-                        dataSource={searchResults.documents}
-                        renderItem={(item: any) => (
-                          <List.Item
-                            style={{ cursor: 'pointer', borderRadius: 6, padding: '6px 10px', marginBottom: 2, color: '#1a1f36' }}
-                            onClick={() => { navigate(`/projects/${item.projectId}`); setSearchOpen(false); }}
-                          >
-                            <Tag style={{ borderRadius: 4, fontSize: 11, background: 'rgba(0, 0, 0, 0.05)', color: '#6b7a99' }}>文档</Tag> {item.title}
-                            {item.projectName && <Text style={{ marginLeft: 8, color: '#9eadc0' }}>({item.projectName})</Text>}
-                          </List.Item>
-                        )}
-                      />
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </Modal>
 
         <Content style={{
           background: 'transparent',
@@ -399,7 +295,7 @@ export default function MainLayout() {
               onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
             />
           </div>
-          <GlobalTerminalPanel visible={terminalOpen} />
+          <GlobalTerminalPanel visible={terminalOpen} defaultCwd={defaultCwd} />
         </div>
       </Layout>
     </Layout>
