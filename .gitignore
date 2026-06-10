@@ -7,6 +7,9 @@ src-tauri/target/
 # Vite build output
 dist/
 
+# TypeScript build info
+tsconfig.tsbuildinfo
+
 # Database files
 *.db
 *.db-shm
@@ -26,3 +29,23 @@ Thumbs.db
 
 # Worktrees
 .worktrees
+
+# Claude Code
+.claude/
+
+# Superpowers
+.superpowers/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Build artifacts
+*.tsbuildinfo
+
+# User-specific files
+ChatGPT Image*
