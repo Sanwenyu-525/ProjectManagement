@@ -132,7 +132,14 @@ function ProjectStatusCard({ project }: { project: any }) {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ProjectIcon name={project.name} techStack={project.techStack} size={32} />
+            <ProjectIcon
+              name={project.name}
+              iconType={project.iconType}
+              iconUrl={project.iconUrl}
+              iconColor={project.iconColor}
+              techStack={project.techStack}
+              size={32}
+            />
             <div>
               <Tooltip title={project.name}>
                 <div style={{ fontWeight: 600, fontSize: 14, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

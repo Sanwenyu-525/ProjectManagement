@@ -116,19 +116,6 @@ export default function MainLayout() {
           }}
           onClick={() => navigate('/')}
         >
-          <div style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            boxShadow: '0 2px 12px rgba(34, 197, 94, 0.2)',
-          }}>
-            <CodeOutlined style={{ color: '#fff', fontSize: 15 }} />
-          </div>
           {!collapsed && (
             <span style={{
               color: '#1a1f36',

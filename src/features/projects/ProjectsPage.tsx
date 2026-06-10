@@ -1055,9 +1055,6 @@ export default function ProjectsPage() {
                     display: 'flex',
                     gap: 4,
                     zIndex: 1,
-                    background: 'rgba(255,255,255,0.9)',
-                    borderRadius: 6,
-                    padding: 4,
                   }}>
                     <Tooltip title="刷新检测">
                       <Button
