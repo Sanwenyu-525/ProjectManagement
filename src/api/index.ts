@@ -130,9 +130,18 @@ export const documentsApi = {
 
 // ==================== Terminal ====================
 
-export const terminalApi = {
+interface TerminalApi {
+  start: (projectId: string, commandStr: string, cwd: string) => Promise<string>;
+  startShell: (terminalId: string, shell: string, cwd: string) => Promise<string>;
+  stop: (terminalId: string) => Promise<any>;
+  input: (terminalId: string, data: string) => Promise<any>;
+}
+
+export const terminalApi: TerminalApi = {
   start: (projectId: string, commandStr: string, cwd: string) =>
     cmd<string>('terminal_start', { projectId, commandStr, cwd }),
+  startShell: (terminalId: string, shell: string, cwd: string) =>
+    cmd<string>('terminal_start_shell', { terminalId, shell, cwd }),
   stop: (terminalId: string) =>
     cmd('terminal_stop', { terminalId }),
   input: (terminalId: string, data: string) =>
