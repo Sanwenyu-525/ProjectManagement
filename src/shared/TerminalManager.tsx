@@ -58,9 +58,9 @@ export default function TerminalManager({ visible, defaultCwd }: TerminalManager
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  // Create a terminal with defaultCwd when requested externally
+  // Create a terminal with defaultCwd when requested externally (only if no active terminal)
   useEffect(() => {
-    if (visible && defaultCwd) {
+    if (visible && defaultCwd && terminals.length === 0) {
       createTerminal(undefined, defaultCwd);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
