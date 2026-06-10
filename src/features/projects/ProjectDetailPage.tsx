@@ -339,7 +339,13 @@ export default function ProjectDetailPage() {
       }}>
         <Tabs
           activeKey={activeTab}
-          onChange={setActiveTab}
+          onChange={(key) => {
+            setActiveTab(key);
+            if (key === 'terminal') {
+              setDefaultCwd(project.localPath);
+              setTerminalOpen(true);
+            }
+          }}
           items={[
             { key: 'overview', label: '概览', children: <OverviewTab project={project} /> },
             { key: 'repos', label: `仓库 (${project.remoteRepos?.length || 0})`, children: <ReposTab projectId={project.id} repos={project.remoteRepos || []} onRefresh={() => loadProject(project.id)} /> },
