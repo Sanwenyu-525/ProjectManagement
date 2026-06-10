@@ -116,6 +116,16 @@ export default function MainLayout() {
           }}
           onClick={() => navigate('/')}
         >
+          <img
+            src="/icon.png"
+            alt="DevHub"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              flexShrink: 0,
+            }}
+          />
           {!collapsed && (
             <span style={{
               color: '#1a1f36',
