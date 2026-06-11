@@ -35,24 +35,24 @@ export default function ProjectDetailPage() {
 
   async function handleLaunch() {
     if (!project?.localPath) return;
-    const cmd = project.frontendCommand || project.backendCommand || project.openCommand;
+    // Re-fetch to get latest commands (state may be stale after config save)
+    const fresh = await projectsApi.getById(project.id);
+    setProject(fresh);
+    const cmd = fresh.frontendCommand || fresh.backendCommand || fresh.openCommand;
     if (!cmd) {
       message.warning('请先在"配置"标签页中设置启动命令');
       setActiveTab('config');
       return;
     }
-    // For monorepos with both frontend and backend commands,
-    // the command was detected from a subdirectory (frontend/web/client or backend/server/api).
-    // Try to find the correct cwd by checking common subdirectories.
-    let cwd = project.localPath;
-    if (project.frontendCommand && project.backendCommand && cmd === project.frontendCommand) {
+    let cwd = fresh.localPath;
+    if (fresh.frontendCommand && fresh.backendCommand && cmd === fresh.frontendCommand) {
       for (const sub of ['frontend', 'web', 'client']) {
-        cwd = `${project.localPath}/${sub}`;
+        cwd = `${fresh.localPath}/${sub}`;
         break;
       }
-    } else if (project.frontendCommand && project.backendCommand && cmd === project.backendCommand) {
+    } else if (fresh.frontendCommand && fresh.backendCommand && cmd === fresh.backendCommand) {
       for (const sub of ['backend', 'server', 'api']) {
-        cwd = `${project.localPath}/${sub}`;
+        cwd = `${fresh.localPath}/${sub}`;
         break;
       }
     }
