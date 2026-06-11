@@ -269,7 +269,7 @@ export default function ProjectDetailPage() {
             { key: 'tasks', label: `任务 (${project._count?.tasks || 0})`, children: <TasksTab projectId={project.id} repos={project.remoteRepos || []} /> },
             { key: 'documents', label: `文档 (${project._count?.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
-            { key: 'config', label: '配置', children: <ConfigTab project={project} onSaved={(p) => setProject(p)} /> },
+            { key: 'config', label: '配置', children: <ConfigTab project={project} onSaved={() => loadProject(project.id)} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
           ]}
         />
