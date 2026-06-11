@@ -230,6 +230,13 @@ export default function ProjectDetailPage() {
     }
   }
 
+  function handleOpenCmdModal() {
+    // Load existing commands when opening the modal
+    setFrontendCmdInput(project?.frontendCommand || project?.openCommand || '');
+    setBackendCmdInput(project?.backendCommand || '');
+    setCmdModalOpen(true);
+  }
+
   async function handleRefresh() {
     if (!project?.localPath) {
       message.warning('项目没有本地路径，无法检测');
@@ -354,6 +361,28 @@ export default function ProjectDetailPage() {
                 onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(139, 92, 246, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
               >
                 <ReloadOutlined spin={refreshing} /> {refreshing ? '检测中...' : '刷新信息'}
+              </button>
+              <button
+                onClick={handleOpenCmdModal}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 10,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(99, 102, 241, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+              >
+                <CodeOutlined /> 设置启动命令
               </button>
               <button
                 onClick={handleLaunch}
