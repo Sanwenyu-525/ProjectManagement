@@ -53,6 +53,10 @@ export default function TerminalManager({ visible, defaultCwd, defaultCommand }:
     }
   }, [visible, terminals]);
 
+  // Track pending command to execute after terminal is created.
+  // Uses a ref + effect to survive React StrictMode double-firing.
+  const pendingCommandRef = useRef<string | null>(null);
+
   // Auto-create a terminal when panel opens with no active terminals
   // If defaultCwd is provided, use it; otherwise use default path
   useEffect(() => {
@@ -62,15 +66,21 @@ export default function TerminalManager({ visible, defaultCwd, defaultCommand }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  // Execute defaultCommand in the active terminal after it's ready
+  // When defaultCommand changes, store it as pending
   useEffect(() => {
-    if (defaultCommand && activeId && terminals.length > 0) {
-      const timer = setTimeout(() => {
-        terminalApi.input(activeId, defaultCommand + '\r');
-      }, 300);
-      return () => clearTimeout(timer);
+    if (defaultCommand) {
+      pendingCommandRef.current = defaultCommand;
     }
-  }, [defaultCommand, activeId, terminals.length]);
+  }, [defaultCommand]);
+
+  // Execute pending command once a terminal is ready
+  useEffect(() => {
+    if (pendingCommandRef.current && activeId && terminals.length > 0) {
+      const cmd = pendingCommandRef.current;
+      pendingCommandRef.current = null;
+      terminalApi.input(activeId, cmd + '\r').catch(console.error);
+    }
+  }, [activeId, terminals.length]);
 
   const createTerminal = useCallback(async (label?: string, cwdOverride?: string) => {
     if (terminals.length >= 10) {
