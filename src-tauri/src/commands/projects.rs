@@ -126,6 +126,8 @@ pub struct CreateProjectInput {
     pub source: Option<String>,
     pub local_path: Option<String>,
     pub open_command: Option<String>,
+    pub frontend_command: Option<String>,
+    pub backend_command: Option<String>,
     pub live_url: Option<String>,
     pub domain_name: Option<String>,
     pub tech_stack: Option<Vec<String>>,
@@ -184,8 +186,8 @@ pub async fn projects_create(
     };
 
     db.execute(
-        "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, liveUrl, domainName, techStack, startDate, targetDate, iconType, iconUrl, iconColor, ownerId, createdAt, updatedAt)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
+        "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, frontendCommand, backendCommand, liveUrl, domainName, techStack, startDate, targetDate, iconType, iconUrl, iconColor, ownerId, createdAt, updatedAt)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?20)",
         rusqlite::params![
             id,
             data.name,
@@ -195,6 +197,8 @@ pub async fn projects_create(
             data.source.unwrap_or_else(|| "Local".into()),
             data.local_path,
             data.open_command,
+            data.frontend_command,
+            data.backend_command,
             data.live_url,
             data.domain_name,
             tech_stack,
@@ -224,6 +228,8 @@ pub struct UpdateProjectInput {
     pub source: Option<String>,
     pub local_path: Option<String>,
     pub open_command: Option<String>,
+    pub frontend_command: Option<String>,
+    pub backend_command: Option<String>,
     pub live_url: Option<String>,
     pub domain_name: Option<String>,
     pub tech_stack: Option<Vec<String>>,
@@ -262,6 +268,8 @@ pub async fn projects_update(
         add_field!(source, "source");
         add_field!(local_path, "localPath");
         add_field!(open_command, "openCommand");
+        add_field!(frontend_command, "frontendCommand");
+        add_field!(backend_command, "backendCommand");
         add_field!(live_url, "liveUrl");
         add_field!(domain_name, "domainName");
         add_field!(start_date, "startDate");
@@ -317,13 +325,17 @@ pub async fn projects_refresh(
 ) -> Result<JsonValue, String> {
     let project = db
         .query_one_json(
-            "SELECT localPath, techStack FROM projects WHERE id = ?1 AND ownerId = ?2",
+            "SELECT localPath, techStack, frontendCommand, backendCommand, openCommand FROM projects WHERE id = ?1 AND ownerId = ?2",
             rusqlite::params![id, DEFAULT_USER_ID],
         )
         .map_err(|e| e.to_string())?
         .ok_or("PROJECT_NOT_FOUND")?;
 
     let local_path = project.get("localPath").and_then(|v| v.as_str());
+    // Get current commands to preserve user overrides
+    let current_frontend = project.get("frontendCommand").and_then(|v| v.as_str());
+    let current_backend = project.get("backendCommand").and_then(|v| v.as_str());
+    let current_open = project.get("openCommand").and_then(|v| v.as_str());
 
     let path = local_path.ok_or("NO_LOCAL_PATH: 项目没有本地路径，无法检测")?;
 
@@ -331,7 +343,18 @@ pub async fn projects_refresh(
     let detected = super::detect::detect_local_project(path.to_string()).await
         .map_err(|e| format!("检测失败: {}", e))?;
 
-    // Update project with detected info
+    // Update project with detected info, but preserve existing commands
+    // Only use detected commands if current commands are empty
+    let final_frontend = current_frontend
+        .map(|s| s.to_string())
+        .or(detected.frontend_command);
+    let final_backend = current_backend
+        .map(|s| s.to_string())
+        .or(detected.backend_command);
+    let final_open = current_open
+        .map(|s| s.to_string())
+        .or(detected.open_command);
+
     let now = crate::db::now_str();
     let tech_stack = serde_json::to_string(&detected.tech_stack).unwrap_or_else(|_| "[]".into());
 
@@ -340,17 +363,21 @@ pub async fn projects_refresh(
             name = COALESCE(?1, name),
             description = COALESCE(?2, description),
             techStack = ?3,
-            openCommand = COALESCE(?4, openCommand),
-            iconType = ?5,
-            iconUrl = ?6,
-            iconColor = ?7,
-            updatedAt = ?8
-         WHERE id = ?9",
+            openCommand = ?4,
+            frontendCommand = ?5,
+            backendCommand = ?6,
+            iconType = ?7,
+            iconUrl = ?8,
+            iconColor = ?9,
+            updatedAt = ?10
+         WHERE id = ?11",
         rusqlite::params![
             detected.name,
             detected.description,
             tech_stack,
-            detected.open_command,
+            final_open,
+            final_frontend,
+            final_backend,
             detected.icon_type.unwrap_or_else(|| "Auto".into()),
             detected.icon_url,
             detected.icon_color,

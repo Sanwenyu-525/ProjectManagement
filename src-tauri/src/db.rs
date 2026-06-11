@@ -60,6 +60,16 @@ impl Database {
         let sql = include_str!("../migrations/001_init.sql");
         let conn = self.lock_conn()?;
         conn.execute_batch(sql)?;
+
+        // Incremental migrations for existing databases
+        let alters = [
+            "ALTER TABLE projects ADD COLUMN frontendCommand TEXT",
+            "ALTER TABLE projects ADD COLUMN backendCommand TEXT",
+        ];
+        for stmt in &alters {
+            let _ = conn.execute_batch(stmt); // ignore "duplicate column" errors
+        }
+
         Ok(())
     }
 

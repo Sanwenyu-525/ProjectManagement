@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS "projects" (
     "iconColor" TEXT,
     "localPath" TEXT,
     "openCommand" TEXT,
+    "frontendCommand" TEXT,
+    "backendCommand" TEXT,
     "liveUrl" TEXT,
     "domainName" TEXT,
     "techStack" TEXT NOT NULL DEFAULT '[]',

@@ -14,7 +14,8 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [cmdModalOpen, setCmdModalOpen] = useState(false);
-  const [cmdInput, setCmdInput] = useState('');
+  const [frontendCmdInput, setFrontendCmdInput] = useState('');
+  const [backendCmdInput, setBackendCmdInput] = useState('');
   const [launching, setLaunching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { setTerminalOpen, setDefaultCwd } = useTerminalStore();
@@ -24,7 +25,8 @@ export default function ProjectDetailPage() {
   const getLaunchHints = (proj: any): string[] => {
     const hints: string[] = [];
     const techStack = proj.techStack || [];
-    const command = proj.openCommand || '';
+    const command = proj.frontendCommand || proj.openCommand || '';
+    const backendCmd = proj.backendCommand || '';
 
     // Mobile app development hints
     if (techStack.some((t: string) => /react.native|flutter|ionic/i.test(t))) {
@@ -55,7 +57,7 @@ export default function ProjectDetailPage() {
     }
 
     // Server/Backend hints
-    if (techStack.some((t: string) => /express|fastify|nest|django|flask|spring|rails/i.test(t))) {
+    if (techStack.some((t: string) => /express|fastify|nest|django|flask|spring|rails|gin|fiber|echo|phoenix|actix|axum|fastapi/i.test(t))) {
       hints.push('后端服务：启动后可通过浏览器访问应用');
     }
 
@@ -65,7 +67,7 @@ export default function ProjectDetailPage() {
     }
 
     // Python specific
-    if (techStack.some((t: string) => /python|flask|django/i.test(t))) {
+    if (techStack.some((t: string) => /python|flask|django|fastapi/i.test(t))) {
       hints.push('Python 项目：确保已激活虚拟环境');
     }
 
@@ -78,6 +80,55 @@ export default function ProjectDetailPage() {
     if (techStack.some((t: string) => /node|express|fastify|nest/i.test(t))) {
       if (command.includes('dev')) {
         hints.push('开发服务器：启动后支持热重载');
+      }
+    }
+
+    // Java/Maven/Gradle specific
+    if (techStack.some((t: string) => /java|maven|gradle/i.test(t))) {
+      hints.push('Java 项目：首次构建可能需要下载依赖');
+    }
+
+    // Scala specific
+    if (techStack.some((t: string) => /scala|sbt/i.test(t))) {
+      hints.push('Scala 项目：首次构建可能需要下载依赖');
+    }
+
+    // Elixir/Phoenix specific
+    if (techStack.some((t: string) => /elixir|phoenix/i.test(t))) {
+      hints.push('Elixir 项目：需要 Erlang/OTP 运行时');
+    }
+
+    // C/C++ specific
+    if (techStack.some((t: string) => /c\+\+|cmake|make|meson/i.test(t))) {
+      hints.push('C/C++ 项目：确保已安装对应的构建工具');
+    }
+
+    // Julia specific
+    if (techStack.some((t: string) => /julia/i.test(t))) {
+      hints.push('Julia 项目：首次运行可能需要下载依赖');
+    }
+
+    // .NET specific
+    if (techStack.some((t: string) => /\.net|dotnet|c#/i.test(t))) {
+      hints.push('.NET 项目：确保已安装 .NET SDK');
+    }
+
+    // Backend command hints
+    if (backendCmd) {
+      if (/cargo/.test(backendCmd)) {
+        hints.push('Rust 后端：首次编译可能需要几分钟');
+      }
+      if (/python/.test(backendCmd)) {
+        hints.push('Python 后端：确保虚拟环境已激活');
+      }
+      if (/mvn|gradle/.test(backendCmd)) {
+        hints.push('Maven/Gradle：首次构建可能需要下载依赖');
+      }
+      if (/mix/.test(backendCmd)) {
+        hints.push('Elixir 后端：确保已安装 Erlang/OTP');
+      }
+      if (/sbt/.test(backendCmd)) {
+        hints.push('Scala 后端：首次构建可能需要下载依赖');
       }
     }
 
@@ -101,8 +152,11 @@ export default function ProjectDetailPage() {
   }
 
   async function handleLaunch() {
-    if (!project?.openCommand) {
-      setCmdInput('');
+    const hasFrontend = !!project?.frontendCommand || !!project?.openCommand;
+    const hasBackend = !!project?.backendCommand;
+    if (!hasFrontend && !hasBackend) {
+      setFrontendCmdInput('');
+      setBackendCmdInput('');
       setCmdModalOpen(true);
       return;
     }
@@ -139,7 +193,19 @@ export default function ProjectDetailPage() {
                 </ul>
               </div>
               <div style={{ fontSize: 12, color: '#9eadc0' }}>
-                启动命令：<code style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{project.openCommand}</code>
+                {project.frontendCommand && (
+                  <div style={{ marginBottom: 4 }}>
+                    前端：<code style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a', padding: '2px 6px', borderRadius: 4 }}>{project.frontendCommand}</code>
+                  </div>
+                )}
+                {project.backendCommand && (
+                  <div style={{ marginBottom: 4 }}>
+                    后端：<code style={{ background: 'rgba(59,130,246,0.1)', color: '#2563eb', padding: '2px 6px', borderRadius: 4 }}>{project.backendCommand}</code>
+                  </div>
+                )}
+                {!project.frontendCommand && !project.backendCommand && project.openCommand && (
+                  <div>启动命令：<code style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{project.openCommand}</code></div>
+                )}
               </div>
             </div>
           ),
@@ -183,12 +249,16 @@ export default function ProjectDetailPage() {
   }
 
   async function handleCmdSubmit() {
-    if (!cmdInput.trim()) {
-      message.warning('请输入启动命令');
+    if (!frontendCmdInput.trim() && !backendCmdInput.trim()) {
+      message.warning('请至少输入一个启动命令');
       return;
     }
     try {
-      const updated = await projectsApi.update(project.id, { openCommand: cmdInput.trim() });
+      const updated = await projectsApi.update(project.id, {
+        frontendCommand: frontendCmdInput.trim() || null,
+        backendCommand: backendCmdInput.trim() || null,
+        openCommand: frontendCmdInput.trim() || backendCmdInput.trim() || null,
+      });
       setCmdModalOpen(false);
       setProject(updated);
       setDefaultCwd(updated.localPath);
@@ -373,17 +443,33 @@ export default function ProjectDetailPage() {
         onOk={handleCmdSubmit}
         okText="保存并启动"
         cancelText="取消"
+        width={480}
       >
-        <p style={{ color: '#6b7a99', marginBottom: 12 }}>
-          该项目尚未配置启动命令，设置后可一键启动开发环境。
+        <p style={{ color: '#6b7a99', marginBottom: 16 }}>
+          配置项目的前后端启动命令，设置后可在全局终端中一键启动。
         </p>
-        <Input
-          value={cmdInput}
-          onChange={e => setCmdInput(e.target.value)}
-          placeholder="如 npm run dev、cargo run、python manage.py runserver"
-          onPressEnter={handleCmdSubmit}
-          autoFocus
-        />
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
+            <span style={{ color: '#22c55e', marginRight: 4 }}>●</span> 前端命令
+          </label>
+          <Input
+            value={frontendCmdInput}
+            onChange={e => setFrontendCmdInput(e.target.value)}
+            placeholder="如 npm run dev、pnpm dev、yarn start"
+            autoFocus
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
+            <span style={{ color: '#3b82f6', marginRight: 4 }}>●</span> 后端命令（可选）
+          </label>
+          <Input
+            value={backendCmdInput}
+            onChange={e => setBackendCmdInput(e.target.value)}
+            placeholder="如 cargo run、python manage.py runserver"
+            onPressEnter={handleCmdSubmit}
+          />
+        </div>
       </Modal>
     </div>
   );
@@ -401,7 +487,12 @@ function OverviewTab({ project }: { project: any }) {
         {project.techStack?.map((t: string) => <Tag key={t}>{t}</Tag>) || '-'}
       </Descriptions.Item>
       <Descriptions.Item label="本地路径">{project.localPath || '-'}</Descriptions.Item>
-      <Descriptions.Item label="启动命令">{project.openCommand || '-'}</Descriptions.Item>
+      <Descriptions.Item label="前端命令">
+        {project.frontendCommand ? <Tag color="green">{project.frontendCommand}</Tag> : project.openCommand ? <Tag>{project.openCommand}</Tag> : '-'}
+      </Descriptions.Item>
+      <Descriptions.Item label="后端命令">
+        {project.backendCommand ? <Tag color="blue">{project.backendCommand}</Tag> : '-'}
+      </Descriptions.Item>
       <Descriptions.Item label="线上地址">
         {project.liveUrl ? <a href={project.liveUrl} target="_blank" rel="noopener noreferrer">{project.liveUrl}</a> : '-'}
       </Descriptions.Item>

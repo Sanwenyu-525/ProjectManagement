@@ -15,6 +15,8 @@ pub struct DetectedProject {
     pub repo_url: Option<String>,
     pub repo_platform: Option<String>,
     pub open_command: Option<String>,
+    pub frontend_command: Option<String>,
+    pub backend_command: Option<String>,
     pub live_url: Option<String>,
     pub git_root: Option<String>,
     pub group_id: Option<String>,
@@ -81,27 +83,23 @@ fn detect_local_project_inner(path: &str) -> Result<DetectedProject, String> {
     // Cargo.toml (Rust)
     if dir.join("Cargo.toml").exists() {
         tech_stack.push("Rust".into());
+        tech_stack.extend(detect_rust_frameworks(dir));
         if let Some(info) = detect_cargo_project(dir) {
-            if detected.name.as_deref() == dir.file_name().and_then(|n| n.to_str()) {
-                if let Some(name) = info.name {
-                    detected.name = Some(name);
-                }
-            }
-            if detected.description.is_none() {
-                detected.description = info.description;
-            }
+            apply_project_info(&mut detected, dir, info.name, info.description);
         }
     }
 
     // go.mod (Go)
     if dir.join("go.mod").exists() {
         tech_stack.push("Go".into());
+        tech_stack.extend(detect_go_frameworks(dir));
     }
 
     // Python
     if dir.join("pyproject.toml").exists() || dir.join("requirements.txt").exists() || dir.join("setup.py").exists() {
         tech_stack.push("Python".into());
         if let Some(info) = detect_python_project(dir) {
+            tech_stack.extend(info.frameworks);
             if detected.description.is_none() {
                 detected.description = info.description;
             }
@@ -112,10 +110,16 @@ fn detect_local_project_inner(path: &str) -> Result<DetectedProject, String> {
     if dir.join("pom.xml").exists() {
         tech_stack.push("Java".into());
         tech_stack.push("Maven".into());
+        if let Some(info) = detect_java_project(dir, "maven") {
+            tech_stack.extend(info.frameworks);
+        }
     }
     if dir.join("build.gradle").exists() || dir.join("build.gradle.kts").exists() {
         tech_stack.push("Java".into());
         tech_stack.push("Gradle".into());
+        if let Some(info) = detect_java_project(dir, "gradle") {
+            tech_stack.extend(info.frameworks);
+        }
     }
 
     // C# / .NET
@@ -127,11 +131,19 @@ fn detect_local_project_inner(path: &str) -> Result<DetectedProject, String> {
     // Ruby
     if dir.join("Gemfile").exists() {
         tech_stack.push("Ruby".into());
+        if let Some(info) = detect_ruby_project(dir) {
+            if info.is_rails {
+                tech_stack.push("Rails".into());
+            }
+        }
     }
 
     // PHP
     if dir.join("composer.json").exists() {
         tech_stack.push("PHP".into());
+        if let Some(info) = detect_php_project(dir) {
+            tech_stack.extend(info.frameworks);
+        }
     }
 
     // Swift / iOS
@@ -156,6 +168,72 @@ fn detect_local_project_inner(path: &str) -> Result<DetectedProject, String> {
         tech_stack.push("TypeScript".into());
     }
 
+    // C/C++ detection
+    if dir.join("CMakeLists.txt").exists()
+        || dir.join("Makefile").exists()
+        || dir.join("meson.build").exists()
+        || has_file_extension(dir, "sln")
+        || has_file_extension(dir, "vcxproj")
+    {
+        tech_stack.push("C/C++".into());
+        if let Some(info) = detect_cpp_project(dir) {
+            if let Some(build_sys) = info.build_system {
+                if !tech_stack.contains(&build_sys) {
+                    tech_stack.push(build_sys);
+                }
+            }
+            apply_project_info(&mut detected, dir, None, info.description);
+        }
+    }
+
+    // Dart/Flutter detection
+    if dir.join("pubspec.yaml").exists() {
+        if let Some(info) = detect_dart_project(dir) {
+            if info.is_flutter {
+                tech_stack.push("Dart".into());
+                tech_stack.push("Flutter".into());
+            } else {
+                tech_stack.push("Dart".into());
+            }
+            apply_project_info(&mut detected, dir, info.name, info.description);
+        }
+    }
+
+    // Scala detection
+    if dir.join("build.sbt").exists() {
+        tech_stack.push("Scala".into());
+        if let Some(info) = detect_scala_project(dir) {
+            apply_project_info(&mut detected, dir, info.name, info.description);
+        }
+    }
+
+    // Elixir detection
+    if dir.join("mix.exs").exists() {
+        if let Some(info) = detect_elixir_project(dir) {
+            tech_stack.push("Elixir".into());
+            if info.is_phoenix {
+                tech_stack.push("Phoenix".into());
+            }
+            apply_project_info(&mut detected, dir, info.name, info.description);
+        }
+    }
+
+    // R detection
+    if dir.join("DESCRIPTION").exists() || has_file_extension(dir, "Rproj") {
+        tech_stack.push("R".into());
+        if let Some(info) = detect_r_project(dir) {
+            apply_project_info(&mut detected, dir, None, info.description);
+        }
+    }
+
+    // Julia detection
+    if dir.join("Project.toml").exists() {
+        tech_stack.push("Julia".into());
+        if let Some(info) = detect_julia_project(dir) {
+            apply_project_info(&mut detected, dir, info.name, info.description);
+        }
+    }
+
     // 3. Git info
     if let Some(git_info) = detect_git_info(dir) {
         if let Some(url) = git_info.remote_url {
@@ -175,10 +253,15 @@ fn detect_local_project_inner(path: &str) -> Result<DetectedProject, String> {
     // Deduplicate tech stack
     tech_stack.sort();
     tech_stack.dedup();
-    detected.tech_stack = tech_stack;
 
-    // 5. Detect open command (dev server) from project config
-    detected.open_command = detect_open_command(dir);
+    // 5. Detect open commands (frontend/backend) from project config
+    let (frontend_cmd, backend_cmd) = detect_open_commands(dir, &tech_stack);
+    detected.frontend_command = frontend_cmd.clone();
+    detected.backend_command = backend_cmd.clone();
+    // Legacy field: use frontend command if available, otherwise backend
+    detected.open_command = frontend_cmd.or(backend_cmd);
+
+    detected.tech_stack = tech_stack;
 
     // 6. Detect icon from project files (pass tech_stack for smart directory search)
     let icon_info = detect_project_icon(dir, &detected.tech_stack);
@@ -434,6 +517,12 @@ fn is_project_dir(dir: &Path) -> bool {
         "Dockerfile",
         "docker-compose.yml",
         "docker-compose.yaml",
+        "CMakeLists.txt",
+        "meson.build",
+        "pubspec.yaml",
+        "build.sbt",
+        "mix.exs",
+        "Project.toml",
     ];
 
     for marker in &markers {
@@ -442,10 +531,13 @@ fn is_project_dir(dir: &Path) -> bool {
         }
     }
 
-    // Check for .csproj, .xcodeproj, .xcworkspace (extension-based)
+    // Check for extension-based markers
     if has_file_extension(dir, "csproj")
         || has_file_extension(dir, "xcodeproj")
         || has_file_extension(dir, "xcworkspace")
+        || has_file_extension(dir, "sln")
+        || has_file_extension(dir, "vcxproj")
+        || has_file_extension(dir, "Rproj")
     {
         return true;
     }
@@ -578,15 +670,409 @@ fn detect_cargo_project(dir: &Path) -> Option<CargoProjectInfo> {
 
 struct PythonProjectInfo {
     description: Option<String>,
+    frameworks: Vec<String>,
 }
 
 fn detect_python_project(dir: &Path) -> Option<PythonProjectInfo> {
     // Try pyproject.toml first
     if let Ok(content) = fs::read_to_string(dir.join("pyproject.toml")) {
         let description = extract_toml_value(&content, "description");
-        return Some(PythonProjectInfo { description });
+        let content_lower = content.to_lowercase();
+        let frameworks = detect_python_frameworks(&content_lower);
+        return Some(PythonProjectInfo { description, frameworks });
+    }
+
+    // Try requirements.txt
+    if let Ok(content) = fs::read_to_string(dir.join("requirements.txt")) {
+        let content_lower = content.to_lowercase();
+        let frameworks = detect_python_frameworks(&content_lower);
+        return Some(PythonProjectInfo {
+            description: None,
+            frameworks,
+        });
+    }
+
+    // Also check manage.py to confirm Django
+    let mut frameworks = Vec::new();
+    if dir.join("manage.py").exists() {
+        frameworks.push("Django".into());
+    }
+
+    Some(PythonProjectInfo {
+        description: None,
+        frameworks,
+    })
+}
+
+/// Helper to detect Python frameworks from dependency content.
+fn detect_python_frameworks(content_lower: &str) -> Vec<String> {
+    let mut frameworks = Vec::new();
+    if content_lower.contains("django") {
+        frameworks.push("Django".into());
+    }
+    if content_lower.contains("flask") {
+        frameworks.push("Flask".into());
+    }
+    if content_lower.contains("fastapi") {
+        frameworks.push("FastAPI".into());
+    }
+    frameworks
+}
+
+struct CppProjectInfo {
+    description: Option<String>,
+    build_system: Option<String>,
+}
+
+fn detect_cpp_project(dir: &Path) -> Option<CppProjectInfo> {
+    // CMake
+    if dir.join("CMakeLists.txt").exists() {
+        let description = fs::read_to_string(dir.join("CMakeLists.txt"))
+            .ok()
+            .and_then(|c| {
+                c.lines()
+                    .find(|l| l.contains("project(") && l.contains("DESCRIPTION"))
+                    .and_then(|l| {
+                        l.split("DESCRIPTION")
+                            .nth(1)?
+                            .split(')')
+                            .next()?
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_string()
+                            .into()
+                    })
+            });
+        return Some(CppProjectInfo {
+            description,
+            build_system: Some("CMake".into()),
+        });
+    }
+
+    // Makefile
+    if dir.join("Makefile").exists() {
+        return Some(CppProjectInfo {
+            description: None,
+            build_system: Some("Make".into()),
+        });
+    }
+
+    // Meson
+    if dir.join("meson.build").exists() {
+        let content = fs::read_to_string(dir.join("meson.build")).ok();
+        let description = content.and_then(|c| {
+            c.lines()
+                .find(|l| l.contains("project(") && l.contains("description:"))
+                .and_then(|l| {
+                    l.split("description:")
+                        .nth(1)?
+                        .split(')')
+                        .next()?
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string()
+                        .into()
+                })
+        });
+        return Some(CppProjectInfo {
+            description,
+            build_system: Some("Meson".into()),
+        });
+    }
+
+    // MSBuild (.sln or .vcxproj)
+    if has_file_extension(dir, "sln") || has_file_extension(dir, "vcxproj") {
+        return Some(CppProjectInfo {
+            description: None,
+            build_system: Some("MSBuild".into()),
+        });
+    }
+
+    None
+}
+
+struct DartProjectInfo {
+    name: Option<String>,
+    description: Option<String>,
+    is_flutter: bool,
+}
+
+fn detect_dart_project(dir: &Path) -> Option<DartProjectInfo> {
+    let content = fs::read_to_string(dir.join("pubspec.yaml")).ok()?;
+    let name = extract_yaml_value(&content, "name");
+    let description = extract_yaml_value(&content, "description");
+    // Check if this is a Flutter project
+    let is_flutter = is_flutter_project(&content);
+    Some(DartProjectInfo {
+        name,
+        description,
+        is_flutter,
+    })
+}
+
+struct ScalaProjectInfo {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+fn detect_scala_project(dir: &Path) -> Option<ScalaProjectInfo> {
+    let content = fs::read_to_string(dir.join("build.sbt")).ok()?;
+    let name = content.lines().find_map(|l| {
+        let trimmed = l.trim();
+        if trimmed.starts_with("name") && trimmed.contains(":=") {
+            trimmed
+                .split(":=")
+                .nth(1)?
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string()
+                .into()
+        } else {
+            None
+        }
+    });
+    Some(ScalaProjectInfo {
+        name,
+        description: None,
+    })
+}
+
+struct ElixirProjectInfo {
+    name: Option<String>,
+    description: Option<String>,
+    is_phoenix: bool,
+}
+
+fn detect_elixir_project(dir: &Path) -> Option<ElixirProjectInfo> {
+    let content = fs::read_to_string(dir.join("mix.exs")).ok()?;
+    // Extract project name from def project block
+    let name = content.lines().find_map(|l| {
+        let trimmed = l.trim();
+        if trimmed.starts_with("app:") {
+            trimmed
+                .split(':')
+                .nth(1)?
+                .trim()
+                .trim_matches(',')
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string()
+                .into()
+        } else {
+            None
+        }
+    });
+    // Check for Phoenix
+    let is_phoenix = content.contains(":phoenix") || content.contains("'phoenix'");
+    Some(ElixirProjectInfo {
+        name,
+        description: None,
+        is_phoenix,
+    })
+}
+
+struct RProjectInfo {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+fn detect_r_project(dir: &Path) -> Option<RProjectInfo> {
+    // Try DESCRIPTION file (standard R package format)
+    if let Ok(content) = fs::read_to_string(dir.join("DESCRIPTION")) {
+        let name = content.lines().find_map(|l| {
+            let trimmed = l.trim();
+            if trimmed.starts_with("Package:") {
+                trimmed
+                    .split(':')
+                    .nth(1)?
+                    .trim()
+                    .to_string()
+                    .into()
+            } else {
+                None
+            }
+        });
+        let description = content.lines().find_map(|l| {
+            let trimmed = l.trim();
+            if trimmed.starts_with("Description:") {
+                trimmed
+                    .split(':')
+                    .nth(1)?
+                    .trim()
+                    .to_string()
+                    .into()
+            } else {
+                None
+            }
+        });
+        return Some(RProjectInfo { name, description });
     }
     None
+}
+
+struct JuliaProjectInfo {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+fn detect_julia_project(dir: &Path) -> Option<JuliaProjectInfo> {
+    let content = fs::read_to_string(dir.join("Project.toml")).ok()?;
+    let name = extract_toml_value(&content, "name");
+    let description = extract_toml_value(&content, "description");
+    Some(JuliaProjectInfo { name, description })
+}
+
+struct RubyProjectInfo {
+    is_rails: bool,
+}
+
+fn detect_ruby_project(dir: &Path) -> Option<RubyProjectInfo> {
+    let content = fs::read_to_string(dir.join("Gemfile")).ok()?;
+    let is_rails = content.contains("gem 'rails'") || content.contains("gem \"rails\"");
+    Some(RubyProjectInfo { is_rails })
+}
+
+struct PhpProjectInfo {
+    frameworks: Vec<String>,
+}
+
+fn detect_php_project(dir: &Path) -> Option<PhpProjectInfo> {
+    let content = fs::read_to_string(dir.join("composer.json")).ok()?;
+    let pkg: JsonValue = serde_json::from_str(&content).ok()?;
+    let mut frameworks = Vec::new();
+
+    if let Some(require) = pkg.get("require").and_then(|v| v.as_object()) {
+        let keys: std::collections::HashSet<&str> = require.keys().map(|s| s.as_str()).collect();
+        if keys.contains("laravel/framework") {
+            frameworks.push("Laravel".into());
+        }
+        if keys.iter().any(|k| k.starts_with("symfony/")) {
+            frameworks.push("Symfony".into());
+        }
+    }
+
+    Some(PhpProjectInfo { frameworks })
+}
+
+struct JavaProjectInfo {
+    frameworks: Vec<String>,
+}
+
+fn detect_java_project(dir: &Path, build_system: &str) -> Option<JavaProjectInfo> {
+    let mut frameworks = Vec::new();
+
+    if build_system == "maven" {
+        if let Ok(content) = fs::read_to_string(dir.join("pom.xml")) {
+            if content.contains("spring-boot-starter") {
+                frameworks.push("Spring Boot".into());
+            }
+        }
+    } else if build_system == "gradle" {
+        let build_file = if dir.join("build.gradle.kts").exists() {
+            dir.join("build.gradle.kts")
+        } else {
+            dir.join("build.gradle")
+        };
+        if let Ok(content) = fs::read_to_string(&build_file) {
+            if content.contains("org.springframework.boot") || content.contains("spring-boot") {
+                frameworks.push("Spring Boot".into());
+            }
+        }
+    }
+
+    Some(JavaProjectInfo { frameworks })
+}
+
+fn detect_rust_frameworks(dir: &Path) -> Vec<String> {
+    let mut frameworks = Vec::new();
+    if let Ok(content) = fs::read_to_string(dir.join("Cargo.toml")) {
+        let content_lower = content.to_lowercase();
+        if content_lower.contains("actix-web") {
+            frameworks.push("Actix-web".into());
+        }
+        if content_lower.contains("axum") {
+            frameworks.push("Axum".into());
+        }
+        if content_lower.contains("tokio") {
+            frameworks.push("Tokio".into());
+        }
+        if content_lower.contains("rocket") {
+            frameworks.push("Rocket".into());
+        }
+    }
+    frameworks
+}
+
+fn detect_go_frameworks(dir: &Path) -> Vec<String> {
+    let mut frameworks = Vec::new();
+    if let Ok(content) = fs::read_to_string(dir.join("go.mod")) {
+        if content.contains("github.com/gin-gonic/gin") {
+            frameworks.push("Gin".into());
+        }
+        if content.contains("github.com/gofiber/fiber") {
+            frameworks.push("Fiber".into());
+        }
+        if content.contains("github.com/labstack/echo") {
+            frameworks.push("Echo".into());
+        }
+    }
+    frameworks
+}
+
+/// Extract value from YAML-like config (simple key: value or key = value).
+fn extract_yaml_value(content: &str, key: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(key) && (trimmed.contains(':') || trimmed.contains('=')) {
+            let val = if trimmed.contains(':') {
+                trimmed.split(':').nth(1)?.trim()
+            } else {
+                trimmed.split('=').nth(1)?.trim()
+            };
+            let val = val.trim_matches('"').trim_matches('\'');
+            if !val.is_empty() {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Apply project info from detection to the DetectedProject.
+/// Only updates name if current name is the directory name.
+/// Only updates description if current description is None.
+fn apply_project_info(
+    detected: &mut DetectedProject,
+    dir: &Path,
+    name: Option<String>,
+    description: Option<String>,
+) {
+    if detected.name.as_deref() == dir.file_name().and_then(|n| n.to_str()) {
+        if let Some(name) = name {
+            detected.name = Some(name);
+        }
+    }
+    if detected.description.is_none() {
+        detected.description = description;
+    }
+}
+
+/// Check if a Flutter project based on content.
+fn is_flutter_project(content: &str) -> bool {
+    content.contains("flutter:") || content.contains("  flutter:") || content.contains("flutter sdk:")
+}
+
+/// Check for a Makefile with a run target.
+fn has_makefile_run_target(dir: &Path) -> bool {
+    if !dir.join("Makefile").exists() {
+        return false;
+    }
+    fs::read_to_string(dir.join("Makefile"))
+        .map(|c| c.contains("run:") || c.contains("run\t"))
+        .unwrap_or(false)
 }
 
 struct GitInfo {
@@ -683,24 +1169,94 @@ fn has_file_extension(dir: &Path, ext: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn detect_open_command(dir: &Path) -> Option<String> {
-    // 1. Node.js: package.json scripts (dev > start > serve)
+/// Detect frontend and backend open commands separately.
+/// Returns (frontend_command, backend_command).
+fn detect_open_commands(dir: &Path, tech_stack: &[String]) -> (Option<String>, Option<String>) {
+    let is_tauri = dir.join("src-tauri").is_dir();
+    let is_node = dir.join("package.json").exists();
+
+    // Tauri project: frontend = npm dev, backend = cargo tauri dev
+    if is_tauri && is_node {
+        let frontend = detect_npm_script(dir);
+        return (frontend, Some("cargo tauri dev".into()));
+    }
+
+    // Monorepo: frontend/ + backend/ subdirectories
+    let has_frontend_dir = dir.join("frontend").is_dir() || dir.join("web").is_dir() || dir.join("client").is_dir();
+    let has_backend_dir = dir.join("backend").is_dir() || dir.join("server").is_dir() || dir.join("api").is_dir();
+    if has_frontend_dir && has_backend_dir {
+        let frontend_dir = if dir.join("frontend").is_dir() {
+            dir.join("frontend")
+        } else if dir.join("web").is_dir() {
+            dir.join("web")
+        } else {
+            dir.join("client")
+        };
+        let backend_dir = if dir.join("backend").is_dir() {
+            dir.join("backend")
+        } else if dir.join("server").is_dir() {
+            dir.join("server")
+        } else {
+            dir.join("api")
+        };
+
+        let frontend = detect_npm_script(&frontend_dir)
+            .or_else(|| detect_dart_command(&frontend_dir))
+            .or_else(|| detect_go_command(&frontend_dir))
+            .or_else(|| detect_python_command(&frontend_dir));
+        let backend = detect_npm_script(&backend_dir)
+            .or_else(|| detect_rust_command(&backend_dir))
+            .or_else(|| detect_go_command(&backend_dir))
+            .or_else(|| detect_python_command(&backend_dir))
+            .or_else(|| detect_maven_command(&backend_dir))
+            .or_else(|| detect_gradle_command(&backend_dir))
+            .or_else(|| detect_dotnet_command(&backend_dir))
+            .or_else(|| detect_scala_command(&backend_dir))
+            .or_else(|| detect_elixir_command(&backend_dir));
+        return (frontend, backend);
+    }
+
+    // Pure backend: Rust / Go / Python / Java / other languages
+    if let Some(cmd) = detect_rust_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_go_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_python_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_maven_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_gradle_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_dart_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_elixir_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_scala_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_dotnet_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_c_cpp_command(dir) {
+        return (None, Some(cmd));
+    }
+    if let Some(cmd) = detect_julia_command(dir) {
+        return (None, Some(cmd));
+    }
+
+    // Pure frontend: Node.js
     if let Some(cmd) = detect_npm_script(dir) {
-        return Some(cmd);
+        return (Some(cmd), None);
     }
-    // 2. Rust
-    if dir.join("Cargo.toml").exists() {
-        return Some("cargo run".into());
-    }
-    // 3. Go
-    if dir.join("go.mod").exists() {
-        return Some("go run .".into());
-    }
-    // 4. Python with manage.py (Django)
-    if dir.join("manage.py").exists() {
-        return Some("python manage.py runserver".into());
-    }
-    None
+
+    (None, None)
 }
 
 fn detect_npm_script(dir: &Path) -> Option<String> {
@@ -725,6 +1281,211 @@ fn detect_npm_script(dir: &Path) -> Option<String> {
         }
     }
     None
+}
+
+fn detect_rust_command(dir: &Path) -> Option<String> {
+    if dir.join("Cargo.toml").exists() {
+        // Check if it's a Tauri sub-crate (handled by caller)
+        if dir.join("src-tauri").is_dir() {
+            return None; // Tauri detected at parent level
+        }
+        Some("cargo run".into())
+    } else {
+        None
+    }
+}
+
+fn detect_go_command(dir: &Path) -> Option<String> {
+    if !dir.join("go.mod").exists() {
+        return None;
+    }
+
+    // Hot reload with air
+    if dir.join(".air.toml").exists() || dir.join("air.conf").exists() {
+        return Some("air".into());
+    }
+
+    // Makefile with run target
+    if has_makefile_run_target(dir) {
+        return Some("make run".into());
+    }
+
+    Some("go run .".into())
+}
+
+fn detect_python_command(dir: &Path) -> Option<String> {
+    // Django (existing)
+    if dir.join("manage.py").exists() {
+        return Some("python manage.py runserver".into());
+    }
+
+    // FastAPI
+    if has_dep(dir, "fastapi", &["requirements.txt", "pyproject.toml"]) {
+        let entry = if dir.join("main.py").exists() {
+            "main"
+        } else if dir.join("app.py").exists() {
+            "app:app"
+        } else {
+            "main:app"
+        };
+        return Some(format!(
+            "uvicorn {}:app --reload",
+            entry.split(':').next().unwrap_or("main")
+        ));
+    }
+
+    // Flask
+    if has_dep(dir, "flask", &["requirements.txt", "pyproject.toml"]) {
+        return Some("flask run".into());
+    }
+
+    // Generic Python (existing logic)
+    if dir.join("pyproject.toml").exists() || dir.join("requirements.txt").exists() {
+        if dir.join("app.py").exists() || dir.join("main.py").exists() {
+            let entry = if dir.join("main.py").exists() {
+                "main.py"
+            } else {
+                "app.py"
+            };
+            return Some(format!("python {}", entry));
+        }
+    }
+
+    None
+}
+
+/// Check if a dependency exists in any of the config files.
+fn has_dep(dir: &Path, dep_name: &str, config_files: &[&str]) -> bool {
+    let dep_lower = dep_name.to_lowercase();
+    for file in config_files {
+        if let Ok(content) = fs::read_to_string(dir.join(file)) {
+            if content.to_lowercase().contains(&dep_lower) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn detect_maven_command(dir: &Path) -> Option<String> {
+    if !dir.join("pom.xml").exists() {
+        return None;
+    }
+
+    // Check if it's a Spring Boot project by looking for spring-boot-starter in pom.xml
+    if let Ok(content) = fs::read_to_string(dir.join("pom.xml")) {
+        if content.contains("spring-boot-starter") {
+            return Some("mvn spring-boot:run".into());
+        }
+    }
+
+    // Generic Maven project — use exec:java with main class
+    Some("mvn exec:java".into())
+}
+
+fn detect_gradle_command(dir: &Path) -> Option<String> {
+    let is_gradle = dir.join("build.gradle").exists() || dir.join("build.gradle.kts").exists();
+    if !is_gradle {
+        return None;
+    }
+
+    // Determine wrapper vs gradle binary
+    let gradle_cmd = if dir.join("gradlew").exists() || dir.join("gradlew.bat").exists() {
+        "./gradlew"
+    } else {
+        "gradle"
+    };
+
+    // Check if it's a Spring Boot project
+    let build_file = if dir.join("build.gradle.kts").exists() {
+        dir.join("build.gradle.kts")
+    } else {
+        dir.join("build.gradle")
+    };
+
+    if let Ok(content) = fs::read_to_string(&build_file) {
+        if content.contains("spring-boot") || content.contains("org.springframework.boot") {
+            return Some(format!("{} bootRun", gradle_cmd));
+        }
+    }
+
+    // Generic Gradle project
+    Some(format!("{} run", gradle_cmd))
+}
+
+fn detect_dart_command(dir: &Path) -> Option<String> {
+    if !dir.join("pubspec.yaml").exists() {
+        return None;
+    }
+
+    let content = fs::read_to_string(dir.join("pubspec.yaml")).ok()?;
+    // Check if Flutter project
+    if is_flutter_project(&content) {
+        Some("flutter run".into())
+    } else {
+        Some("dart run".into())
+    }
+}
+
+fn detect_elixir_command(dir: &Path) -> Option<String> {
+    if !dir.join("mix.exs").exists() {
+        return None;
+    }
+
+    let content = fs::read_to_string(dir.join("mix.exs")).ok()?;
+    if content.contains(":phoenix") || content.contains("'phoenix'") {
+        Some("mix phx.server".into())
+    } else {
+        Some("mix run --no-halt".into())
+    }
+}
+
+fn detect_scala_command(dir: &Path) -> Option<String> {
+    if dir.join("build.sbt").exists() {
+        Some("sbt run".into())
+    } else {
+        None
+    }
+}
+
+fn detect_dotnet_command(dir: &Path) -> Option<String> {
+    if has_file_extension(dir, "csproj") {
+        Some("dotnet run".into())
+    } else {
+        None
+    }
+}
+
+fn detect_c_cpp_command(dir: &Path) -> Option<String> {
+    // CMake
+    if dir.join("CMakeLists.txt").exists() {
+        return Some("cmake --build build && ./build/app".into());
+    }
+
+    // Makefile
+    if has_makefile_run_target(dir) {
+        return Some("make run".into());
+    }
+
+    // Meson
+    if dir.join("meson.build").exists() {
+        return Some("meson compile -C build && ./build/app".into());
+    }
+
+    // MSBuild (.sln or .vcxproj)
+    if has_file_extension(dir, "sln") || has_file_extension(dir, "vcxproj") {
+        return Some("dotnet build && dotnet run".into());
+    }
+
+    None
+}
+
+fn detect_julia_command(dir: &Path) -> Option<String> {
+    if dir.join("Project.toml").exists() && dir.join("main.jl").exists() {
+        Some("julia main.jl".into())
+    } else {
+        None
+    }
 }
 
 struct ProjectIconInfo {
