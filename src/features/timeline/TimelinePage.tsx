@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, Timeline, Tag, Spin, Empty, Typography, Space, Row, Col, Statistic, Button, Select, DatePicker, Avatar, Tooltip } from 'antd';
+import { Card, Timeline, Tag, Spin, Empty, Typography, Row, Col, Statistic, Button, Select, Tooltip } from 'antd';
 import {
   CheckCircleOutlined,
   SyncOutlined,
@@ -16,8 +16,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { timelineApi } from '../../api';
 
-const { Title, Text } = Typography;
-const { RangePicker } = DatePicker;
+const { Text } = Typography;
 
 const ACTION_MAP: Record<string, { icon: React.ReactNode; color: string; label: string; category: string }> = {
   status_change: { icon: <EditOutlined />, color: 'blue', label: '状态变更', category: '项目' },
@@ -76,7 +75,6 @@ export default function TimelinePage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
-  const [dateRange, setDateRange] = useState<[Date, Date] | null>(null);
 
   useEffect(() => {
     loadTimeline();

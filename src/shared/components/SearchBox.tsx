@@ -316,9 +316,6 @@ export default function SearchBox() {
               <div style={{
                 fontSize: 11,
                 color: '#9eadc0',
-                background: 'rgba(0, 0, 0, 0.04)',
-                padding: '2px 8px',
-                borderRadius: 4,
                 flexShrink: 0,
               }}>
                 {result.type === 'project' && '项目'}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, DependencyList } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 /**
  * React hook for debouncing a function call

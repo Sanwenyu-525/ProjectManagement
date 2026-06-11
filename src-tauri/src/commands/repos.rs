@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tauri::{command, State};
 
-use crate::db::{Database, DEFAULT_USER_ID};
+use crate::db::Database;
 
 #[command]
 pub async fn repos_list(db: State<'_, Database>, project_id: String) -> Result<JsonValue, String> {

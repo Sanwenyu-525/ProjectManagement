@@ -52,7 +52,6 @@ pub async fn projects_list(
         if let Some(ref source) = p.source {
             sql.push_str(&format!(" AND p.source = ?{}", param_idx));
             param_values.push(Box::new(source.clone()));
-            param_idx += 1;
         }
     }
 

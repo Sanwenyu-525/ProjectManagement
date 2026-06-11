@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use tauri::command;
 use std::collections::HashMap;
 use std::path::Path;
@@ -177,7 +176,7 @@ pub async fn analyze_docker_compose(
     let compose_path = Path::new(&path).join("docker-compose.yml");
     let alt_compose_path = Path::new(&path).join("docker-compose.yaml");
 
-    let compose_file = if compose_path.exists() {
+    let _compose_file = if compose_path.exists() {
         compose_path.to_string_lossy().to_string()
     } else if alt_compose_path.exists() {
         alt_compose_path.to_string_lossy().to_string()

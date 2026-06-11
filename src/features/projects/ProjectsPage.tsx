@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Divider, Alert, Table, InputNumber, Tooltip, Checkbox, Progress, Badge } from 'antd';
+import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Divider, Alert, Table, InputNumber, Tooltip, Checkbox, Progress } from 'antd';
 import { PlusOutlined, SearchOutlined, FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, RocketOutlined, StopOutlined } from '@ant-design/icons';
 import { projectsApi, detectApi, terminalApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
 import QuickLaunchModal from '../../shared/QuickLaunchModal';
-import { launchProfilesStorage, launchHistoryStorage, LaunchProfile } from '../../lib/launchProfiles';
+import { launchHistoryStorage, LaunchProfile } from '../../lib/launchProfiles';
 import { STATUS_COLORS, PROJECT_STATUSES, PRIORITY_OPTIONS } from '../../lib/constants';
 
 const STATUS_OPTIONS = [...PROJECT_STATUSES];
@@ -48,7 +48,6 @@ export default function ProjectsPage() {
   }>>(new Map());
   const [batchLaunchModalOpen, setBatchLaunchModalOpen] = useState(false);
   const [batchLaunchCancelled, setBatchLaunchCancelled] = useState(false);
-  const [launchOrder, setLaunchOrder] = useState<'smart' | 'manual' | 'selected'>('smart');
   const [smartSortEnabled, setSmartSortEnabled] = useState(true);
 
   // Quick launch state
@@ -57,7 +56,6 @@ export default function ProjectsPage() {
   // Get project launch priority (lower number = earlier)
   const getProjectPriority = (project: any): number => {
     const techStack = project.techStack || [];
-    const command = project.openCommand || '';
 
     // Database / Cache / Message Queue - Priority 1 (start first)
     if (techStack.some((t: string) => /postgres|mysql|mongodb|redis|rabbitmq|kafka/i.test(t))) {
@@ -706,7 +704,7 @@ export default function ProjectsPage() {
     setBatchLaunching(false);
 
     // Save launch history
-    const historyEntry = launchHistoryStorage.add({
+    launchHistoryStorage.add({
       projects: Array.from(batchLaunchProgress.entries()).map(([projectId, progress]) => {
         const project = projects.find(p => p.id === projectId);
         return {

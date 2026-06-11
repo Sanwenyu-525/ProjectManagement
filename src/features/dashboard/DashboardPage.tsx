@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Row, Col, Typography, Card, Tag, Empty, Button, Tooltip, Statistic, Progress, Space, Spin } from 'antd';
+import { Row, Col, Typography, Card, Tag, Empty, Button, Tooltip, Progress } from 'antd';
 import {
   CheckCircleOutlined,
   ArrowRightOutlined,
@@ -8,7 +8,6 @@ import {
   RocketOutlined,
   DatabaseOutlined,
   ClockCircleOutlined,
-  CodeOutlined,
   ReloadOutlined,
   DashboardOutlined,
   WarningOutlined,
@@ -17,7 +16,6 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { projectsApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
-import { STATUS_COLORS } from '../../lib/constants';
 
 const { Text } = Typography;
 

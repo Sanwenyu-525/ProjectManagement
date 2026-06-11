@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tauri::{command, State};
 
-use crate::db::{Database, DEFAULT_USER_ID};
+use crate::db::Database;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,7 +38,6 @@ pub async fn tasks_list(
             } else {
                 sql.push_str(&format!(" AND t.repoScope = ?{}", idx));
                 param_values.push(Box::new(repo_scope.clone()));
-                idx += 1;
             }
         }
     }

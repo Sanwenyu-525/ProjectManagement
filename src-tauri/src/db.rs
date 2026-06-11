@@ -163,6 +163,7 @@ impl Database {
 
     /// Insert a row and return it as JSON. Caller provides the full INSERT SQL and params.
     /// `fetch_sql` should be a SELECT * WHERE id = ?1 query; `fetch_id` is the new row's id.
+    #[allow(dead_code)]
     pub fn insert_and_fetch(&self, insert_sql: &str, insert_params: &[&dyn rusqlite::types::ToSql], fetch_sql: &str, fetch_id: &str) -> Result<serde_json::Value, DbError> {
         self.execute(insert_sql, insert_params)?;
         self.query_one_json(fetch_sql, &[&fetch_id])?

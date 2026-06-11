@@ -875,6 +875,7 @@ fn detect_elixir_project(dir: &Path) -> Option<ElixirProjectInfo> {
 }
 
 struct RProjectInfo {
+    #[allow(dead_code)]
     name: Option<String>,
     description: Option<String>,
 }
@@ -1171,7 +1172,7 @@ fn has_file_extension(dir: &Path, ext: &str) -> bool {
 
 /// Detect frontend and backend open commands separately.
 /// Returns (frontend_command, backend_command).
-fn detect_open_commands(dir: &Path, tech_stack: &[String]) -> (Option<String>, Option<String>) {
+fn detect_open_commands(dir: &Path, _tech_stack: &[String]) -> (Option<String>, Option<String>) {
     let is_tauri = dir.join("src-tauri").is_dir();
     let is_node = dir.join("package.json").exists();
 
