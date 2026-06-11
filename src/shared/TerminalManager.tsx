@@ -7,9 +7,10 @@ import { PlusOutlined, CloseOutlined } from '@ant-design/icons';
 interface TerminalManagerProps {
   visible: boolean;
   defaultCwd?: string | null;
+  defaultCommand?: string | null;
 }
 
-export default function TerminalManager({ visible, defaultCwd }: TerminalManagerProps) {
+export default function TerminalManager({ visible, defaultCwd, defaultCommand }: TerminalManagerProps) {
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [theme, setTheme] = useState<TerminalTheme>('dark');
@@ -60,6 +61,16 @@ export default function TerminalManager({ visible, defaultCwd }: TerminalManager
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  // Execute defaultCommand in the active terminal after it's ready
+  useEffect(() => {
+    if (defaultCommand && activeId && terminals.length > 0) {
+      const timer = setTimeout(() => {
+        terminalApi.input(activeId, defaultCommand + '\r');
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [defaultCommand, activeId, terminals.length]);
 
   const createTerminal = useCallback(async (label?: string, cwdOverride?: string) => {
     if (terminals.length >= 10) {

@@ -6,6 +6,9 @@ interface TerminalStore {
   defaultCwd: string | null;
   setDefaultCwd: (cwd: string | null) => void;
   consumeDefaultCwd: () => string | null;
+  defaultCommand: string | null;
+  setDefaultCommand: (cmd: string | null) => void;
+  consumeDefaultCommand: () => string | null;
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
@@ -17,5 +20,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const cwd = get().defaultCwd;
     set({ defaultCwd: null });
     return cwd;
+  },
+  defaultCommand: null,
+  setDefaultCommand: (cmd) => set({ defaultCommand: cmd }),
+  consumeDefaultCommand: () => {
+    const cmd = get().defaultCommand;
+    set({ defaultCommand: null });
+    return cmd;
   },
 }));

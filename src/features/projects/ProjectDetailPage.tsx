@@ -14,7 +14,7 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const { setTerminalOpen, setDefaultCwd } = useTerminalStore();
+  const { setTerminalOpen, setDefaultCwd, setDefaultCommand } = useTerminalStore();
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
@@ -35,7 +35,9 @@ export default function ProjectDetailPage() {
 
   async function handleLaunch() {
     if (!project?.localPath) return;
+    const cmd = project.frontendCommand || project.backendCommand || project.openCommand;
     setDefaultCwd(project.localPath);
+    setDefaultCommand(cmd || null);
     setTerminalOpen(true);
   }
 
