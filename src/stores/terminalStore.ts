@@ -1,31 +1,26 @@
 import { create } from 'zustand';
 
+export interface LaunchRequest {
+  cwd: string;
+  command?: string;
+}
+
 interface TerminalStore {
   terminalOpen: boolean;
   setTerminalOpen: (v: boolean) => void;
-  defaultCwd: string | null;
-  setDefaultCwd: (cwd: string | null) => void;
-  consumeDefaultCwd: () => string | null;
-  defaultCommand: string | null;
-  setDefaultCommand: (cmd: string | null) => void;
-  consumeDefaultCommand: () => string | null;
+  launchRequest: LaunchRequest | null;
+  requestLaunch: (req: LaunchRequest) => void;
+  consumeLaunchRequest: () => LaunchRequest | null;
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   terminalOpen: false,
   setTerminalOpen: (v) => set({ terminalOpen: v }),
-  defaultCwd: null,
-  setDefaultCwd: (cwd) => set({ defaultCwd: cwd }),
-  consumeDefaultCwd: () => {
-    const cwd = get().defaultCwd;
-    set({ defaultCwd: null });
-    return cwd;
-  },
-  defaultCommand: null,
-  setDefaultCommand: (cmd) => set({ defaultCommand: cmd }),
-  consumeDefaultCommand: () => {
-    const cmd = get().defaultCommand;
-    set({ defaultCommand: null });
-    return cmd;
+  launchRequest: null,
+  requestLaunch: (req) => set({ launchRequest: req, terminalOpen: true }),
+  consumeLaunchRequest: () => {
+    const req = get().launchRequest;
+    set({ launchRequest: null });
+    return req;
   },
 }));

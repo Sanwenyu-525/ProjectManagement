@@ -14,7 +14,7 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const { setTerminalOpen, setDefaultCwd, setDefaultCommand } = useTerminalStore();
+  const { requestLaunch } = useTerminalStore();
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
@@ -35,30 +35,26 @@ export default function ProjectDetailPage() {
 
   async function handleLaunch() {
     if (!project?.localPath) return;
-    // Re-fetch to get latest commands (state may be stale after config save)
-    const fresh = await projectsApi.getById(project.id);
-    setProject(fresh);
-    const cmd = fresh.frontendCommand || fresh.backendCommand || fresh.openCommand;
+    const cmd = project.frontendCommand || project.backendCommand || project.openCommand;
     if (!cmd) {
       message.warning('请先在"配置"标签页中设置启动命令');
       setActiveTab('config');
       return;
     }
-    let cwd = fresh.localPath;
-    if (fresh.frontendCommand && fresh.backendCommand && cmd === fresh.frontendCommand) {
+    // Monorepo: if both frontend and backend commands exist, use the appropriate subdirectory
+    let cwd = project.localPath;
+    if (project.frontendCommand && project.backendCommand && cmd === project.frontendCommand) {
       for (const sub of ['frontend', 'web', 'client']) {
-        cwd = `${fresh.localPath}/${sub}`;
+        cwd = `${project.localPath}/${sub}`;
         break;
       }
-    } else if (fresh.frontendCommand && fresh.backendCommand && cmd === fresh.backendCommand) {
+    } else if (project.frontendCommand && project.backendCommand && cmd === project.backendCommand) {
       for (const sub of ['backend', 'server', 'api']) {
-        cwd = `${fresh.localPath}/${sub}`;
+        cwd = `${project.localPath}/${sub}`;
         break;
       }
     }
-    setDefaultCwd(cwd);
-    setDefaultCommand(cmd);
-    setTerminalOpen(true);
+    requestLaunch({ cwd, command: cmd });
   }
 
   async function handleRefresh() {
@@ -219,8 +215,7 @@ export default function ProjectDetailPage() {
               </button>
               <button
                 onClick={() => {
-                  setDefaultCwd(project.localPath);
-                  setTerminalOpen(true);
+                  requestLaunch({ cwd: project.localPath });
                 }}
                 style={{
                   display: 'flex',

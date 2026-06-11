@@ -2,15 +2,16 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { terminalApi } from '../api';
 import TerminalInstance from './TerminalInstance';
 import { Terminal, TerminalTheme } from './terminalTypes';
+import { LaunchRequest } from '../stores/terminalStore';
 import { PlusOutlined, CloseOutlined } from '@ant-design/icons';
 
 interface TerminalManagerProps {
   visible: boolean;
-  defaultCwd?: string | null;
-  defaultCommand?: string | null;
+  launchRequest: LaunchRequest | null;
+  consumeLaunchRequest: () => LaunchRequest | null;
 }
 
-export default function TerminalManager({ visible, defaultCwd, defaultCommand }: TerminalManagerProps) {
+export default function TerminalManager({ visible, launchRequest, consumeLaunchRequest }: TerminalManagerProps) {
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [theme, setTheme] = useState<TerminalTheme>('dark');
@@ -54,24 +55,23 @@ export default function TerminalManager({ visible, defaultCwd, defaultCommand }:
   }, [visible, terminals]);
 
   // Track pending command to execute after terminal is created.
-  // Uses a ref + effect to survive React StrictMode double-firing.
   const pendingCommandRef = useRef<string | null>(null);
 
-  // Auto-create a terminal when panel opens with no active terminals
-  // If defaultCwd is provided, use it; otherwise use default path
+  // Consume launch request: create terminal with cwd and queue command for execution
   useEffect(() => {
-    if (visible && terminals.length === 0) {
-      createTerminal(undefined, defaultCwd || undefined);
+    if (!visible) return;
+    const req = consumeLaunchRequest();
+    if (!req) return;
+
+    if (req.command) {
+      pendingCommandRef.current = req.command;
+    }
+
+    if (terminals.length === 0) {
+      createTerminal(undefined, req.cwd);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-
-  // When defaultCommand changes, store it as pending
-  useEffect(() => {
-    if (defaultCommand) {
-      pendingCommandRef.current = defaultCommand;
-    }
-  }, [defaultCommand]);
+  }, [visible, terminals.length]);
 
   // Execute pending command once a terminal is ready
   useEffect(() => {

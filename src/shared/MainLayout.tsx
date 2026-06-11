@@ -29,7 +29,7 @@ export default function MainLayout() {
   const location = useLocation();
   const { user } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
-  const { terminalOpen, setTerminalOpen, defaultCwd, defaultCommand } = useTerminalStore();
+  const { terminalOpen, setTerminalOpen, launchRequest, consumeLaunchRequest } = useTerminalStore();
   const [terminalHeight, setTerminalHeight] = useState(400);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ dragging: false, startY: 0, startHeight: 0 });
@@ -292,7 +292,7 @@ export default function MainLayout() {
               onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
             />
           </div>
-          <GlobalTerminalPanel visible={terminalOpen} defaultCwd={defaultCwd} defaultCommand={defaultCommand} />
+          <GlobalTerminalPanel visible={terminalOpen} launchRequest={launchRequest} consumeLaunchRequest={consumeLaunchRequest} />
         </div>
       </Layout>
     </Layout>
