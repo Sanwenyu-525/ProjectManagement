@@ -16,124 +16,9 @@ export default function ProjectDetailPage() {
   const [cmdModalOpen, setCmdModalOpen] = useState(false);
   const [frontendCmdInput, setFrontendCmdInput] = useState('');
   const [backendCmdInput, setBackendCmdInput] = useState('');
-  const [launching, setLaunching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { setTerminalOpen, setDefaultCwd } = useTerminalStore();
   const [activeTab, setActiveTab] = useState('overview');
-
-  // Generate launch hints based on project tech stack and characteristics
-  const getLaunchHints = (proj: any): string[] => {
-    const hints: string[] = [];
-    const techStack = proj.techStack || [];
-    const command = proj.frontendCommand || proj.openCommand || '';
-    const backendCmd = proj.backendCommand || '';
-
-    // Mobile app development hints
-    if (techStack.some((t: string) => /react.native|flutter|ionic/i.test(t))) {
-      hints.push('移动端项目：启动后需要在模拟器或真机上运行');
-    }
-
-    // React Native specific
-    if (techStack.some((t: string) => /react.native/i.test(t))) {
-      if (command.includes('android')) {
-        hints.push('Android 调试：确保已连接设备或启动模拟器');
-      }
-      if (command.includes('ios')) {
-        hints.push('iOS 调试：需要在 macOS 上运行，确保 Xcode 已安装');
-      }
-      if (!command.includes('android') && !command.includes('ios')) {
-        hints.push('React Native：请确保已启动模拟器或连接真机');
-      }
-    }
-
-    // Flutter specific
-    if (techStack.some((t: string) => /flutter/i.test(t))) {
-      hints.push('Flutter：确保 Flutter SDK 已安装，设备已连接');
-    }
-
-    // Electron/Desktop app hints
-    if (techStack.some((t: string) => /electron|tauri/i.test(t))) {
-      hints.push('桌面应用：将启动独立的桌面窗口');
-    }
-
-    // Server/Backend hints
-    if (techStack.some((t: string) => /express|fastify|nest|django|flask|spring|rails|gin|fiber|echo|phoenix|actix|axum|fastapi/i.test(t))) {
-      hints.push('后端服务：启动后可通过浏览器访问应用');
-    }
-
-    // Docker hints
-    if (techStack.some((t: string) => /docker|kubernetes|k8s/i.test(t))) {
-      hints.push('容器化应用：确保 Docker 已安装并运行');
-    }
-
-    // Python specific
-    if (techStack.some((t: string) => /python|flask|django|fastapi/i.test(t))) {
-      hints.push('Python 项目：确保已激活虚拟环境');
-    }
-
-    // Database required
-    if (techStack.some((t: string) => /postgres|mysql|mongodb|redis|sql/i.test(t))) {
-      hints.push('数据库依赖：确保数据库服务已启动');
-    }
-
-    // Node.js specific
-    if (techStack.some((t: string) => /node|express|fastify|nest/i.test(t))) {
-      if (command.includes('dev')) {
-        hints.push('开发服务器：启动后支持热重载');
-      }
-    }
-
-    // Java/Maven/Gradle specific
-    if (techStack.some((t: string) => /java|maven|gradle/i.test(t))) {
-      hints.push('Java 项目：首次构建可能需要下载依赖');
-    }
-
-    // Scala specific
-    if (techStack.some((t: string) => /scala|sbt/i.test(t))) {
-      hints.push('Scala 项目：首次构建可能需要下载依赖');
-    }
-
-    // Elixir/Phoenix specific
-    if (techStack.some((t: string) => /elixir|phoenix/i.test(t))) {
-      hints.push('Elixir 项目：需要 Erlang/OTP 运行时');
-    }
-
-    // C/C++ specific
-    if (techStack.some((t: string) => /c\+\+|cmake|make|meson/i.test(t))) {
-      hints.push('C/C++ 项目：确保已安装对应的构建工具');
-    }
-
-    // Julia specific
-    if (techStack.some((t: string) => /julia/i.test(t))) {
-      hints.push('Julia 项目：首次运行可能需要下载依赖');
-    }
-
-    // .NET specific
-    if (techStack.some((t: string) => /\.net|dotnet|c#/i.test(t))) {
-      hints.push('.NET 项目：确保已安装 .NET SDK');
-    }
-
-    // Backend command hints
-    if (backendCmd) {
-      if (/cargo/.test(backendCmd)) {
-        hints.push('Rust 后端：首次编译可能需要几分钟');
-      }
-      if (/python/.test(backendCmd)) {
-        hints.push('Python 后端：确保虚拟环境已激活');
-      }
-      if (/mvn|gradle/.test(backendCmd)) {
-        hints.push('Maven/Gradle：首次构建可能需要下载依赖');
-      }
-      if (/mix/.test(backendCmd)) {
-        hints.push('Elixir 后端：确保已安装 Erlang/OTP');
-      }
-      if (/sbt/.test(backendCmd)) {
-        hints.push('Scala 后端：首次构建可能需要下载依赖');
-      }
-    }
-
-    return hints;
-  };
 
   useEffect(() => {
     if (id) loadProject(id);
@@ -152,86 +37,7 @@ export default function ProjectDetailPage() {
   }
 
   async function handleLaunch() {
-    const hasFrontend = !!project?.frontendCommand || !!project?.openCommand;
-    const hasBackend = !!project?.backendCommand;
-    if (!hasFrontend && !hasBackend) {
-      setFrontendCmdInput('');
-      setBackendCmdInput('');
-      setCmdModalOpen(true);
-      return;
-    }
-
-    // Show launch confirmation with special hints
-    const launchHints = getLaunchHints(project);
-
-    if (launchHints.length > 0) {
-      const confirmed = await new Promise<boolean>((resolve) => {
-        Modal.confirm({
-          title: '启动项目',
-          icon: <PlayCircleOutlined style={{ color: '#52c41a' }} />,
-          width: 520,
-          content: (
-            <div>
-              <div style={{ marginBottom: 12, color: '#6b7a99', fontSize: 13 }}>
-                即将启动项目：<strong style={{ color: '#1a1f36' }}>{project.name}</strong>
-              </div>
-              <div style={{
-                background: 'rgba(245, 158, 11, 0.08)',
-                border: '1px solid rgba(245, 158, 11, 0.25)',
-                borderRadius: 8,
-                padding: '12px 14px',
-                marginBottom: 12,
-              }}>
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#d97706' }}>
-                  <ClockCircleOutlined style={{ marginRight: 6 }} />
-                  启动提示
-                </div>
-                <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, lineHeight: 2, color: '#92400e' }}>
-                  {launchHints.map((hint, i) => (
-                    <li key={i}>{hint}</li>
-                  ))}
-                </ul>
-              </div>
-              <div style={{ fontSize: 12, color: '#9eadc0' }}>
-                {project.frontendCommand && (
-                  <div style={{ marginBottom: 4 }}>
-                    前端：<code style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a', padding: '2px 6px', borderRadius: 4 }}>{project.frontendCommand}</code>
-                  </div>
-                )}
-                {project.backendCommand && (
-                  <div style={{ marginBottom: 4 }}>
-                    后端：<code style={{ background: 'rgba(59,130,246,0.1)', color: '#2563eb', padding: '2px 6px', borderRadius: 4 }}>{project.backendCommand}</code>
-                  </div>
-                )}
-                {!project.frontendCommand && !project.backendCommand && project.openCommand && (
-                  <div>启动命令：<code style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{project.openCommand}</code></div>
-                )}
-              </div>
-            </div>
-          ),
-          okText: '继续启动',
-          cancelText: '取消',
-          onOk: () => resolve(true),
-          onCancel: () => resolve(false),
-        });
-      });
-      if (!confirmed) return;
-    }
-
-    setLaunching(true);
-    try {
-      setDefaultCwd(project.localPath);
-      setTerminalOpen(true);
-      message.success('项目已启动');
-    } catch (e: unknown) {
-      message.warning(String(e) || '启动失败');
-    } finally {
-      setLaunching(false);
-    }
-  }
-
-  function handleOpenCmdModal() {
-    // Load existing commands when opening the modal
+    // Load existing commands into the modal
     setFrontendCmdInput(project?.frontendCommand || project?.openCommand || '');
     setBackendCmdInput(project?.backendCommand || '');
     setCmdModalOpen(true);
@@ -363,30 +169,7 @@ export default function ProjectDetailPage() {
                 <ReloadOutlined spin={refreshing} /> {refreshing ? '检测中...' : '刷新信息'}
               </button>
               <button
-                onClick={handleOpenCmdModal}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '10px 20px',
-                  background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 10,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(99, 102, 241, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-              >
-                <CodeOutlined /> 设置启动命令
-              </button>
-              <button
                 onClick={handleLaunch}
-                disabled={launching}
                 style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -405,7 +188,7 @@ export default function ProjectDetailPage() {
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(245, 158, 11, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(245, 158, 11, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
             >
-              <PlayCircleOutlined /> {launching ? '启动中...' : '启动项目'}
+              <PlayCircleOutlined /> 启动项目
               </button>
               <button
                 onClick={() => {
