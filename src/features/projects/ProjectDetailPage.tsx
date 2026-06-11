@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Descriptions, Tag, Button, Space, Spin, Empty, message, Table, Modal, Form, Input, Select, Timeline } from 'antd';
-import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined, SaveOutlined } from '@ant-design/icons';
 import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
 import KanbanBoard from '../../shared/KanbanBoard';
@@ -13,9 +13,6 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate();
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [cmdModalOpen, setCmdModalOpen] = useState(false);
-  const [frontendCmdInput, setFrontendCmdInput] = useState('');
-  const [backendCmdInput, setBackendCmdInput] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const { setTerminalOpen, setDefaultCwd } = useTerminalStore();
   const [activeTab, setActiveTab] = useState('overview');
@@ -37,10 +34,9 @@ export default function ProjectDetailPage() {
   }
 
   async function handleLaunch() {
-    // Load existing commands into the modal
-    setFrontendCmdInput(project?.frontendCommand || project?.openCommand || '');
-    setBackendCmdInput(project?.backendCommand || '');
-    setCmdModalOpen(true);
+    if (!project?.localPath) return;
+    setDefaultCwd(project.localPath);
+    setTerminalOpen(true);
   }
 
   async function handleRefresh() {
@@ -51,34 +47,43 @@ export default function ProjectDetailPage() {
 
     setRefreshing(true);
     try {
+      const oldProject = { ...project };
       const updated = await projectsApi.refresh(project.id);
       setProject(updated);
-      message.success('项目信息已更新');
+
+      // Compare old vs new to generate context-aware message
+      const changes: string[] = [];
+      if (JSON.stringify(oldProject.techStack) !== JSON.stringify(updated.techStack)) {
+        changes.push('技术栈');
+      }
+      if ((oldProject.frontendCommand || '') !== (updated.frontendCommand || '')) {
+        changes.push('前端命令');
+      }
+      if ((oldProject.backendCommand || '') !== (updated.backendCommand || '')) {
+        changes.push('后端命令');
+      }
+      if ((oldProject.openCommand || '') !== (updated.openCommand || '')) {
+        changes.push('启动命令');
+      }
+      if ((oldProject.name || '') !== (updated.name || '')) {
+        changes.push('项目名称');
+      }
+      if ((oldProject.description || '') !== (updated.description || '')) {
+        changes.push('描述');
+      }
+      if ((oldProject.iconType || '') !== (updated.iconType || '') || (oldProject.iconUrl || '') !== (updated.iconUrl || '')) {
+        changes.push('图标');
+      }
+
+      if (changes.length === 0) {
+        message.info('已是最新状态');
+      } else {
+        message.success(`已更新：${changes.join('、')}`);
+      }
     } catch (e: unknown) {
       message.warning(String(e) || '刷新失败');
     } finally {
       setRefreshing(false);
-    }
-  }
-
-  async function handleCmdSubmit() {
-    if (!frontendCmdInput.trim() && !backendCmdInput.trim()) {
-      message.warning('请至少输入一个启动命令');
-      return;
-    }
-    try {
-      const updated = await projectsApi.update(project.id, {
-        frontendCommand: frontendCmdInput.trim() || null,
-        backendCommand: backendCmdInput.trim() || null,
-        openCommand: frontendCmdInput.trim() || backendCmdInput.trim() || null,
-      });
-      setCmdModalOpen(false);
-      setProject(updated);
-      setDefaultCwd(updated.localPath);
-      setTerminalOpen(true);
-      message.success('项目已启动');
-    } catch (e: unknown) {
-      message.error(String(e) || '操作失败');
     }
   }
 
@@ -242,47 +247,80 @@ export default function ProjectDetailPage() {
             { key: 'tasks', label: `任务 (${project._count?.tasks || 0})`, children: <TasksTab projectId={project.id} repos={project.remoteRepos || []} /> },
             { key: 'documents', label: `文档 (${project._count?.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
+            { key: 'config', label: '配置', children: <ConfigTab project={project} onSaved={(p) => setProject(p)} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
           ]}
         />
       </div>
+    </div>
+  );
+}
 
-      {/* 设置启动命令弹窗 */}
-      <Modal
-        title="设置启动命令"
-        open={cmdModalOpen}
-        onCancel={() => setCmdModalOpen(false)}
-        onOk={handleCmdSubmit}
-        okText="保存并启动"
-        cancelText="取消"
-        width={480}
+// ==================== 配置 Tab ====================
+
+function ConfigTab({ project, onSaved }: { project: any; onSaved: (p: any) => void }) {
+  const [frontendCmd, setFrontendCmd] = useState(project?.frontendCommand || project?.openCommand || '');
+  const [backendCmd, setBackendCmd] = useState(project?.backendCommand || '');
+  const [saving, setSaving] = useState(false);
+
+  // Sync when project changes (e.g. after refresh)
+  useEffect(() => {
+    setFrontendCmd(project?.frontendCommand || project?.openCommand || '');
+    setBackendCmd(project?.backendCommand || '');
+  }, [project?.frontendCommand, project?.backendCommand, project?.openCommand]);
+
+  async function handleSave() {
+    if (!frontendCmd.trim() && !backendCmd.trim()) {
+      message.warning('请至少输入一个启动命令');
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await projectsApi.update(project.id, {
+        frontendCommand: frontendCmd.trim() || null,
+        backendCommand: backendCmd.trim() || null,
+        openCommand: frontendCmd.trim() || backendCmd.trim() || null,
+      });
+      onSaved(updated);
+      message.success('配置已保存');
+    } catch (e: unknown) {
+      message.error(String(e) || '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 520, padding: '8px 0' }}>
+      <div style={{ marginBottom: 20 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
+          <span style={{ color: '#22c55e', marginRight: 4 }}>●</span> 前端命令
+        </label>
+        <Input
+          value={frontendCmd}
+          onChange={e => setFrontendCmd(e.target.value)}
+          placeholder="如 npm run dev、pnpm dev、yarn start"
+        />
+      </div>
+      <div style={{ marginBottom: 20 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
+          <span style={{ color: '#3b82f6', marginRight: 4 }}>●</span> 后端命令（可选）
+        </label>
+        <Input
+          value={backendCmd}
+          onChange={e => setBackendCmd(e.target.value)}
+          placeholder="如 cargo run、python manage.py runserver"
+        />
+      </div>
+      <Button
+        type="primary"
+        icon={<SaveOutlined />}
+        onClick={handleSave}
+        loading={saving}
+        style={{ background: '#22c55e', borderColor: '#22c55e' }}
       >
-        <p style={{ color: '#6b7a99', marginBottom: 16 }}>
-          配置项目的前后端启动命令，设置后可在全局终端中一键启动。
-        </p>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
-            <span style={{ color: '#22c55e', marginRight: 4 }}>●</span> 前端命令
-          </label>
-          <Input
-            value={frontendCmdInput}
-            onChange={e => setFrontendCmdInput(e.target.value)}
-            placeholder="如 npm run dev、pnpm dev、yarn start"
-            autoFocus
-          />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
-            <span style={{ color: '#3b82f6', marginRight: 4 }}>●</span> 后端命令（可选）
-          </label>
-          <Input
-            value={backendCmdInput}
-            onChange={e => setBackendCmdInput(e.target.value)}
-            placeholder="如 cargo run、python manage.py runserver"
-            onPressEnter={handleCmdSubmit}
-          />
-        </div>
-      </Modal>
+        保存配置
+      </Button>
     </div>
   );
 }
