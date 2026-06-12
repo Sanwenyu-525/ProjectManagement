@@ -393,14 +393,27 @@ pub fn git_commit(repo_path: String, message: String) -> Result<String, String> 
 #[command]
 pub fn git_push(repo_path: String, remote: Option<String>, branch: Option<String>) -> Result<String, String> {
     let remote_str = remote.unwrap_or_else(|| "origin".into());
+
+    // Check if remote exists
+    let remotes = run_git_checked(&repo_path, &["remote"])?;
+    if !remotes.lines().any(|l| l.trim() == remote_str) {
+        return Err(format!("未配置远程仓库 '{}'", remote_str));
+    }
+
+    // Check if there's an upstream tracking branch
+    let upstream = run_git(&repo_path, &["rev-parse", "--abbrev-ref", "@{upstream}"]);
+    if upstream.is_err() && branch.is_none() {
+        return Err("当前分支未设置上游跟踪分支，请先 git push -u origin <branch>".into());
+    }
+
     let mut args = vec!["push", &remote_str];
     let branch_str;
     if let Some(ref b) = branch {
         branch_str = b.clone();
         args.push(&branch_str);
     }
-    run_git_checked(&repo_path, &args)?;
-    Ok("已推送".into())
+    let output = run_git_checked(&repo_path, &args)?;
+    Ok(if output.trim().is_empty() { "已推送".into() } else { output.trim().to_string() })
 }
 
 // ── Diff commit ────────────────────────────────────────────────────────────
