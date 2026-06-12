@@ -653,14 +653,18 @@ pub async fn projects_launch(
     let mut launched: Vec<String> = Vec::new();
     let now = crate::db::now_str();
 
+    let resolve_cwd = |cwd_opt: Option<&str>| -> String {
+        cwd_opt.map(|c| {
+            if c.starts_with('/') || c.contains(":\\") { c.to_string() }
+            else { format!("{}/{}", local_path, c) }
+        }).unwrap_or_else(|| local_path.to_string())
+    };
+
     for comp in &requested {
         match comp.as_str() {
             "frontend" => {
                 if let Some(cmd) = frontend_cmd {
-                    let cwd = frontend_cwd.map(|c| {
-                        if c.starts_with('/') || c.contains(":\\") { c.to_string() }
-                        else { format!("{}/{}", local_path, c) }
-                    }).unwrap_or_else(|| local_path.to_string());
+                    let cwd = resolve_cwd(frontend_cwd);
                     let terminal_id = crate::commands::terminal::terminal_start(app.clone(), id.clone(), cmd.to_string(), cwd).await?;
                     launched.push(terminal_id);
                     db.execute(
@@ -671,10 +675,7 @@ pub async fn projects_launch(
             }
             "backend" => {
                 if let Some(cmd) = backend_cmd {
-                    let cwd = backend_cwd.map(|c| {
-                        if c.starts_with('/') || c.contains(":\\") { c.to_string() }
-                        else { format!("{}/{}", local_path, c) }
-                    }).unwrap_or_else(|| local_path.to_string());
+                    let cwd = resolve_cwd(backend_cwd);
                     let terminal_id = crate::commands::terminal::terminal_start(app.clone(), id.clone(), cmd.to_string(), cwd).await?;
                     launched.push(terminal_id);
                     db.execute(
@@ -723,21 +724,15 @@ pub async fn projects_stop(
     }
 
     for comp in &requested {
-        match comp.as_str() {
-            "frontend" => {
-                db.execute(
-                    "UPDATE projects SET frontendStatus = 'stopped' WHERE id = ?1",
-                    rusqlite::params![id],
-                ).map_err(|e| e.to_string())?;
-            }
-            "backend" => {
-                db.execute(
-                    "UPDATE projects SET backendStatus = 'stopped' WHERE id = ?1",
-                    rusqlite::params![id],
-                ).map_err(|e| e.to_string())?;
-            }
-            _ => {}
-        }
+        let col = match comp.as_str() {
+            "frontend" => "frontendStatus",
+            "backend" => "backendStatus",
+            _ => continue,
+        };
+        db.execute(
+            &format!("UPDATE projects SET {} = 'stopped' WHERE id = ?1", col),
+            rusqlite::params![id],
+        ).map_err(|e| e.to_string())?;
     }
 
     Ok(serde_json::json!({
@@ -877,12 +872,6 @@ pub async fn projects_check_environment(
     }))
 }
 
-#[cfg(target_os = "windows")]
-fn check_port_in_use(port: u16) -> bool {
-    std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
-}
-
-#[cfg(not(target_os = "windows"))]
 fn check_port_in_use(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
 }

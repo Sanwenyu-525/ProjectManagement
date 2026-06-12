@@ -14,6 +14,7 @@ interface TerminalTabProps {
 export default function TerminalTab({ terminal, isActive, onSelect, onClose, onRename, onContextMenu }: TerminalTabProps) {
   const [editing, setEditing] = useState(false);
   const [editLabel, setEditLabel] = useState('');
+  const [hovered, setHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleDoubleClick = (e: React.MouseEvent) => {
@@ -54,9 +55,11 @@ export default function TerminalTab({ terminal, isActive, onSelect, onClose, onR
         position: 'relative',
       }}
       onMouseEnter={e => {
+        setHovered(true);
         if (!isActive) e.currentTarget.style.background = '#2a2d2e';
       }}
       onMouseLeave={e => {
+        setHovered(false);
         if (!isActive) e.currentTarget.style.background = 'transparent';
       }}
     >
@@ -108,13 +111,23 @@ export default function TerminalTab({ terminal, isActive, onSelect, onClose, onR
           e.stopPropagation();
           onClose(terminal.id);
         }}
+        onMouseEnter={e => {
+          e.currentTarget.style.color = '#e8e8e8';
+          e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.color = '#555';
+          e.currentTarget.style.background = 'transparent';
+        }}
         style={{
           fontSize: 9,
           color: '#555',
           cursor: 'pointer',
-          opacity: isActive ? 1 : 0,
-          transition: 'opacity 0.15s',
+          opacity: isActive || hovered ? 1 : 0,
+          transition: 'opacity 0.15s, color 0.1s, background 0.1s',
           flexShrink: 0,
+          borderRadius: 3,
+          padding: '2px',
         }}
         className="tab-close-btn"
       />

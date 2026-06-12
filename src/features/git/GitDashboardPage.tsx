@@ -46,22 +46,24 @@ export default function GitDashboardPage() {
       }));
       setProjects(initial);
 
+      // Fetch shared data once
+      const allHealth = await healthApi.getAllLatest().catch(() => []) as any[];
+
       // Fetch git info for each project in parallel
       const promises = withPaths.map(async (p: any) => {
         try {
-          const [status, log, branches, healthData] = await Promise.all([
+          const [status, log, branches] = await Promise.all([
             gitApi.status(p.localPath).catch(() => []),
             gitApi.log(p.localPath, 1).catch(() => []),
             gitApi.branches(p.localPath).catch(() => ({ current: null })),
-            healthApi.getAllLatest().catch(() => []),
           ]);
 
           const currentBranch = (branches as any)?.current || null;
           const dirtyCount = Array.isArray(status) ? status.length : 0;
           const lastCommit = Array.isArray(log) && log.length > 0 ? log[0] : null;
 
-          // Get ahead/behind from health data
-          const health = (healthData as any[])?.find((h: any) => h.projectId === p.id);
+          // Get ahead/behind from pre-fetched health data
+          const health = allHealth?.find((h: any) => h.projectId === p.id);
           const aheadCount = health?.aheadCount || 0;
           const behindCount = health?.behindCount || 0;
 

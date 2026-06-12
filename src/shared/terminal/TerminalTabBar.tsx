@@ -234,6 +234,7 @@ export default function TerminalTabBar({
             onRename={onRename}
             onToggleCollapse={toggleGroupCollapse}
             onDeleteGroup={removeGroup}
+            onCreateTerminal={onCreateTerminal}
             onContextMenu={handleContextMenu}
             onGroupContextMenu={handleGroupContextMenu}
           />

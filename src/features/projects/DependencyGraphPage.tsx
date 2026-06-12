@@ -37,6 +37,17 @@ export default function DependencyGraphPage() {
   const [compact, setCompact] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
 
+  const computeLayout = (nodeCount: number, isCompact: boolean) => {
+    const cols = Math.ceil(Math.sqrt(nodeCount || 1));
+    const nodeWidth = isCompact ? 120 : 180;
+    const nodeHeight = isCompact ? 60 : 80;
+    const gapX = isCompact ? 40 : 60;
+    const gapY = isCompact ? 40 : 60;
+    const svgWidth = Math.max(600, cols * (nodeWidth + gapX) + 120);
+    const svgHeight = Math.max(400, Math.ceil(nodeCount / cols) * (nodeHeight + gapY) + 120);
+    return { cols, nodeWidth, nodeHeight, gapX, gapY, svgWidth, svgHeight };
+  };
+
   const loadGraph = useCallback(async () => {
     setLoading(true);
     try {
@@ -77,17 +88,12 @@ export default function DependencyGraphPage() {
       }
 
       // Layout: simple grid
-      const cols = Math.ceil(Math.sqrt(projects.length));
-      const nodeWidth = compact ? 120 : 180;
-      const nodeHeight = compact ? 60 : 80;
-      const gapX = compact ? 40 : 60;
-      const gapY = compact ? 40 : 60;
-
+      const lyt = computeLayout(projects.length, compact);
       const graphNodes: GraphNode[] = projects.map((p, i) => ({
         id: p.id,
         name: p.name,
-        x: (i % cols) * (nodeWidth + gapX) + 60,
-        y: Math.floor(i / cols) * (nodeHeight + gapY) + 60,
+        x: (i % lyt.cols) * (lyt.nodeWidth + lyt.gapX) + 60,
+        y: Math.floor(i / lyt.cols) * (lyt.nodeHeight + lyt.gapY) + 60,
         techStack: (p as any).techStack || [],
         status: (p as any).status || 'Idea',
         dependsOn: detectedEdges.filter(e => e.from === p.id).map(e => e.to),
@@ -106,13 +112,7 @@ export default function DependencyGraphPage() {
     loadGraph();
   }, [loadGraph]);
 
-  const cols = Math.ceil(Math.sqrt(nodes.length));
-  const nodeWidth = compact ? 120 : 180;
-  const nodeHeight = compact ? 60 : 80;
-  const gapX = compact ? 40 : 60;
-  const gapY = compact ? 40 : 60;
-  const svgWidth = Math.max(600, cols * (nodeWidth + gapX) + 120);
-  const svgHeight = Math.max(400, Math.ceil(nodes.length / cols) * (nodeHeight + gapY) + 120);
+  const { nodeWidth, nodeHeight, svgWidth, svgHeight } = computeLayout(nodes.length, compact);
 
   const getConnectedIds = (nodeId: string): Set<string> => {
     const connected = new Set<string>();

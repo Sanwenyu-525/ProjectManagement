@@ -55,6 +55,13 @@ impl r2d2::ManageConnection for ConnectionManager {
     }
 }
 
+/// Execute a migration SQL file line by line, ignoring errors (for idempotency).
+fn run_migration_sql(conn: &Connection, sql: &str) {
+    for stmt in sql.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with("--")) {
+        let _ = conn.execute_batch(stmt);
+    }
+}
+
 /// Thread-safe SQLite database wrapper with connection pool.
 pub struct Database {
     pool: Pool<ConnectionManager>,
@@ -122,26 +129,16 @@ impl Database {
         )?;
 
         // Remove users table and simplify schema
-        let migration_002 = include_str!("../migrations/002_remove_users.sql");
-        let _ = conn.execute_batch(migration_002);
+        run_migration_sql(&conn, include_str!("../migrations/002_remove_users.sql"));
 
         // Add runtime status fields
-        let migration_003 = include_str!("../migrations/003_runtime_status.sql");
-        for stmt in migration_003.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with("--")) {
-            let _ = conn.execute_batch(stmt);
-        }
+        run_migration_sql(&conn, include_str!("../migrations/003_runtime_status.sql"));
 
         // Add health score fields
-        let migration_004 = include_str!("../migrations/004_health_score.sql");
-        for stmt in migration_004.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with("--")) {
-            let _ = conn.execute_batch(stmt);
-        }
+        run_migration_sql(&conn, include_str!("../migrations/004_health_score.sql"));
 
         // Workspaces
-        let migration_005 = include_str!("../migrations/005_workspaces.sql");
-        for stmt in migration_005.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with("--")) {
-            let _ = conn.execute_batch(stmt);
-        }
+        run_migration_sql(&conn, include_str!("../migrations/005_workspaces.sql"));
 
         Ok(())
     }
