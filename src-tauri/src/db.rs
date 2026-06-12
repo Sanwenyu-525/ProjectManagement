@@ -65,10 +65,35 @@ impl Database {
         let alters = [
             "ALTER TABLE projects ADD COLUMN frontendCommand TEXT",
             "ALTER TABLE projects ADD COLUMN backendCommand TEXT",
+            "ALTER TABLE projects ADD COLUMN frontendCwd TEXT",
+            "ALTER TABLE projects ADD COLUMN backendCwd TEXT",
         ];
         for stmt in &alters {
             let _ = conn.execute_batch(stmt); // ignore "duplicate column" errors
         }
+
+        // Health check table
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS \"project_health_checks\" (
+                \"id\" TEXT NOT NULL PRIMARY KEY,
+                \"projectId\" TEXT NOT NULL,
+                \"checkDate\" TEXT NOT NULL,
+                \"dirtyFileCount\" INTEGER NOT NULL DEFAULT 0,
+                \"currentBranch\" TEXT,
+                \"aheadCount\" INTEGER NOT NULL DEFAULT 0,
+                \"behindCount\" INTEGER NOT NULL DEFAULT 0,
+                \"outdatedDeps\" TEXT NOT NULL DEFAULT '[]',
+                \"outdatedDepCount\" INTEGER NOT NULL DEFAULT 0,
+                \"hasChanges\" INTEGER NOT NULL DEFAULT 0,
+                \"createdAt\" TEXT NOT NULL,
+                CONSTRAINT \"project_health_checks_projectId_fkey\"
+                    FOREIGN KEY (\"projectId\") REFERENCES \"projects\" (\"id\") ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS \"project_health_checks_projectId_idx\"
+                ON \"project_health_checks\"(\"projectId\");
+            CREATE INDEX IF NOT EXISTS \"project_health_checks_checkDate_idx\"
+                ON \"project_health_checks\"(\"checkDate\");"
+        )?;
 
         Ok(())
     }

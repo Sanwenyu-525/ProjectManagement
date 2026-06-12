@@ -5,6 +5,9 @@ export interface Terminal {
   shell: string;
   cwd: string;
   status: 'running' | 'exited' | 'error';
+  projectId?: string | null;
+  groupId?: string | null;
+  pane: 'left' | 'right';
 }
 
 export type TerminalTheme = 'dark' | 'modern' | 'matrix' | 'light';

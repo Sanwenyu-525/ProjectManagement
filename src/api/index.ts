@@ -26,6 +26,10 @@ export const projectsApi = {
     cmd('projects_open', { id }),
   refresh: (id: string) =>
     cmd<Record<string, any>>('projects_refresh', { id }).then(normalizeProject),
+  detectCwd: (projectPath: string, command: string) =>
+    cmd<string | null>('detect_project_cwd', { projectPath, command }),
+  debugRaw: (id: string) =>
+    cmd<Record<string, any>>('debug_project_raw', { id }),
 };
 
 // ==================== Tasks ====================
@@ -115,6 +119,33 @@ export const detectApi = {
     cmd('detect_scan_directory', { path, maxDepth: maxDepth ?? null }),
 };
 
+// ==================== Git ====================
+
+export const gitApi = {
+  status: (repoPath: string) =>
+    cmd('git_status', { repoPath }),
+  log: (repoPath: string, limit?: number) =>
+    cmd('git_log', { repoPath, limit: limit ?? null }),
+  branches: (repoPath: string) =>
+    cmd('git_branches', { repoPath }),
+  diff: (repoPath: string, file?: string, staged?: boolean) =>
+    cmd('git_diff', { repoPath, file: file ?? null, staged: staged ?? null }),
+  branchSwitch: (repoPath: string, branch: string) =>
+    cmd('git_branch_switch', { repoPath, branch }),
+  stashList: (repoPath: string) =>
+    cmd('git_stash_list', { repoPath }),
+  add: (repoPath: string, files: string[]) =>
+    cmd('git_add', { repoPath, files }),
+  commit: (repoPath: string, message: string) =>
+    cmd('git_commit', { repoPath, message }),
+  push: (repoPath: string, remote?: string, branch?: string) =>
+    cmd('git_push', { repoPath, remote: remote ?? null, branch: branch ?? null }),
+  diffCommit: (repoPath: string, hash: string) =>
+    cmd('git_diff_commit', { repoPath, hash }),
+  unstage: (repoPath: string, files: string[]) =>
+    cmd('git_reset_head', { repoPath, files }),
+};
+
 // ==================== Documents ====================
 
 export const documentsApi = {
@@ -164,4 +195,17 @@ export const dependenciesApi = {
     cmd('analyze_docker_compose', { path }),
   detectMonorepo: (path: string) =>
     cmd('detect_monorepo_structure', { path }),
+};
+
+// ==================== Health ====================
+
+export const healthApi = {
+  runAll: () =>
+    cmd<{ results: any[]; changedProjects: any[] }>('run_all_health_checks'),
+  runForProject: (projectId: string) =>
+    cmd<any>('run_health_check_for_project', { projectId }),
+  getProjectHistory: (projectId: string, limit?: number) =>
+    cmd<any[]>('get_project_health_history', { projectId, limit: limit ?? null }),
+  getAllLatest: () =>
+    cmd<any[]>('get_all_latest_health'),
 };

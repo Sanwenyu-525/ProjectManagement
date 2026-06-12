@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { Card, Form, Input, Button, Typography, Tabs, message, Space, Modal } from 'antd';
-import { SaveOutlined, KeyOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Typography, Tabs, message, Space, Modal, Select } from 'antd';
+import { SaveOutlined, KeyOutlined, FolderOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../../stores/authStore';
+import { useTerminalStore } from '../../stores/terminalStore';
+import { open } from '@tauri-apps/plugin-dialog';
+import { DEFAULT_SHELL, DEFAULT_CWD, SHELL_OPTIONS } from '../../lib/constants';
 
 const { Title, Text } = Typography;
 
@@ -115,9 +118,14 @@ function IntegrationSettings() {
 
 function PreferenceSettings() {
   const [defaultCmd, setDefaultCmd] = useState(localStorage.getItem('devhub_default_open_cmd') || 'code {path}');
+  const [terminalShell, setTerminalShell] = useState(localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL);
+  const [defaultCwd, setDefaultCwd] = useState(localStorage.getItem('devhub_terminal_default_cwd') || DEFAULT_CWD);
 
   const handleSave = () => {
     localStorage.setItem('devhub_default_open_cmd', defaultCmd);
+    localStorage.setItem('devhub_terminal_shell', terminalShell);
+    localStorage.setItem('devhub_terminal_default_cwd', defaultCwd);
+    useTerminalStore.setState({ defaultCwd });
     message.success('偏好已保存');
   };
 
@@ -132,6 +140,45 @@ function PreferenceSettings() {
           />
           <div style={{ color: '#6b7a99', fontSize: 12, marginTop: 4 }}>
             {'{path}'} 会被替换为项目本地路径。常用: code {'{path}'}、webstorm {'{path}'}
+          </div>
+        </Form.Item>
+        <Form.Item label="终端 Shell">
+          <Select
+            value={terminalShell}
+            onChange={setTerminalShell}
+            options={SHELL_OPTIONS.map(o => ({ ...o, label: o.value === DEFAULT_SHELL ? `${o.label}（默认）` : o.label }))}
+            style={{ width: 220 }}
+          />
+          <div style={{ color: '#6b7a99', fontSize: 12, marginTop: 4 }}>
+            新建终端时使用的 Shell。修改后需重新打开终端面板生效。
+          </div>
+        </Form.Item>
+        <Form.Item label="终端默认路径">
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input
+              value={defaultCwd}
+              onChange={e => setDefaultCwd(e.target.value)}
+              placeholder={DEFAULT_CWD}
+              style={{ flex: 1 }}
+            />
+            <Button
+              icon={<FolderOutlined />}
+              onClick={async () => {
+                const selected = await open({
+                  directory: true,
+                  multiple: false,
+                  defaultPath: defaultCwd || undefined,
+                });
+                if (selected) {
+                  setDefaultCwd(selected);
+                }
+              }}
+            >
+              选择
+            </Button>
+          </div>
+          <div style={{ color: '#6b7a99', fontSize: 12, marginTop: 4 }}>
+            点击全局终端按钮时打开的默认路径。启动项目时会使用项目路径。
           </div>
         </Form.Item>
         <Form.Item>

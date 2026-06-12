@@ -12,12 +12,17 @@ interface TerminalInstanceProps {
   theme: TerminalTheme;
   isActive: boolean;
   onInput: (terminalId: string, data: string) => void;
+  onExit?: (terminalId: string, code: number | null) => void;
 }
 
-export default function TerminalInstance({ terminal, theme, isActive, onInput }: TerminalInstanceProps) {
+export default function TerminalInstance({ terminal, theme, isActive, onInput, onExit }: TerminalInstanceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const onInputRef = useRef(onInput);
+  const onExitRef = useRef(onExit);
+  onInputRef.current = onInput;
+  onExitRef.current = onExit;
 
   // Initialize xterm.js terminal
   useEffect(() => {
@@ -45,21 +50,25 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
       fitAddon.fit();
     }, 350);
 
-    // ResizeObserver to re-fit and notify backend PTY
+    // ResizeObserver to re-fit and notify backend PTY (debounced)
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const observer = new ResizeObserver(() => {
       if (fitAddonRef.current && termRef.current) {
         fitAddonRef.current.fit();
-        const dims = fitAddonRef.current.proposeDimensions();
-        if (dims) {
-          terminalApi.resize(terminal.id, dims.cols, dims.rows).catch(() => {});
-        }
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const dims = fitAddonRef.current?.proposeDimensions();
+          if (dims) {
+            terminalApi.resize(terminal.id, dims.cols, dims.rows).catch(() => {});
+          }
+        }, 100);
       }
     });
     observer.observe(containerRef.current);
 
     // Handle user input
     const inputDisposable = term.onData((data) => {
-      onInput(terminal.id, data);
+      onInputRef.current(terminal.id, data);
     });
 
     // Listen for terminal output events
@@ -77,11 +86,13 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
           ? '\r\n\x1b[32m✓ 进程正常退出\x1b[0m'
           : `\r\n\x1b[31m✗ 进程异常退出 (code: ${code})\x1b[0m`;
         term.write(exitMsg);
+        onExitRef.current?.(terminal.id, code);
       }
     });
 
     return () => {
       clearTimeout(fitTimer);
+      if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
       inputDisposable.dispose();
       unlistenOutput.then((fn) => fn());
@@ -90,7 +101,7 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput }:
       termRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [terminal.id, onInput]);
+  }, [terminal.id]);
 
   // Update theme when it changes
   useEffect(() => {

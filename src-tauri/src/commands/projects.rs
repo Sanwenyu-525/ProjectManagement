@@ -127,6 +127,8 @@ pub struct CreateProjectInput {
     pub open_command: Option<String>,
     pub frontend_command: Option<String>,
     pub backend_command: Option<String>,
+    pub frontend_cwd: Option<String>,
+    pub backend_cwd: Option<String>,
     pub live_url: Option<String>,
     pub domain_name: Option<String>,
     pub tech_stack: Option<Vec<String>>,
@@ -185,8 +187,8 @@ pub async fn projects_create(
     };
 
     db.execute(
-        "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, frontendCommand, backendCommand, liveUrl, domainName, techStack, startDate, targetDate, iconType, iconUrl, iconColor, ownerId, createdAt, updatedAt)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?20)",
+        "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, frontendCommand, backendCommand, frontendCwd, backendCwd, liveUrl, domainName, techStack, startDate, targetDate, iconType, iconUrl, iconColor, ownerId, createdAt, updatedAt)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?22)",
         rusqlite::params![
             id,
             data.name,
@@ -198,6 +200,8 @@ pub async fn projects_create(
             data.open_command,
             data.frontend_command,
             data.backend_command,
+            data.frontend_cwd,
+            data.backend_cwd,
             data.live_url,
             data.domain_name,
             tech_stack,
@@ -229,6 +233,8 @@ pub struct UpdateProjectInput {
     pub open_command: Option<String>,
     pub frontend_command: Option<String>,
     pub backend_command: Option<String>,
+    pub frontend_cwd: Option<String>,
+    pub backend_cwd: Option<String>,
     pub live_url: Option<String>,
     pub domain_name: Option<String>,
     pub tech_stack: Option<Vec<String>>,
@@ -269,6 +275,8 @@ pub async fn projects_update(
         add_field!(open_command, "openCommand");
         add_field!(frontend_command, "frontendCommand");
         add_field!(backend_command, "backendCommand");
+        add_field!(frontend_cwd, "frontendCwd");
+        add_field!(backend_cwd, "backendCwd");
         add_field!(live_url, "liveUrl");
         add_field!(domain_name, "domainName");
         add_field!(start_date, "startDate");
@@ -284,17 +292,18 @@ pub async fn projects_update(
         }
 
         if sets.is_empty() {
-            // param_values dropped here, no .await after
         } else {
             let now = crate::db::now_str();
             sets.push(format!("updatedAt = ?{}", idx));
             param_values.push(Box::new(now));
             idx += 1;
 
+            let id_idx = idx;
             sets.push(format!("id = ?{}", idx));
             param_values.push(Box::new(id.clone()));
+            idx += 1;
 
-            let sql = format!("UPDATE projects SET {} WHERE id = ?{}", sets.join(", "), idx - 1);
+            let sql = format!("UPDATE projects SET {} WHERE id = ?{}", sets.join(", "), id_idx);
             let refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
             db.execute_returning_changes(&sql, &refs).map_err(|e| e.to_string())?;
         }
@@ -324,17 +333,18 @@ pub async fn projects_refresh(
 ) -> Result<JsonValue, String> {
     let project = db
         .query_one_json(
-            "SELECT localPath, techStack, frontendCommand, backendCommand, openCommand FROM projects WHERE id = ?1 AND ownerId = ?2",
+            "SELECT localPath, techStack, frontendCommand, backendCommand, openCommand, frontendCwd, backendCwd FROM projects WHERE id = ?1 AND ownerId = ?2",
             rusqlite::params![id, DEFAULT_USER_ID],
         )
         .map_err(|e| e.to_string())?
         .ok_or("PROJECT_NOT_FOUND")?;
 
     let local_path = project.get("localPath").and_then(|v| v.as_str());
-    // Get current commands to preserve user overrides
     let current_frontend = project.get("frontendCommand").and_then(|v| v.as_str());
     let current_backend = project.get("backendCommand").and_then(|v| v.as_str());
     let current_open = project.get("openCommand").and_then(|v| v.as_str());
+    let current_fe_cwd = project.get("frontendCwd").and_then(|v| v.as_str());
+    let current_be_cwd = project.get("backendCwd").and_then(|v| v.as_str());
 
     let path = local_path.ok_or("NO_LOCAL_PATH: 项目没有本地路径，无法检测")?;
 
@@ -342,8 +352,7 @@ pub async fn projects_refresh(
     let detected = super::detect::detect_local_project(path.to_string()).await
         .map_err(|e| format!("检测失败: {}", e))?;
 
-    // Update project with detected info, but preserve existing commands
-    // Only use detected commands if current commands are empty
+    // Preserve existing commands, only use detected if empty
     let final_frontend = current_frontend
         .map(|s| s.to_string())
         .or(detected.frontend_command);
@@ -353,6 +362,22 @@ pub async fn projects_refresh(
     let final_open = current_open
         .map(|s| s.to_string())
         .or(detected.open_command);
+
+    // Auto-detect cwd for commands that don't have one configured
+    let final_fe_cwd = current_fe_cwd
+        .map(|s| s.to_string())
+        .or_else(|| {
+            final_frontend.as_deref().and_then(|cmd| {
+                detect_project_cwd_inner(path, cmd).ok().flatten()
+            })
+        });
+    let final_be_cwd = current_be_cwd
+        .map(|s| s.to_string())
+        .or_else(|| {
+            final_backend.as_deref().and_then(|cmd| {
+                detect_project_cwd_inner(path, cmd).ok().flatten()
+            })
+        });
 
     let now = crate::db::now_str();
     let tech_stack = serde_json::to_string(&detected.tech_stack).unwrap_or_else(|_| "[]".into());
@@ -365,6 +390,8 @@ pub async fn projects_refresh(
             openCommand = ?4,
             frontendCommand = ?5,
             backendCommand = ?6,
+            frontendCwd = ?12,
+            backendCwd = ?13,
             iconType = ?7,
             iconUrl = ?8,
             iconColor = ?9,
@@ -382,6 +409,8 @@ pub async fn projects_refresh(
             detected.icon_color,
             now,
             id,
+            final_fe_cwd,
+            final_be_cwd,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -466,7 +495,7 @@ pub async fn projects_open(
 ) -> Result<JsonValue, String> {
     let project = db
         .query_one_json(
-            "SELECT localPath, openCommand FROM projects WHERE id = ?1 AND ownerId = ?2",
+            "SELECT localPath, openCommand, frontendCommand, backendCommand FROM projects WHERE id = ?1 AND ownerId = ?2",
             rusqlite::params![id, DEFAULT_USER_ID],
         )
         .map_err(|e| e.to_string())?
@@ -474,10 +503,12 @@ pub async fn projects_open(
 
     let local_path = project.get("localPath").and_then(|v| v.as_str());
     let open_command = project.get("openCommand").and_then(|v| v.as_str());
+    let frontend_command = project.get("frontendCommand").and_then(|v| v.as_str());
+    let backend_command = project.get("backendCommand").and_then(|v| v.as_str());
 
     let path = local_path.ok_or("NO_LOCAL_PATH: 请先设置本地路径")?;
-    let cmd = open_command.unwrap_or("explorer {path}");
-    let command_str = cmd.replace("{path}", path);
+    let effective = frontend_command.or(backend_command).or(open_command).unwrap_or("explorer {path}");
+    let command_str = effective.replace("{path}", path);
 
     // Execute the command using shell
     #[cfg(target_os = "windows")]
@@ -496,4 +527,84 @@ pub async fn projects_open(
         Ok(_) => Ok(serde_json::json!({ "success": true, "command": command_str })),
         Err(e) => Err(format!("Failed to execute command: {}", e)),
     }
+}
+
+fn detect_project_cwd_inner(project_path: &str, command: &str) -> Result<Option<String>, String> {
+    use std::fs;
+
+    let root = std::path::PathBuf::from(project_path);
+    if !root.exists() {
+        return Err("Project path does not exist".into());
+    }
+
+    // Extract script name from command (e.g. "npm run dev" -> "dev", "pnpm start" -> "start")
+    let parts: Vec<&str> = command.trim().split_whitespace().collect();
+    let skip_prefixes = ["npx", "pnpm", "yarn"];
+    let filtered: Vec<&str> = parts.iter()
+        .copied()
+        .skip_while(|s| skip_prefixes.contains(s))
+        .collect();
+
+    let script_name = if filtered.len() >= 2 && (filtered[0] == "run" || filtered[0] == "start") {
+        filtered.last().unwrap().to_string()
+    } else {
+        filtered.last().unwrap_or(&parts.first().unwrap_or(&"")).to_string()
+    };
+
+    if script_name.is_empty() {
+        return Ok(None);
+    }
+
+    // Check root package.json first
+    let root_pkg = root.join("package.json");
+    if let Ok(content) = fs::read_to_string(&root_pkg) {
+        if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(scripts) = pkg.get("scripts").and_then(|s| s.as_object()) {
+                if scripts.contains_key(&script_name) {
+                    return Ok(Some(".".into()));
+                }
+            }
+        }
+    }
+
+    // Scan first-level subdirectories
+    if let Ok(entries) = fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let dir_name = entry.file_name().to_string_lossy().to_string();
+            if dir_name.starts_with('.') || dir_name == "node_modules" {
+                continue;
+            }
+            let pkg_path = entry.path().join("package.json");
+            if let Ok(content) = fs::read_to_string(pkg_path) {
+                if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(scripts) = pkg.get("scripts").and_then(|s| s.as_object()) {
+                        if scripts.contains_key(&script_name) {
+                            return Ok(Some(dir_name));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+#[command]
+pub async fn detect_project_cwd(project_path: String, command: String) -> Result<Option<String>, String> {
+    detect_project_cwd_inner(&project_path, &command)
+}
+
+/// Debug: return raw DB columns to verify cwd fields exist and have values.
+#[command]
+pub async fn debug_project_raw(db: State<'_, Database>, id: String) -> Result<JsonValue, String> {
+    db.query_one_json(
+        "SELECT id, frontendCommand, backendCommand, frontendCwd, backendCwd, localPath FROM projects WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?
+    .ok_or("NOT_FOUND".into())
 }

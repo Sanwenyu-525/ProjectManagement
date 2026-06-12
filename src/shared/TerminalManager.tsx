@@ -1,170 +1,166 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { terminalApi } from '../api';
-import TerminalInstance from './TerminalInstance';
-import { Terminal, TerminalTheme } from './terminalTypes';
-import { LaunchRequest } from '../stores/terminalStore';
-import { PlusOutlined, CloseOutlined } from '@ant-design/icons';
+import { Terminal, TerminalExitEvent } from './terminalTypes';
+import { LaunchRequest, useTerminalStore } from '../stores/terminalStore';
+import TerminalPane from './terminal/TerminalPane';
+import SplitDivider from './terminal/SplitDivider';
+import { DEFAULT_SHELL, SHELL_MAP } from '../lib/constants';
 
 interface TerminalManagerProps {
   visible: boolean;
-  launchRequest: LaunchRequest | null;
   consumeLaunchRequest: () => LaunchRequest | null;
 }
 
-export default function TerminalManager({ visible, launchRequest, consumeLaunchRequest }: TerminalManagerProps) {
-  const [terminals, setTerminals] = useState<Terminal[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [theme, setTheme] = useState<TerminalTheme>('dark');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingLabel, setEditingLabel] = useState('');
+export default function TerminalManager({ visible, consumeLaunchRequest }: TerminalManagerProps) {
+  const terminals = useTerminalStore(s => s.terminals);
+  const addTerminal = useTerminalStore(s => s.addTerminal);
+  const updateTerminal = useTerminalStore(s => s.updateTerminal);
+  const setActiveId = useTerminalStore(s => s.setActiveId);
+  const defaultCwd = useTerminalStore(s => s.defaultCwd);
+  const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
+  const splitPaneOpen = useTerminalStore(s => s.splitPaneOpen);
+  const splitRatio = useTerminalStore(s => s.splitRatio);
+  const groups = useTerminalStore(s => s.groups);
+  const addGroup = useTerminalStore(s => s.addGroup);
+  const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
+
   const terminalsRef = useRef(terminals);
   terminalsRef.current = terminals;
 
-  // Restore theme and clean up stale terminal state on mount
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('terminal-theme');
-    if (savedTheme && ['dark', 'modern', 'matrix', 'light'].includes(savedTheme)) {
-      setTheme(savedTheme as TerminalTheme);
-    }
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
 
-    // Terminal processes don't survive app restarts, so discard any saved state
-    const savedState = localStorage.getItem('terminal-state');
-    if (savedState) {
-      localStorage.removeItem('terminal-state');
-    }
-  }, []);
+  // Queue-based launch processing to avoid React batching issues
+  const launchQueueRef = useRef<LaunchRequest[]>([]);
+  const processingRef = useRef(false);
 
-  // Persist terminal state to localStorage
-  useEffect(() => {
-    if (terminals.length > 0) {
-      localStorage.setItem('terminal-state', JSON.stringify({ terminals, activeId }));
-    } else {
-      localStorage.removeItem('terminal-state');
-    }
-  }, [terminals, activeId]);
+  const shellPrefRef = useRef(shellPref);
+  shellPrefRef.current = shellPref;
 
-  // Stop all terminal processes and clear state when the panel becomes hidden
-  useEffect(() => {
-    if (!visible && terminals.length > 0) {
-      terminals.forEach(t => {
-        terminalApi.stop(t.id).catch(() => {});
-      });
-      setTerminals([]);
-      setActiveId(null);
-    }
-  }, [visible, terminals]);
-
-  // Track pending command to execute after terminal is created.
-  const pendingCommandRef = useRef<string | null>(null);
-
-  // Consume launch request: create terminal with cwd and queue command for execution
-  useEffect(() => {
-    if (!visible) return;
-    const req = consumeLaunchRequest();
-    if (!req) return;
-
-    if (req.command) {
-      pendingCommandRef.current = req.command;
-    }
-
-    if (terminals.length === 0) {
-      createTerminal(undefined, req.cwd);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, terminals.length]);
-
-  // Execute pending command once a terminal is ready
-  useEffect(() => {
-    if (pendingCommandRef.current && activeId && terminals.length > 0) {
-      const cmd = pendingCommandRef.current;
-      pendingCommandRef.current = null;
-      terminalApi.input(activeId, cmd + '\r').catch(console.error);
-    }
-  }, [activeId, terminals.length]);
-
-  const createTerminal = useCallback(async (label?: string, cwdOverride?: string) => {
-    if (terminals.length >= 10) {
+  const createTerminal = useCallback(async (label?: string, cwdOverride?: string, idOverride?: string, projectId?: string, existingGroupId?: string) => {
+    if (terminalsRef.current.length >= 10) {
       console.warn('Max terminals reached');
       return;
     }
 
-    const id = `global-${Math.random().toString(36).slice(2, 10)}`;
-    const isWin = navigator.platform.includes('Win');
-    const shell = isWin ? 'powershell.exe' : 'bash';
-    const shellArgs = isWin ? ['-NoProfile'] : undefined;
-    const cwd = cwdOverride || (isWin
-      ? (import.meta.env.USERPROFILE || 'C:\\')
-      : (import.meta.env.HOME || '/'));
+    const id = idOverride || `global-${Math.random().toString(36).slice(2, 10)}`;
+    const cfg = SHELL_MAP[shellPrefRef.current] || SHELL_MAP[DEFAULT_SHELL];
+    const shell = cfg.shell;
+    const shellArgs = cfg.args;
+    const cwd = cwdOverride || defaultCwd;
+
+    // Resolve groupId: project takes priority, then explicit groupId
+    let groupId: string | null = existingGroupId || null;
+    if (projectId) {
+      const existingGroup = groupsRef.current.find(g => g.id === `project-${projectId}`);
+      if (existingGroup) {
+        groupId = existingGroup.id;
+      } else {
+        // Use project name as group label (strip " - 前端/后端" suffix if present)
+        const groupName = (label || '').split(' - ')[0] || projectId;
+        groupId = addGroup(projectId, true);
+        useTerminalStore.getState().renameGroup(groupId, groupName);
+      }
+    }
 
     const newTerminal: Terminal = {
       id,
-      label: label || `终端 ${terminals.length + 1}`,
+      label: label || `终端 ${terminalsRef.current.length + 1}`,
       createdAt: new Date(),
       shell,
       cwd,
       status: 'running',
+      projectId: projectId || null,
+      groupId,
+      pane: 'left',
     };
 
     await terminalApi.startShell(id, shell, cwd, shellArgs);
-    setTerminals(prev => [...prev, newTerminal]);
-    setActiveId(id);
+    addTerminal(newTerminal);
+    setActiveId('left', id);
+  }, [defaultCwd, addTerminal, setActiveId, addGroup]);
+
+  const processNextInQueue = useCallback(async () => {
+    if (processingRef.current || launchQueueRef.current.length === 0) return;
+    processingRef.current = true;
+
+    while (launchQueueRef.current.length > 0) {
+      const req = launchQueueRef.current.shift()!;
+      const cwd = req.cwd || defaultCwd;
+      const label = req.label;
+
+      try {
+        const id = `global-${Math.random().toString(36).slice(2, 10)}`;
+        await createTerminal(label, cwd, id, req.projectId);
+        if (req.command) {
+          await terminalApi.input(id, req.command + '\r');
+        }
+      } catch (e) {
+        console.error('Failed to create terminal:', e);
+      }
+    }
+
+    processingRef.current = false;
+  }, [defaultCwd, createTerminal]);
+
+  // Consume launch request queue when items are added
+  useEffect(() => {
+    if (!visible) return;
+    // Drain all pending requests into the ref-based queue
+    let req = consumeLaunchRequest();
+    while (req) {
+      launchQueueRef.current.push(req);
+      req = consumeLaunchRequest();
+    }
+    processNextInQueue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, launchQueueLength]);
+
+  // Update terminal status when backend process exits
+  useEffect(() => {
+    if (!visible) return;
+    const unlisten = listen<TerminalExitEvent>('terminal-exit', (event) => {
+      const { terminalId, code } = event.payload;
+      updateTerminal(terminalId, {
+        status: code === 0 ? 'exited' : 'error',
+      });
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, [visible, updateTerminal]);
+
+  // Auto-cleanup empty project groups
+  useEffect(() => {
+    const state = useTerminalStore.getState();
+    for (const group of state.groups) {
+      if (group.isProjectGroup && group.id !== 'global') {
+        const hasTerminals = state.terminals.some(t => t.groupId === group.id);
+        if (!hasTerminals) {
+          useTerminalStore.getState().removeGroup(group.id);
+        }
+      }
+    }
   }, [terminals.length]);
 
-  const closeTerminal = useCallback(async (id: string) => {
-    try {
-      await terminalApi.stop(id);
-    } catch {
-      // Terminal may have already exited
-    }
-
-    setTerminals(prev => prev.filter(t => t.id !== id));
-    setActiveId(prev => {
-      if (prev !== id) return prev;
-      const remaining = terminalsRef.current.filter(t => t.id !== id);
-      return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
-    });
-  }, []);
-
-  const switchTerminal = useCallback((id: string) => {
-    setActiveId(id);
-  }, []);
-
-  const renameTerminal = useCallback((id: string, label: string) => {
-    setTerminals(prev => prev.map(t =>
-      t.id === id ? { ...t, label } : t
-    ));
-  }, []);
-
-  const setTerminalTheme = useCallback((newTheme: TerminalTheme) => {
-    setTheme(newTheme);
-    localStorage.setItem('terminal-theme', newTheme);
-  }, []);
-
-  // Clear screen function - sends Ctrl+L character to active terminal
-  const clearTerminal = useCallback(() => {
-    if (activeId) {
-      terminalApi.input(activeId, '\x0c').catch(console.error);
-    }
-  }, [activeId]);
-
   // Keyboard shortcut for clear screen (Ctrl+L)
+  const clearTerminal = useCallback(() => {
+    const state = useTerminalStore.getState();
+    const leftActive = state.leftPane.activeId;
+    if (leftActive) {
+      terminalApi.input(leftActive, '\x0c').catch(console.error);
+    }
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+L: Clear screen
       if (e.ctrlKey && e.key === 'l') {
         e.preventDefault();
         clearTerminal();
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [clearTerminal]);
-
-  // These are exposed via the component's actions for parent consumption
-  // (e.g., through context or imperative handle). Silencing unused warnings
-  // until they are wired into the render tree.
-  void setTerminalTheme;
 
   const handleTerminalInput = useCallback((terminalId: string, data: string) => {
     terminalApi.input(terminalId, data).catch(console.error);
@@ -175,175 +171,43 @@ export default function TerminalManager({ visible, launchRequest, consumeLaunchR
   return (
     <div style={{
       display: 'flex',
-      flexDirection: 'column',
+      flexDirection: 'row',
       height: '100%',
       background: '#1e1e1e',
       borderRadius: '12px 12px 0 0',
       overflow: 'hidden',
     }}>
-      {/* Tab bar */}
+      {/* Left pane */}
       <div style={{
+        flex: splitPaneOpen ? splitRatio : 1,
         display: 'flex',
-        alignItems: 'center',
-        height: 36,
-        padding: '0 8px',
-        background: '#252526',
-        borderBottom: '1px solid #3c3c3c',
-        gap: 4,
-        overflowX: 'auto',
-      }}>
-        {terminals.map(t => (
-          <div
-            key={t.id}
-            onClick={() => switchTerminal(t.id)}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              setEditingId(t.id);
-              setEditingLabel(t.label);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              background: activeId === t.id ? '#37373d' : 'transparent',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontSize: 12,
-              color: activeId === t.id ? '#ffffff' : '#999',
-              transition: 'all 0.1s',
-              whiteSpace: 'nowrap',
-            }}
-            onMouseEnter={e => {
-              if (activeId !== t.id) {
-                e.currentTarget.style.background = '#2a2d2e';
-              }
-            }}
-            onMouseLeave={e => {
-              if (activeId !== t.id) {
-                e.currentTarget.style.background = 'transparent';
-              }
-            }}
-          >
-            {editingId === t.id ? (
-              <input
-                autoFocus
-                value={editingLabel}
-                onChange={(e) => setEditingLabel(e.target.value)}
-                onBlur={() => {
-                  renameTerminal(editingId, editingLabel);
-                  setEditingId(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    renameTerminal(editingId, editingLabel);
-                    setEditingId(null);
-                  } else if (e.key === 'Escape') {
-                    setEditingId(null);
-                  }
-                }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid #007acc',
-                  color: '#fff',
-                  padding: '2px 4px',
-                  fontSize: 12,
-                  width: 80,
-                  outline: 'none',
-                }}
-                onClick={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <span>{t.label}</span>
-            )}
-            <CloseOutlined
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTerminal(t.id);
-              }}
-              style={{
-                fontSize: 10,
-                color: '#666',
-                cursor: 'pointer',
-              }}
-            />
-          </div>
-        ))}
-
-        <button
-          onClick={() => createTerminal()}
-          disabled={terminals.length >= 10}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: terminals.length >= 10 ? '#333' : '#999',
-            cursor: terminals.length >= 10 ? 'not-allowed' : 'pointer',
-            padding: '6px 8px',
-            borderRadius: 4,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.1s',
-          }}
-          onMouseEnter={e => {
-            if (terminals.length < 10) {
-              e.currentTarget.style.background = '#3c3c3c';
-              e.currentTarget.style.color = '#fff';
-            }
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'none';
-            e.currentTarget.style.color = terminals.length >= 10 ? '#333' : '#999';
-          }}
-          title="新建终端"
-        >
-          <PlusOutlined style={{ fontSize: 12 }} />
-        </button>
-      </div>
-
-      {/* Terminal viewport */}
-      <div style={{
-        flex: 1,
-        padding: '8px 4px',
         overflow: 'hidden',
-        position: 'relative',
+        transition: 'flex 0.2s ease',
       }}>
-        {terminals.map(t => (
-          <TerminalInstance
-            key={t.id}
-            terminal={t}
-            theme={theme}
-            isActive={activeId === t.id}
-            onInput={handleTerminalInput}
-          />
-        ))}
-
-        {terminals.length === 0 && (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            color: '#666',
-          }}>
-            <div style={{ marginBottom: 12 }}>无活动终端</div>
-            <button
-              onClick={() => createTerminal()}
-              style={{
-                background: '#007acc',
-                color: '#fff',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: 4,
-                cursor: 'pointer',
-              }}
-            >
-              新建终端
-            </button>
-          </div>
-        )}
+        <TerminalPane
+          pane="left"
+          onCreateTerminal={(groupId) => createTerminal(undefined, undefined, undefined, undefined, groupId)}
+          onTerminalInput={handleTerminalInput}
+        />
       </div>
+
+      {/* Split divider */}
+      {splitPaneOpen && <SplitDivider />}
+
+      {/* Right pane */}
+      {splitPaneOpen && (
+        <div style={{
+          flex: 1 - splitRatio,
+          display: 'flex',
+          overflow: 'hidden',
+        }}>
+          <TerminalPane
+            pane="right"
+            onCreateTerminal={(groupId) => createTerminal(undefined, undefined, undefined, undefined, groupId)}
+            onTerminalInput={handleTerminalInput}
+          />
+        </div>
+      )}
     </div>
   );
 }

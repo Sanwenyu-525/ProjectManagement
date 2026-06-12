@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Descriptions, Tag, Button, Space, Spin, Empty, message, Table, Modal, Form, Input, Select, Timeline } from 'antd';
-import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined, SaveOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined, SaveOutlined, SearchOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
 import KanbanBoard from '../../shared/KanbanBoard';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { STATUS_COLORS } from '../../lib/constants';
+import { buildLaunchRequests } from '../../lib/launchUtils';
+import GitTab from './git/GitTab';
+import HealthTab from './HealthTab';
+import './ProjectDetailPage.css';
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,26 +39,14 @@ export default function ProjectDetailPage() {
 
   async function handleLaunch() {
     if (!project?.localPath) return;
-    const cmd = project.frontendCommand || project.backendCommand || project.openCommand;
-    if (!cmd) {
+    const requests = buildLaunchRequests(project);
+    console.log('[Launch] built requests:', requests);
+    if (requests.length === 0) {
       message.warning('请先在"配置"标签页中设置启动命令');
       setActiveTab('config');
       return;
     }
-    // Monorepo: if both frontend and backend commands exist, use the appropriate subdirectory
-    let cwd = project.localPath;
-    if (project.frontendCommand && project.backendCommand && cmd === project.frontendCommand) {
-      for (const sub of ['frontend', 'web', 'client']) {
-        cwd = `${project.localPath}/${sub}`;
-        break;
-      }
-    } else if (project.frontendCommand && project.backendCommand && cmd === project.backendCommand) {
-      for (const sub of ['backend', 'server', 'api']) {
-        cwd = `${project.localPath}/${sub}`;
-        break;
-      }
-    }
-    requestLaunch({ cwd, command: cmd });
+    requests.forEach(req => requestLaunch(req));
   }
 
   async function handleRefresh() {
@@ -111,38 +103,17 @@ export default function ProjectDetailPage() {
   return (
     <div style={{ padding: '28px 32px' }}>
       {/* Back button */}
-      <div
+      <Button
+        type="text"
+        icon={<ArrowLeftOutlined />}
         onClick={() => navigate('/projects')}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          color: '#6b7a99',
-          fontSize: 13,
-          fontWeight: 500,
-          cursor: 'pointer',
-          marginBottom: 20,
-          padding: '4px 8px',
-          borderRadius: 6,
-          transition: 'all 0.15s ease',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.color = '#1a1f36'; e.currentTarget.style.background = 'rgba(0, 0, 0, 0.04)'; }}
-        onMouseLeave={e => { e.currentTarget.style.color = '#6b7a99'; e.currentTarget.style.background = 'transparent'; }}
+        className="back-link"
       >
-        <ArrowLeftOutlined /> 返回项目列表
-      </div>
+        返回项目列表
+      </Button>
 
       {/* Project header card */}
-      <div className="animate-in" style={{
-        background: 'rgba(255, 255, 255, 0.35)',
-        borderRadius: 14,
-        border: '1px solid rgba(255, 255, 255, 0.45)',
-        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
-        padding: '28px 32px',
-        marginBottom: 20,
-        backdropFilter: 'blur(24px) saturate(1.2)',
-        WebkitBackdropFilter: 'blur(24px) saturate(1.2)',
-      }}>
+      <div className="glass-panel animate-in" style={{ padding: '28px 32px', marginBottom: 20 }}>
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <ProjectIcon
             name={project.name}
@@ -168,75 +139,31 @@ export default function ProjectDetailPage() {
           </div>
           {project.localPath && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button
+              <Button
+                type="primary"
+                icon={<ReloadOutlined spin={refreshing} />}
                 onClick={handleRefresh}
                 disabled={refreshing}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '10px 20px',
-                  background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 10,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(139, 92, 246, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(139, 92, 246, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                className="action-btn action-btn-purple"
               >
-                <ReloadOutlined spin={refreshing} /> {refreshing ? '检测中...' : '刷新信息'}
-              </button>
-              <button
+                {refreshing ? '检测中...' : '刷新信息'}
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
                 onClick={handleLaunch}
-                style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '10px 20px',
-                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 10,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(245, 158, 11, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(245, 158, 11, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-            >
-              <PlayCircleOutlined /> 启动项目
-              </button>
-              <button
-                onClick={() => {
-                  requestLaunch({ cwd: project.localPath });
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '10px 20px',
-                  background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 10,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(34, 197, 94, 0.3)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                className="action-btn action-btn-amber"
               >
-                <CodeOutlined /> 打开终端
-              </button>
+                启动项目
+              </Button>
+              <Button
+                type="primary"
+                icon={<CodeOutlined />}
+                onClick={() => requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id })}
+                className="action-btn action-btn-green"
+              >
+                打开终端
+              </Button>
             </div>
           )}
         </div>
@@ -246,26 +173,20 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Tabs content */}
-      <div className="animate-in animate-in-delay-2" style={{
-        background: 'rgba(255, 255, 255, 0.35)',
-        borderRadius: 14,
-        border: '1px solid rgba(255, 255, 255, 0.45)',
-        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
-        padding: '4px 24px 24px',
-        backdropFilter: 'blur(24px) saturate(1.2)',
-        WebkitBackdropFilter: 'blur(24px) saturate(1.2)',
-      }}>
+      <div className="glass-panel animate-in animate-in-delay-2" style={{ padding: '4px 24px 24px' }}>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
           items={[
             { key: 'overview', label: '概览', children: <OverviewTab project={project} /> },
             { key: 'repos', label: `仓库 (${project.remoteRepos?.length || 0})`, children: <ReposTab projectId={project.id} repos={project.remoteRepos || []} onRefresh={() => loadProject(project.id)} /> },
+            { key: 'git', label: 'Git', children: <GitTab project={project} /> },
             { key: 'tasks', label: `任务 (${project._count?.tasks || 0})`, children: <TasksTab projectId={project.id} repos={project.remoteRepos || []} /> },
             { key: 'documents', label: `文档 (${project._count?.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
             { key: 'config', label: '配置', children: <ConfigTab project={project} onSaved={() => loadProject(project.id)} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
+            { key: 'health', label: '健康检查', children: <HealthTab projectId={project.id} /> },
           ]}
         />
       </div>
@@ -275,16 +196,73 @@ export default function ProjectDetailPage() {
 
 // ==================== 配置 Tab ====================
 
+function CwdInput({ cwd, setCwd, detecting, onDetect, onBrowse }: {
+  cwd: string; setCwd: (v: string) => void; detecting: boolean; onDetect: () => void; onBrowse: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+      <Input
+        value={cwd}
+        onChange={e => setCwd(e.target.value)}
+        placeholder="工作目录（默认项目根目录）"
+        style={{ flex: 1 }}
+        addonBefore={<FolderOpenOutlined style={{ cursor: 'pointer' }} onClick={onBrowse} />}
+      />
+      <Button icon={<SearchOutlined />} onClick={onDetect} loading={detecting}>
+        自动检测
+      </Button>
+    </div>
+  );
+}
+
 function ConfigTab({ project, onSaved }: { project: any; onSaved: (p: any) => void }) {
   const [frontendCmd, setFrontendCmd] = useState(project?.frontendCommand || project?.openCommand || '');
   const [backendCmd, setBackendCmd] = useState(project?.backendCommand || '');
+  const [frontendCwd, setFrontendCwd] = useState(project?.frontendCwd || '');
+  const [backendCwd, setBackendCwd] = useState(project?.backendCwd || '');
   const [saving, setSaving] = useState(false);
+  const [detectingFrontend, setDetectingFrontend] = useState(false);
+  const [detectingBackend, setDetectingBackend] = useState(false);
 
   // Sync when project changes (e.g. after refresh)
   useEffect(() => {
     setFrontendCmd(project?.frontendCommand || project?.openCommand || '');
     setBackendCmd(project?.backendCommand || '');
-  }, [project?.frontendCommand, project?.backendCommand, project?.openCommand]);
+    setFrontendCwd(project?.frontendCwd || '');
+    setBackendCwd(project?.backendCwd || '');
+  }, [project?.frontendCommand, project?.backendCommand, project?.openCommand, project?.frontendCwd, project?.backendCwd]);
+
+  const handleDetectCwd = async (command: string, setCwd: (v: string) => void, setDetecting: (v: boolean) => void) => {
+    if (!command.trim() || !project?.localPath) return;
+    setDetecting(true);
+    try {
+      const result = await projectsApi.detectCwd(project.localPath, command);
+      if (result) {
+        setCwd(result);
+        message.success(`检测到命令在 "${result}" 目录`);
+      } else {
+        message.info('未在子目录中找到匹配的命令，将在项目根目录执行');
+      }
+    } catch (e) {
+      message.warning('检测失败');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handleBrowseCwd = async (setCwd: (v: string) => void) => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({ directory: true });
+      if (selected) {
+        // Store relative path from project root
+        const relative = selected.replace(project.localPath, '').replace(/\\/g, '').replace(/^\//, '');
+        setCwd(relative || '.');
+      }
+    } catch (err) {
+      message.error('无法打开文件夹选择器');
+    }
+  };
 
   async function handleSave() {
     if (!frontendCmd.trim() && !backendCmd.trim()) {
@@ -297,6 +275,8 @@ function ConfigTab({ project, onSaved }: { project: any; onSaved: (p: any) => vo
         frontendCommand: frontendCmd.trim() || null,
         backendCommand: backendCmd.trim() || null,
         openCommand: frontendCmd.trim() || backendCmd.trim() || null,
+        frontendCwd: frontendCwd.trim() || null,
+        backendCwd: backendCwd.trim() || null,
       });
       onSaved(updated);
       message.success('配置已保存');
@@ -318,6 +298,13 @@ function ConfigTab({ project, onSaved }: { project: any; onSaved: (p: any) => vo
           onChange={e => setFrontendCmd(e.target.value)}
           placeholder="如 npm run dev、pnpm dev、yarn start"
         />
+        <CwdInput
+          cwd={frontendCwd}
+          setCwd={setFrontendCwd}
+          detecting={detectingFrontend}
+          onDetect={() => handleDetectCwd(frontendCmd, setFrontendCwd, setDetectingFrontend)}
+          onBrowse={() => handleBrowseCwd(setFrontendCwd)}
+        />
       </div>
       <div style={{ marginBottom: 20 }}>
         <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
@@ -327,6 +314,13 @@ function ConfigTab({ project, onSaved }: { project: any; onSaved: (p: any) => vo
           value={backendCmd}
           onChange={e => setBackendCmd(e.target.value)}
           placeholder="如 cargo run、python manage.py runserver"
+        />
+        <CwdInput
+          cwd={backendCwd}
+          setCwd={setBackendCwd}
+          detecting={detectingBackend}
+          onDetect={() => handleDetectCwd(backendCmd, setBackendCwd, setDetectingBackend)}
+          onBrowse={() => handleBrowseCwd(setBackendCwd)}
         />
       </div>
       <Button

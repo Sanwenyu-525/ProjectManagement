@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Avatar, Dropdown } from 'antd';
+import { Layout, Menu, Avatar, Dropdown, notification } from 'antd';
 import {
   DashboardOutlined,
   ProjectOutlined,
@@ -12,8 +12,10 @@ import {
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/authStore';
 import { useTerminalStore } from '../stores/terminalStore';
-import GlobalTerminalPanel from './GlobalTerminalPanel';
+import TerminalManager from './TerminalManager';
 import SearchBox from './components/SearchBox';
+import { healthApi } from '../api';
+import { formatHealthIssues, isHealthUrgent } from '../lib/healthUtils';
 
 const { Header, Sider, Content } = Layout;
 
@@ -29,10 +31,11 @@ export default function MainLayout() {
   const location = useLocation();
   const { user } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
-  const { terminalOpen, setTerminalOpen, launchRequest, consumeLaunchRequest } = useTerminalStore();
+  const { terminalOpen, setTerminalOpen, consumeLaunchRequest } = useTerminalStore();
   const [terminalHeight, setTerminalHeight] = useState(400);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ dragging: false, startY: 0, startHeight: 0 });
+  const [notifApi, contextHolder] = notification.useNotification();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -44,6 +47,43 @@ export default function MainLayout() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [terminalOpen, setTerminalOpen]);
+
+  // Daily project health check — runs once per day on first app open
+  useEffect(() => {
+    const today = new Date().toLocaleDateString('sv-SE');
+    const lastCheck = localStorage.getItem('lastHealthCheckDate');
+    if (lastCheck === today) return;
+
+    healthApi.runAll().then(({ changedProjects }) => {
+      localStorage.setItem('lastHealthCheckDate', today);
+      if (!changedProjects || changedProjects.length === 0) return;
+
+      // Summary notification
+      notifApi.info({
+        message: '项目健康检查完成',
+        description: `检测到 ${changedProjects.length} 个项目有变化`,
+        duration: 10,
+        onClick: () => navigate('/projects'),
+      });
+
+      // Per-project notifications
+      changedProjects.forEach((p: any) => {
+        const issues = formatHealthIssues(p);
+        if (issues.length > 0) {
+          const severity = isHealthUrgent(p) ? 'warning' : 'info';
+          notifApi[severity]({
+            message: p.projectName,
+            description: issues.join('；'),
+            duration: 8,
+            onClick: () => navigate(`/projects/${p.projectId}`),
+          });
+        }
+      });
+    }).catch(() => {
+      // Health check is best-effort, silent failure
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const userMenuItems = [
     { key: 'settings', icon: <SettingOutlined />, label: '设置', onClick: () => navigate('/settings') },
@@ -83,6 +123,7 @@ export default function MainLayout() {
 
   return (
     <Layout className="bg-gradient-main" style={{ minHeight: '100vh', position: 'relative' }}>
+      {contextHolder}
       <Sider
         collapsible
         collapsed={collapsed}
@@ -292,7 +333,7 @@ export default function MainLayout() {
               onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
             />
           </div>
-          <GlobalTerminalPanel visible={terminalOpen} launchRequest={launchRequest} consumeLaunchRequest={consumeLaunchRequest} />
+          <TerminalManager visible={terminalOpen} consumeLaunchRequest={consumeLaunchRequest} />
         </div>
       </Layout>
     </Layout>

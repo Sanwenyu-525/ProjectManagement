@@ -5,13 +5,16 @@
   --color-primary-light: rgba(34, 197, 94, 0.1);
   --color-primary-glow: rgba(34, 197, 94, 0.20);
 
+  --color-accent: #22c55e;
+  --color-accent-hover: #16a34a;
+
   --color-amber: #f59e0b;
   --color-amber-light: rgba(245, 158, 11, 0.10);
   --color-amber-glow: rgba(245, 158, 11, 0.15);
 
   --color-text-primary: #1a1f36;
   --color-text-secondary: #6b7a99;
-  --color-text-tertiary: #9eadc0;
+  --color-text-tertiary: #7b8fa3;
   --color-text-muted: #c4d0de;
 
   /* 背景系统 */
@@ -35,7 +38,7 @@
   /* 状态 */
   --color-status-done: #22c55e;
   --color-status-progress: #f59e0b;
-  --color-status-todo: #9eadc0;
+  --color-status-todo: #7b8fa3;
   --color-status-cancel: #ef4444;
 
   /* 渐变背景色 */

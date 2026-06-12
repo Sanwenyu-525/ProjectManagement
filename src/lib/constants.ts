@@ -53,3 +53,32 @@ export function parseActivityDetails(action: string, detailsStr: string | null):
     return detailsStr;
   }
 }
+
+// ==================== Terminal ====================
+
+export const isWindows = navigator.platform.includes('Win');
+
+export const DEFAULT_CWD = isWindows ? 'C:\\Users' : '/Users';
+
+export const DEFAULT_SHELL = isWindows ? 'powershell.exe' : 'bash';
+
+export const SHELL_OPTIONS: { value: string; label: string }[] = isWindows
+  ? [
+      { value: 'powershell.exe', label: 'PowerShell' },
+      { value: 'cmd.exe', label: 'CMD' },
+      { value: 'git-bash', label: 'Git Bash' },
+    ]
+  : [
+      { value: 'bash', label: 'Bash' },
+      { value: 'zsh', label: 'Zsh' },
+      { value: 'fish', label: 'Fish' },
+    ];
+
+export const SHELL_MAP: Record<string, { shell: string; args?: string[] }> = {
+  'powershell.exe': { shell: 'powershell.exe', args: ['-NoProfile'] },
+  'cmd.exe':        { shell: 'cmd.exe' },
+  'git-bash':       { shell: 'C:\\Program Files\\Git\\bin\\bash.exe' },
+  'bash':           { shell: isWindows ? 'C:\\Program Files\\Git\\bin\\bash.exe' : 'bash' },
+  'zsh':            { shell: 'zsh' },
+  'fish':           { shell: 'fish' },
+};

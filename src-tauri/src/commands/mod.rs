@@ -1,6 +1,8 @@
 pub mod dependencies;
 pub mod detect;
 pub mod documents;
+pub mod git;
+pub mod health;
 pub mod milestones;
 pub mod projects;
 pub mod repos;

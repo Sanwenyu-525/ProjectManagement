@@ -38,6 +38,17 @@ pub fn run() {
             let db_path = app_dir.join("devhub.db");
             let database = Database::new(&db_path).expect("failed to initialize database");
             app.manage(database);
+
+            // Kill all child processes when the window is closed
+            let window = app.webview_windows().values().next().cloned();
+            if let Some(window) = window {
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        commands::terminal::cleanup_all();
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -50,7 +61,8 @@ pub fn run() {
             commands::projects::projects_get_stats,
             commands::projects::projects_open,
             commands::projects::projects_refresh,
-            commands::projects::projects_open,
+            commands::projects::detect_project_cwd,
+            commands::projects::debug_project_raw,
             commands::tasks::tasks_list,
             commands::tasks::tasks_create,
             commands::tasks::tasks_update,
@@ -87,11 +99,28 @@ pub fn run() {
             commands::terminal::terminal_input,
             commands::terminal::terminal_start_shell,
             commands::terminal::terminal_resize,
+            // Git operations
+            commands::git::git_status,
+            commands::git::git_log,
+            commands::git::git_branches,
+            commands::git::git_diff,
+            commands::git::git_branch_switch,
+            commands::git::git_stash_list,
+            commands::git::git_add,
+            commands::git::git_commit,
+            commands::git::git_push,
+            commands::git::git_diff_commit,
+            commands::git::git_reset_head,
             // Dependency detection
             commands::dependencies::detect_project_dependencies,
             commands::dependencies::get_launch_order,
             commands::dependencies::analyze_docker_compose,
             commands::dependencies::detect_monorepo_structure,
+            // Health check
+            commands::health::run_all_health_checks,
+            commands::health::run_health_check_for_project,
+            commands::health::get_project_health_history,
+            commands::health::get_all_latest_health,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

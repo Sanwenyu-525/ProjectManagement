@@ -7,6 +7,11 @@ use tauri::{command, AppHandle, Emitter};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
+// Recover from mutex poisoning (other threads panicked while holding the lock)
+fn recover_lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 // ── Process registry (non-interactive commands) ──────────────────────────
 
 static PROCESSES: std::sync::LazyLock<Mutex<HashMap<String, Child>>> =
@@ -83,7 +88,7 @@ pub async fn terminal_start(
     let stderr = child.stderr.take();
 
     {
-        let mut procs = PROCESSES.lock().map_err(|e| e.to_string())?;
+        let mut procs = recover_lock(&PROCESSES);
         procs.insert(terminal_id.clone(), child);
     }
 
@@ -143,7 +148,7 @@ pub async fn terminal_start(
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut procs = match PROCESSES.lock() {
             Ok(p) => p,
-            Err(_) => break,
+            Err(e) => e.into_inner(),
         };
         if let Some(child) = procs.get_mut(&tid_exit) {
             match child.try_wait() {
@@ -227,7 +232,7 @@ pub async fn terminal_start_shell(
 
     // Store PTY terminal (child + writer + master for resize)
     {
-        let mut terminals = PTY_TERMINALS.lock().map_err(|e| e.to_string())?;
+        let mut terminals = recover_lock(&PTY_TERMINALS);
         terminals.insert(
             terminal_id.clone(),
             PtyTerminal {
@@ -269,16 +274,17 @@ pub async fn terminal_start_shell(
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut terminals = match PTY_TERMINALS.lock() {
             Ok(t) => t,
-            Err(_) => break,
+            Err(e) => e.into_inner(),
         };
         if let Some(terminal) = terminals.get_mut(&tid_exit) {
             match terminal.child.try_wait() {
                 Ok(Some(status)) => {
+                    let code = status.exit_code();
                     let _ = app_exit.emit(
                         "terminal-exit",
                         TerminalExit {
                             terminal_id: tid_exit.clone(),
-                            code: Some(status.exit_code() as i32),
+                            code: if code == 0 { Some(0) } else { Some(code as i32) },
                         },
                     );
                     terminals.remove(&tid_exit);
@@ -304,7 +310,7 @@ pub async fn terminal_start_shell(
 pub async fn terminal_input(terminal_id: String, data: String) -> Result<(), String> {
     // Try PTY terminal first
     {
-        let mut terminals = PTY_TERMINALS.lock().map_err(|e| e.to_string())?;
+        let mut terminals = recover_lock(&PTY_TERMINALS);
         if let Some(terminal) = terminals.get_mut(&terminal_id) {
             terminal
                 .writer
@@ -320,7 +326,7 @@ pub async fn terminal_input(terminal_id: String, data: String) -> Result<(), Str
 
     // Fall back to piped process
     {
-        let mut procs = PROCESSES.lock().map_err(|e| e.to_string())?;
+        let mut procs = recover_lock(&PROCESSES);
         if let Some(child) = procs.get_mut(&terminal_id) {
             if let Some(ref mut stdin) = child.stdin {
                 stdin
@@ -343,7 +349,7 @@ pub async fn terminal_input(terminal_id: String, data: String) -> Result<(), Str
 pub async fn terminal_stop(terminal_id: String) -> Result<(), String> {
     // Try PTY terminal first
     {
-        let mut terminals = PTY_TERMINALS.lock().map_err(|e| e.to_string())?;
+        let mut terminals = recover_lock(&PTY_TERMINALS);
         if let Some(mut terminal) = terminals.remove(&terminal_id) {
             terminal
                 .child
@@ -355,7 +361,7 @@ pub async fn terminal_stop(terminal_id: String) -> Result<(), String> {
 
     // Fall back to piped process
     {
-        let mut procs = PROCESSES.lock().map_err(|e| e.to_string())?;
+        let mut procs = recover_lock(&PROCESSES);
         if let Some(mut child) = procs.remove(&terminal_id) {
             child.kill().map_err(|e| format!("停止失败: {}", e))?;
             return Ok(());
@@ -373,7 +379,7 @@ pub async fn terminal_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let mut terminals = PTY_TERMINALS.lock().map_err(|e| e.to_string())?;
+    let mut terminals = recover_lock(&PTY_TERMINALS);
     if let Some(terminal) = terminals.get_mut(&terminal_id) {
         let size = PtySize {
             rows,
@@ -388,4 +394,19 @@ pub async fn terminal_resize(
         return Ok(());
     }
     Err("进程不存在".into())
+}
+
+// ── Cleanup on app shutdown ──────────────────────────────────────────────
+
+pub fn cleanup_all() {
+    if let Ok(mut procs) = PROCESSES.lock() {
+        for (_, mut child) in procs.drain() {
+            child.kill().ok();
+        }
+    }
+    if let Ok(mut terminals) = PTY_TERMINALS.lock() {
+        for (_, mut terminal) in terminals.drain() {
+            terminal.child.kill().ok();
+        }
+    }
 }

@@ -5,24 +5,6 @@
 
 /* ==================== DevHub Custom Overrides ==================== */
 
-:root {
-  /* Light glassmorphism palette */
-  --bg-base: var(--color-bg-base);
-  --bg-surface: var(--color-bg-surface);
-  --bg-elevated: var(--color-bg-elevated);
-  --bg-card: var(--color-bg-card);
-  --bg-card-hover: var(--color-bg-card-hover);
-  --bg-input: var(--color-bg-input);
-  --bg-glass-sidebar: var(--color-bg-glass-sidebar);
-  --bg-glass-header: var(--color-bg-glass-header);
-
-  /* Status colors */
-  --status-done: var(--color-status-done);
-  --status-progress: var(--color-status-progress);
-  --status-todo: var(--color-status-todo);
-  --status-cancel: var(--color-status-cancel);
-}
-
 body {
   font-family: 'Inter', 'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   background: linear-gradient(135deg, var(--color-gradient-start) 0%, var(--color-gradient-mid) 35%, var(--color-gradient-end) 65%, var(--color-gradient-accent) 100%);

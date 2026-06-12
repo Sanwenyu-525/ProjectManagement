@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Divider, Alert, Table, InputNumber, Tooltip, Checkbox, Progress } from 'antd';
 import { PlusOutlined, SearchOutlined, FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, RocketOutlined, StopOutlined } from '@ant-design/icons';
-import { projectsApi, detectApi, terminalApi } from '../../api';
+import { useTerminalStore } from '../../stores/terminalStore';
+import { projectsApi, detectApi, terminalApi, healthApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
 import QuickLaunchModal from '../../shared/QuickLaunchModal';
+import HealthBadge from '../../shared/HealthBadge';
 import { launchHistoryStorage, LaunchProfile } from '../../lib/launchProfiles';
 import { STATUS_COLORS, PROJECT_STATUSES, PRIORITY_OPTIONS } from '../../lib/constants';
+import { buildLaunchRequests, getEffectiveCommand } from '../../lib/launchUtils';
 
 const STATUS_OPTIONS = [...PROJECT_STATUSES];
 const SOURCE_OPTIONS = [
@@ -25,6 +28,7 @@ export default function ProjectsPage() {
   const [form] = Form.useForm();
   const [detecting, setDetecting] = useState(false);
   const [detectResult, setDetectResult] = useState<any>(null);
+  const { requestLaunch } = useTerminalStore();
 
   // Scan directory state
   const [scanModalOpen, setScanModalOpen] = useState(false);
@@ -48,6 +52,7 @@ export default function ProjectsPage() {
   }>>(new Map());
   const [batchLaunchModalOpen, setBatchLaunchModalOpen] = useState(false);
   const [batchLaunchCancelled, setBatchLaunchCancelled] = useState(false);
+  const [healthResults, setHealthResults] = useState<Record<string, any>>({});
   const [smartSortEnabled, setSmartSortEnabled] = useState(true);
 
   // Quick launch state
@@ -128,6 +133,17 @@ export default function ProjectsPage() {
   }, [search, statusFilter]);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
+
+  // Fetch health data once on mount (changes only after daily health check)
+  useEffect(() => {
+    healthApi.getAllLatest().then((healthData) => {
+      const map: Record<string, any> = {};
+      if (Array.isArray(healthData)) {
+        healthData.forEach((h: any) => { map[h.projectId] = h; });
+      }
+      setHealthResults(map);
+    }).catch(() => {});
+  }, []);
 
   const handleDetect = async () => {
     const localPath = form.getFieldValue('localPath')?.trim();
@@ -332,7 +348,7 @@ export default function ProjectsPage() {
   const getLaunchHints = (project: any): string[] => {
     const hints: string[] = [];
     const techStack = project.techStack || [];
-    const command = project.openCommand || '';
+    const command = getEffectiveCommand(project) || '';
 
     if (techStack.some((t: string) => /react.native|flutter|ionic/i.test(t))) {
       hints.push('移动端项目：启动后需要在模拟器或真机上运行');
@@ -384,7 +400,8 @@ export default function ProjectsPage() {
   };
 
   const handleLaunchProject = async (project: any) => {
-    if (!project.openCommand) {
+    const requests = buildLaunchRequests(project);
+    if (requests.length === 0) {
       message.warning('请先设置启动命令');
       return;
     }
@@ -420,7 +437,11 @@ export default function ProjectsPage() {
                 </ul>
               </div>
               <div style={{ fontSize: 12, color: '#9eadc0' }}>
-                启动命令：<code style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{project.openCommand}</code>
+                启动命令：
+                {project.frontendCommand && <code style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{project.frontendCommand}</code>}
+                {project.frontendCommand && project.backendCommand && ' + '}
+                {project.backendCommand && <code style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{project.backendCommand}</code>}
+                {!project.frontendCommand && !project.backendCommand && project.openCommand && <code style={{ background: 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: 4 }}>{project.openCommand}</code>}
               </div>
             </div>
           ),
@@ -433,12 +454,9 @@ export default function ProjectsPage() {
       if (!confirmed) return;
     }
 
-    try {
-      await projectsApi.open(project.id);
-      message.success('正在启动项目...');
-    } catch (err: unknown) {
-      message.warning(String(err) || '启动失败');
-    }
+    // Launch using terminal - supports multiple commands
+    requests.forEach(req => requestLaunch(req));
+    message.success(requests.length > 1 ? '正在启动前端和后端...' : '正在启动项目...');
   };
 
   // Batch launch functions
@@ -492,8 +510,8 @@ export default function ProjectsPage() {
     }
 
     const selectedProjects = projects.filter(p => selectedProjectIds.has(p.id));
-    const projectsWithCommands = selectedProjects.filter(p => p.openCommand);
-    const projectsWithoutCommands = selectedProjects.filter(p => !p.openCommand);
+    const projectsWithCommands = selectedProjects.filter(p => getEffectiveCommand(p));
+    const projectsWithoutCommands = selectedProjects.filter(p => !getEffectiveCommand(p));
 
     if (projectsWithCommands.length === 0) {
       message.warning('选中的项目都没有设置启动命令');
@@ -509,7 +527,7 @@ export default function ProjectsPage() {
     const usedPorts = new Set<number>();
 
     for (const project of projectsWithCommands) {
-      const port = extractPortFromCommand(project.openCommand);
+      const port = extractPortFromCommand(getEffectiveCommand(project) || '');
       if (port && usedPorts.has(port)) {
         portConflicts.push({ project, port });
       } else if (port) {
@@ -580,7 +598,7 @@ export default function ProjectsPage() {
                     <Tag color={getPriorityColor(priority)} style={{ fontSize: 11 }}>
                       {getPriorityLabel(priority)}
                     </Tag>
-                    <Tag style={{ fontSize: 11 }}>{project.openCommand}</Tag>
+                    <Tag style={{ fontSize: 11 }}>{getEffectiveCommand(project)}</Tag>
                   </div>
                 );
               })}
@@ -664,7 +682,7 @@ export default function ProjectsPage() {
       });
 
       try {
-        const tid = await terminalApi.start(project.id, project.openCommand, project.localPath);
+        const tid = await terminalApi.start(project.id, getEffectiveCommand(project) || '', project.localPath);
 
         // Update status to success
         setBatchLaunchProgress(prev => {
@@ -674,7 +692,7 @@ export default function ProjectsPage() {
             ...progress,
             status: 'success',
             terminalId: tid,
-            port: extractPortFromCommand(project.openCommand) || undefined
+            port: extractPortFromCommand(getEffectiveCommand(project) || '') || undefined
           });
           return next;
         });
@@ -870,7 +888,7 @@ export default function ProjectsPage() {
 
   const handleRetryProject = async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
-    if (!project || !project.openCommand) return;
+    if (!project || !getEffectiveCommand(project)) return;
 
     // Update status to launching
     setBatchLaunchProgress(prev => {
@@ -880,7 +898,7 @@ export default function ProjectsPage() {
     });
 
     try {
-      const tid = await terminalApi.start(project.id, project.openCommand, project.localPath);
+      const tid = await terminalApi.start(project.id, getEffectiveCommand(project) || '', project.localPath);
 
       // Update status to success
       setBatchLaunchProgress(prev => {
@@ -888,7 +906,7 @@ export default function ProjectsPage() {
         next.set(projectId, {
           status: 'success',
           terminalId: tid,
-          port: extractPortFromCommand(project.openCommand) || undefined
+          port: extractPortFromCommand(getEffectiveCommand(project) || '') || undefined
         });
         return next;
       });
@@ -1078,6 +1096,18 @@ export default function ProjectsPage() {
                         style={{ color: '#22c55e' }}
                       />
                     </Tooltip>
+                    <Tooltip title="打开终端">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CodeOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id });
+                        }}
+                        style={{ color: '#8b95a5' }}
+                      />
+                    </Tooltip>
                     <Tooltip title="删除项目">
                       <Button
                         type="text"
@@ -1144,6 +1174,7 @@ export default function ProjectsPage() {
                         <Tag color={STATUS_COLORS[project.status] || 'default'} style={{ fontSize: 11, margin: 0 }}>
                           {project.status}
                         </Tag>
+                        <HealthBadge result={healthResults[project.id]} />
                       </div>
                     </div>
 
