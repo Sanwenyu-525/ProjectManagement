@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Row, Col, Typography, Card, Tag, Empty, Button, Tooltip, Progress } from 'antd';
+import { Row, Col, Card, Tag, Empty, Button, Tooltip, Progress, Skeleton } from 'antd';
 import {
   CheckCircleOutlined,
   ArrowRightOutlined,
@@ -16,8 +16,6 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { projectsApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
-
-const { Text } = Typography;
 
 // 统计卡片配置
 const STAT_CONFIG = [
@@ -271,14 +269,22 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 100, gap: 16 }}>
-        <div style={{
-          width: 40, height: 40,
-          border: '3px solid rgba(34, 197, 94, 0.2)', borderTopColor: '#22c55e',
-          borderRadius: '50%', animation: 'spin 1s linear infinite',
-        }} />
-        <Text style={{ color: '#9eadc0' }}>加载中...</Text>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ padding: 24 }}>
+        <Skeleton active paragraph={{ rows: 0 }} style={{ marginBottom: 24 }} />
+        <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
+          {[0,1,2,3].map(i => (
+            <Col xs={12} sm={6} key={i}>
+              <Card style={{ height: 120 }}><Skeleton active paragraph={{ rows: 2 }} /></Card>
+            </Col>
+          ))}
+        </Row>
+        <Row gutter={[16, 16]}>
+          {[0,1,2,3].map(i => (
+            <Col xs={24} sm={12} md={8} lg={6} key={i}>
+              <Card style={{ height: 200 }}><Skeleton active avatar paragraph={{ rows: 3 }} /></Card>
+            </Col>
+          ))}
+        </Row>
       </div>
     );
   }

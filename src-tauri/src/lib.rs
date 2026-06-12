@@ -63,6 +63,10 @@ pub fn run() {
             commands::projects::projects_refresh,
             commands::projects::detect_project_cwd,
             commands::projects::debug_project_raw,
+            commands::projects::projects_launch,
+            commands::projects::projects_stop,
+            commands::projects::projects_check_environment,
+            commands::projects::projects_batch_import,
             commands::tasks::tasks_list,
             commands::tasks::tasks_create,
             commands::tasks::tasks_update,
@@ -121,6 +125,12 @@ pub fn run() {
             commands::health::run_health_check_for_project,
             commands::health::get_project_health_history,
             commands::health::get_all_latest_health,
+            // Workspaces
+            commands::workspaces::workspaces_list,
+            commands::workspaces::workspaces_create,
+            commands::workspaces::workspaces_update,
+            commands::workspaces::workspaces_delete,
+            commands::workspaces::workspaces_assign_project,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

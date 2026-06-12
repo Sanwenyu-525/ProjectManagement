@@ -1,7 +1,7 @@
 use serde_json::Value as JsonValue;
 use tauri::{command, State};
 
-use crate::db::{Database, DEFAULT_USER_ID};
+use crate::db::Database;
 
 #[command]
 pub async fn global_search(db: State<'_, Database>, q: String) -> Result<JsonValue, String> {
@@ -10,9 +10,9 @@ pub async fn global_search(db: State<'_, Database>, q: String) -> Result<JsonVal
     let projects = db
         .query_json(
             "SELECT id, name, description, status, iconType, iconUrl, iconColor, techStack FROM projects
-             WHERE ownerId = ?1 AND (name LIKE ?2 OR description LIKE ?2)
+             WHERE name LIKE ?1 OR description LIKE ?1
              LIMIT 10",
-            rusqlite::params![DEFAULT_USER_ID, pattern],
+            rusqlite::params![pattern],
         )
         .unwrap_or(serde_json::json!([]));
 
@@ -21,9 +21,9 @@ pub async fn global_search(db: State<'_, Database>, q: String) -> Result<JsonVal
             "SELECT t.id, t.title, t.description, t.status, t.projectId, p.name as projectName
              FROM tasks t
              INNER JOIN projects p ON t.projectId = p.id
-             WHERE p.ownerId = ?1 AND (t.title LIKE ?2 OR t.description LIKE ?2)
+             WHERE t.title LIKE ?1 OR t.description LIKE ?1
              LIMIT 10",
-            rusqlite::params![DEFAULT_USER_ID, pattern],
+            rusqlite::params![pattern],
         )
         .unwrap_or(serde_json::json!([]));
 
@@ -32,9 +32,9 @@ pub async fn global_search(db: State<'_, Database>, q: String) -> Result<JsonVal
             "SELECT d.id, d.title, d.type, d.projectId, p.name as projectName
              FROM documents d
              INNER JOIN projects p ON d.projectId = p.id
-             WHERE p.ownerId = ?1 AND (d.title LIKE ?2 OR d.content LIKE ?2)
+             WHERE d.title LIKE ?1 OR d.content LIKE ?1
              LIMIT 10",
-            rusqlite::params![DEFAULT_USER_ID, pattern],
+            rusqlite::params![pattern],
         )
         .unwrap_or(serde_json::json!([]));
 

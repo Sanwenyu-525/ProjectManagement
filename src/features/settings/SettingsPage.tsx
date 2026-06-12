@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Card, Form, Input, Button, Typography, Tabs, message, Space, Modal, Select } from 'antd';
 import { SaveOutlined, KeyOutlined, FolderOutlined } from '@ant-design/icons';
-import { useAuthStore } from '../../stores/authStore';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { open } from '@tauri-apps/plugin-dialog';
 import { DEFAULT_SHELL, DEFAULT_CWD, SHELL_OPTIONS } from '../../lib/constants';
@@ -27,19 +26,17 @@ export default function SettingsPage() {
 // ==================== 个人信息 ====================
 
 function ProfileSettings() {
-  const { user } = useAuthStore();
-
   return (
     <Card>
-      <Form layout="vertical" initialValues={user || {}}>
-        <Form.Item label="用户名">
-          <Input value={user?.username} disabled />
+      <Form layout="vertical">
+        <Form.Item label="应用名称">
+          <Input value="DevHub" disabled />
         </Form.Item>
-        <Form.Item label="邮箱">
-          <Input value={user?.email} disabled />
+        <Form.Item label="版本">
+          <Input value="0.1.0" disabled />
         </Form.Item>
-        <Form.Item label="注册时间">
-          <Input value={user?.createdAt ? new Date(user.createdAt).toLocaleString('zh-CN') : ''} disabled />
+        <Form.Item label="模式">
+          <Input value="单用户本地模式" disabled />
         </Form.Item>
       </Form>
     </Card>

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::process::Command;
 use tauri::{command, State};
 
-use crate::db::{Database, DEFAULT_USER_ID};
+use crate::db::Database;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +27,93 @@ pub struct ProjectHealthResult {
     pub outdated_deps: Vec<OutdatedDep>,
     pub outdated_dep_count: i32,
     pub has_changes: bool,
+    pub health_score: Option<i32>,
+    pub health_status: Option<String>,
     pub error: Option<String>,
+}
+
+/// Compute a 100-point health score based on available signals.
+///
+/// Scoring breakdown:
+/// - Git cleanliness (25): 0 dirty = 25, 1-5 = 20, 6-15 = 12, 16+ = 5
+/// - Branch sync (20): synced = 20, ahead only = 15, behind only = 10, diverged = 5
+/// - Dependencies (20): 0 outdated = 20, 1-3 = 15, 4-10 = 8, 11+ = 3
+/// - Structure (20): has README = 7, has src/ = 7, has .gitignore = 6
+/// - Code signals (15): has package.json scripts = 5, has tests = 5, has CI = 5
+fn calculate_health_score(result: &ProjectHealthResult, local_path: &str) -> (i32, String) {
+    let mut score: i32 = 0;
+
+    // 1. Git cleanliness (25 points)
+    if result.error.is_some() && result.error.as_ref().unwrap().contains("不是 Git 仓库") {
+        score += 10; // Partial credit for non-git
+    } else {
+        score += match result.dirty_file_count {
+            0 => 25,
+            1..=5 => 20,
+            6..=15 => 12,
+            _ => 5,
+        };
+    }
+
+    // 2. Branch sync (20 points)
+    let is_ahead = result.ahead_count > 0;
+    let is_behind = result.behind_count > 0;
+    score += match (is_ahead, is_behind) {
+        (false, false) => 20, // synced
+        (true, false) => 15,  // ahead only
+        (false, true) => 10,  // behind only
+        (true, true) => 5,    // diverged
+    };
+
+    // 3. Dependencies (20 points)
+    score += match result.outdated_dep_count {
+        0 => 20,
+        1..=3 => 15,
+        4..=10 => 8,
+        _ => 3,
+    };
+
+    // 4. Project structure (20 points)
+    let root = std::path::Path::new(local_path);
+    if root.join("README.md").exists() || root.join("README").exists() || root.join("readme.md").exists() {
+        score += 7;
+    }
+    if root.join("src").exists() {
+        score += 7;
+    }
+    if root.join(".gitignore").exists() {
+        score += 6;
+    }
+
+    // 5. Code quality signals (15 points)
+    // Has meaningful package.json scripts
+    if let Ok(content) = std::fs::read_to_string(root.join("package.json")) {
+        if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(scripts) = pkg.get("scripts").and_then(|s| s.as_object()) {
+                if scripts.len() >= 3 { score += 5; }
+                else if scripts.len() >= 1 { score += 3; }
+            }
+        }
+    }
+    // Has test files
+    let has_tests = root.join("tests").exists()
+        || root.join("__tests__").exists()
+        || root.join("src").join("__tests__").exists()
+        || root.join("test").exists();
+    if has_tests { score += 5; }
+    // Has CI config
+    let has_ci = root.join(".github").join("workflows").exists()
+        || root.join(".gitlab-ci.yml").exists()
+        || root.join(".circleci").exists();
+    if has_ci { score += 5; }
+
+    let status = match score {
+        80..=100 => "healthy",
+        50..=79 => "needs_attention",
+        _ => "critical",
+    };
+
+    (score, status.to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -135,7 +221,7 @@ fn check_project_health(project_id: &str, project_name: &str, local_path: &str) 
         }
     }
 
-    ProjectHealthResult {
+    let mut result = ProjectHealthResult {
         project_id: project_id.to_string(),
         project_name: project_name.to_string(),
         dirty_file_count,
@@ -145,8 +231,17 @@ fn check_project_health(project_id: &str, project_name: &str, local_path: &str) 
         outdated_dep_count: outdated_deps.len() as i32,
         outdated_deps,
         has_changes: false,
+        health_score: None,
+        health_status: None,
         error,
-    }
+    };
+
+    // Calculate health score
+    let (score, status) = calculate_health_score(&result, local_path);
+    result.health_score = Some(score);
+    result.health_status = Some(status);
+
+    result
 }
 
 /// Build a lookup map from the most recent health check BEFORE today.
@@ -193,7 +288,7 @@ fn save_result(db: &Database, result: &ProjectHealthResult, today: &str) {
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let _ = db.execute(
-        "INSERT OR REPLACE INTO project_health_checks (id, projectId, checkDate, dirtyFileCount, currentBranch, aheadCount, behindCount, outdatedDeps, outdatedDepCount, hasChanges, createdAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT OR REPLACE INTO project_health_checks (id, projectId, checkDate, dirtyFileCount, currentBranch, aheadCount, behindCount, outdatedDeps, outdatedDepCount, hasChanges, healthScore, healthStatus, createdAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         rusqlite::params![
             id,
             result.project_id,
@@ -205,6 +300,8 @@ fn save_result(db: &Database, result: &ProjectHealthResult, today: &str) {
             outdated_json,
             result.outdated_dep_count,
             result.has_changes as i32,
+            result.health_score,
+            result.health_status,
             now,
         ],
     );
@@ -219,8 +316,8 @@ pub async fn run_all_health_checks(db: State<'_, Database>) -> Result<HealthChec
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     let projects_json = db.query_json(
-        "SELECT id, name, localPath FROM projects WHERE localPath IS NOT NULL AND ownerId = ?1",
-        rusqlite::params![DEFAULT_USER_ID],
+        "SELECT id, name, localPath FROM projects WHERE localPath IS NOT NULL",
+        rusqlite::params![],
     ).map_err(|e| e.to_string())?;
 
     let projects: Vec<serde_json::Value> = match projects_json {
@@ -274,8 +371,8 @@ pub async fn run_health_check_for_project(
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     let project = db.query_one_json(
-        "SELECT id, name, localPath FROM projects WHERE id = ?1 AND ownerId = ?2",
-        rusqlite::params![project_id, DEFAULT_USER_ID],
+        "SELECT id, name, localPath FROM projects WHERE id = ?1",
+        rusqlite::params![project_id],
     ).map_err(|e| e.to_string())?
         .ok_or("项目不存在")?;
 

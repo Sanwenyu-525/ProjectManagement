@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, Timeline, Tag, Spin, Empty, Typography, Row, Col, Statistic, Button, Select, Tooltip } from 'antd';
+import { Card, Timeline, Tag, Skeleton, Empty, Typography, Row, Col, Statistic, Button, Select, Tooltip } from 'antd';
 import {
   CheckCircleOutlined,
   SyncOutlined,
@@ -12,19 +12,22 @@ import {
   RocketOutlined,
   BellOutlined,
   CalendarOutlined,
+  HeartOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { timelineApi } from '../../api';
+import { timelineApi, projectsApi } from '../../api';
 
 const { Text } = Typography;
 
 const ACTION_MAP: Record<string, { icon: React.ReactNode; color: string; label: string; category: string }> = {
   status_change: { icon: <EditOutlined />, color: 'blue', label: '状态变更', category: '项目' },
+  project_created: { icon: <PlusCircleOutlined />, color: 'green', label: '创建项目', category: '项目' },
   task_created: { icon: <PlusCircleOutlined />, color: 'green', label: '创建任务', category: '任务' },
   task_status_change: { icon: <CheckCircleOutlined />, color: 'orange', label: '任务状态变更', category: '任务' },
   repo_synced: { icon: <SyncOutlined />, color: 'cyan', label: '仓库同步', category: '仓库' },
   milestone_created: { icon: <RocketOutlined />, color: 'purple', label: '创建里程碑', category: '里程碑' },
   document_created: { icon: <FileTextOutlined />, color: 'geekblue', label: '创建文档', category: '文档' },
+  health_check: { icon: <HeartOutlined />, color: 'red', label: '健康检查', category: '系统' },
   member_joined: { icon: <UserOutlined />, color: 'lime', label: '成员加入', category: '团队' },
 };
 
@@ -75,9 +78,12 @@ export default function TimelinePage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [projectFilter, setProjectFilter] = useState<string>('all');
+  const [projectList, setProjectList] = useState<any[]>([]);
 
   useEffect(() => {
     loadTimeline();
+    projectsApi.list().then(d => setProjectList(d as any[])).catch(() => {});
   }, []);
 
   async function loadTimeline() {
@@ -94,6 +100,9 @@ export default function TimelinePage() {
     if (filter !== 'all') {
       const action = ACTION_MAP[log.action];
       if (!action || action.category !== filter) return false;
+    }
+    if (projectFilter !== 'all' && log.projectId !== projectFilter) {
+      return false;
     }
     return true;
   });
@@ -113,7 +122,19 @@ export default function TimelinePage() {
     }).length,
   };
 
-  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 100 }}><Spin size="large" /></div>;
+  if (loading) return (
+    <div style={{ padding: 24 }}>
+      <Skeleton active paragraph={{ rows: 0 }} style={{ marginBottom: 24 }} />
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        {[0,1,2].map(i => (
+          <Col xs={24} sm={8} key={i}>
+            <Card size="small"><Skeleton active paragraph={{ rows: 1 }} /></Card>
+          </Col>
+        ))}
+      </Row>
+      <Card><Skeleton active paragraph={{ rows: 8 }} /></Card>
+    </div>
+  );
 
   return (
     <div style={{ padding: 24 }}>
@@ -135,17 +156,17 @@ export default function TimelinePage() {
 
       {/* Stats */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col span={8}>
+        <Col xs={24} sm={8}>
           <Card size="small">
             <Statistic title="总活动" value={stats.total} prefix={<BellOutlined />} />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={8}>
           <Card size="small">
             <Statistic title="今日活动" value={stats.today} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#3b82f6' }} />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={8}>
           <Card size="small">
             <Statistic title="本周活动" value={stats.thisWeek} prefix={<CalendarOutlined />} valueStyle={{ color: '#22c55e' }} />
           </Card>
@@ -159,15 +180,30 @@ export default function TimelinePage() {
           onChange={setFilter}
           style={{ width: 150 }}
           options={[
-            { value: 'all', label: '全部' },
+            { value: 'all', label: '全部分类' },
             { value: '项目', label: '项目' },
             { value: '任务', label: '任务' },
             { value: '仓库', label: '仓库' },
             { value: '里程碑', label: '里程碑' },
             { value: '文档', label: '文档' },
+            { value: '系统', label: '系统' },
             { value: '团队', label: '团队' },
           ]}
         />
+        {projectList.length > 0 && (
+          <Select
+            value={projectFilter}
+            onChange={setProjectFilter}
+            style={{ width: 180 }}
+            placeholder="按项目筛选"
+            showSearch
+            optionFilterProp="label"
+            options={[
+              { value: 'all', label: '全部项目' },
+              ...projectList.map((p: any) => ({ value: p.id, label: p.name })),
+            ]}
+          />
+        )}
       </div>
 
       {/* Timeline */}

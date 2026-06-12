@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Divider, Alert, Table, InputNumber, Tooltip, Checkbox, Progress } from 'antd';
-import { PlusOutlined, SearchOutlined, FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, RocketOutlined, StopOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, RocketOutlined, StopOutlined, PauseCircleOutlined, FileTextOutlined, EditOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
-import { projectsApi, detectApi, terminalApi, healthApi } from '../../api';
+import { projectsApi, detectApi, terminalApi, healthApi, workspacesApi } from '../../api';
+import type { CreateProjectInput } from '../../types';
 import ProjectIcon from '../../shared/ProjectIcon';
 import QuickLaunchModal from '../../shared/QuickLaunchModal';
 import HealthBadge from '../../shared/HealthBadge';
@@ -24,6 +25,8 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [workspaceFilter, setWorkspaceFilter] = useState<string | undefined>();
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [detecting, setDetecting] = useState(false);
@@ -123,6 +126,7 @@ export default function ProjectsPage() {
       const params: Record<string, string> = {};
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
+      if (workspaceFilter) params.workspaceId = workspaceFilter;
       const data = await projectsApi.list(params);
       setProjects(data);
     } catch {
@@ -130,9 +134,14 @@ export default function ProjectsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, workspaceFilter]);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
+
+  // Load workspaces
+  useEffect(() => {
+    workspacesApi.list().then((data) => setWorkspaces(data as any[])).catch(() => {});
+  }, []);
 
   // Fetch health data once on mount (changes only after daily health check)
   useEffect(() => {
@@ -171,7 +180,7 @@ export default function ProjectsPage() {
       const updates: Record<string, any> = {};
       if (result.name) updates.name = result.name;
       if (result.description) updates.description = result.description;
-      if (result.techStack?.length) updates.techStack = result.techStack.join(', ');
+      if (result.techStack?.length) updates.techStack = result.techStack;
       if (result.source) updates.source = result.source;
       if (result.localPath) updates.localPath = result.localPath;
       if (result.repoUrl) updates.repoUrl = result.repoUrl;
@@ -207,11 +216,14 @@ export default function ProjectsPage() {
     }
 
     try {
-      const payload: Record<string, any> = {
-        ...values,
-        techStack: values.techStack ? values.techStack.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      const payload: CreateProjectInput = {
+        name: values.name,
+        description: values.description,
+        status: values.status,
+        priority: values.priority,
+        localPath: values.localPath,
+        techStack: Array.isArray(values.techStack) ? values.techStack : (values.techStack ? values.techStack.split(',').map((s: string) => s.trim()).filter(Boolean) : []),
       };
-      delete payload.repoUrl; // Not a project field, used only for detect
       await projectsApi.create(payload);
       message.success('项目创建成功');
       setModalOpen(false);
@@ -316,33 +328,38 @@ export default function ProjectsPage() {
       return;
     }
     setImporting(true);
-    const results = await Promise.allSettled(
-      selectedKeys.map((key) => {
-        const project = scanResults[Number(key)];
-        if (!project) return Promise.reject();
-        return projectsApi.create({
+    try {
+      const toImport = selectedKeys
+        .map((key) => scanResults[Number(key)])
+        .filter(Boolean)
+        .map((project: any) => ({
           name: project.name,
           description: project.description,
           techStack: project.techStack,
           source: project.source,
           localPath: project.localPath,
           openCommand: project.openCommand,
-          priority: 'Medium',
-        });
-      })
-    );
-    const successCount = results.filter(r => r.status === 'fulfilled').length;
-    const failCount = results.filter(r => r.status === 'rejected').length;
-    setImporting(false);
-    if (successCount > 0) {
-      message.success(`成功导入 ${successCount} 个项目${failCount > 0 ? `，${failCount} 个失败` : ''}`);
-      setScanModalOpen(false);
-      setScanResults([]);
-      setSelectedKeys([]);
-      loadProjects();
-    } else {
-      message.error('导入失败');
+          frontendCommand: project.frontendCommand,
+          backendCommand: project.backendCommand,
+          iconType: project.iconType,
+        }));
+      const result = await projectsApi.batchImport(toImport);
+      if (result.imported > 0) {
+        message.success(`成功导入 ${result.imported} 个项目${result.skipped > 0 ? `，${result.skipped} 个已存在跳过` : ''}`);
+      } else if (result.skipped > 0) {
+        message.info(`${result.skipped} 个项目已存在，无需重复导入`);
+      }
+      if (result.errors.length > 0) {
+        message.warning(`${result.errors.length} 个导入失败`);
+      }
+    } catch (err) {
+      message.error(`导入失败: ${String(err)}`);
     }
+    setImporting(false);
+    setScanModalOpen(false);
+    setScanResults([]);
+    setSelectedKeys([]);
+    loadProjects();
   };
 
   const getLaunchHints = (project: any): string[] => {
@@ -460,8 +477,8 @@ export default function ProjectsPage() {
   };
 
   // Batch launch functions
-  const handleToggleProjectSelection = (projectId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleToggleProjectSelection = (projectId: string, e?: React.SyntheticEvent) => {
+    e?.stopPropagation();
     setSelectedProjectIds(prev => {
       const next = new Set(prev);
       if (next.has(projectId)) {
@@ -1019,6 +1036,20 @@ export default function ProjectsPage() {
           size="large"
           options={STATUS_OPTIONS.map(s => ({ value: s, label: s }))}
         />
+        {workspaces.length > 0 && (
+          <Select
+            placeholder="按工作区筛选"
+            value={workspaceFilter}
+            onChange={setWorkspaceFilter}
+            allowClear
+            style={{ width: 160 }}
+            size="large"
+            options={[
+              { value: 'none', label: '未分组' },
+              ...workspaces.map((w: any) => ({ value: w.id, label: w.name })),
+            ]}
+          />
+        )}
         <div style={{ flex: 1 }} />
         {projects.length > 0 && (
           <Checkbox
@@ -1043,7 +1074,6 @@ export default function ProjectsPage() {
               <Col key={project.id} xs={24} sm={12} md={8} lg={6}>
                 <Card
                   hoverable
-                  onDoubleClick={() => handleLaunchProject(project)}
                   onClick={() => navigate(`/projects/${project.id}`)}
                   style={{
                     borderRadius: 12,
@@ -1125,32 +1155,15 @@ export default function ProjectsPage() {
                 {/* 内容区域：左列复选框 + 右列内容 */}
                 <div style={{ display: 'flex', gap: 12, flex: 1 }}>
                   {/* 左列：复选框 */}
-                  <div
-                    style={{
-                      width: 28,
-                      flexShrink: 0,
-                      paddingTop: 2,
-                    }}
-                    onClick={(e) => handleToggleProjectSelection(project.id, e)}
-                  >
-                    <div style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 6,
-                      border: isSelected ? '2px solid #22c55e' : '2px solid #d1d5db',
-                      background: isSelected ? '#22c55e' : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}>
-                      {isSelected && (
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                          <path d="M2.5 7.5L5.5 10.5L11.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      )}
-                    </div>
+                  <div style={{ flexShrink: 0, paddingTop: 2 }}>
+                    <Checkbox
+                      checked={isSelected}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleToggleProjectSelection(project.id, e as any);
+                      }}
+                    />
                   </div>
 
                   {/* 右列：内容 */}
@@ -1178,7 +1191,59 @@ export default function ProjectsPage() {
                       </div>
                     </div>
 
-                    {/* 区域2: 描述 */}
+                    {/* 区域2: 运行状态 + 关键指标 */}
+                    <div style={{
+                      display: 'flex', gap: 8, marginBottom: 10, flexShrink: 0,
+                      flexWrap: 'wrap', alignItems: 'center',
+                    }}>
+                      {/* 前端状态 */}
+                      {project.frontendCommand && (
+                        <Tag
+                          style={{ fontSize: 11, margin: 0, cursor: 'pointer' }}
+                          color={project.frontendStatus === 'running' ? 'green' : 'default'}
+                          icon={project.frontendStatus === 'running' ? <CheckCircleOutlined /> : <PauseCircleOutlined />}
+                        >
+                          {project.frontendStatus === 'running' ? '前端运行中' : '前端'}
+                        </Tag>
+                      )}
+                      {/* 后端状态 */}
+                      {project.backendCommand && (
+                        <Tag
+                          style={{ fontSize: 11, margin: 0, cursor: 'pointer' }}
+                          color={project.backendStatus === 'running' ? 'green' : 'default'}
+                          icon={project.backendStatus === 'running' ? <CheckCircleOutlined /> : <PauseCircleOutlined />}
+                        >
+                          {project.backendStatus === 'running' ? '后端运行中' : '后端'}
+                        </Tag>
+                      )}
+                      {/* 任务进度 */}
+                      {project.taskCount > 0 && (
+                        <Tooltip title={`${project.taskCount} 个任务`}>
+                          <Tag style={{ fontSize: 11, margin: 0 }} icon={<FileTextOutlined />}>
+                            {project.taskCount}
+                          </Tag>
+                        </Tooltip>
+                      )}
+                      {/* Git 信息 */}
+                      {healthResults[project.id] && (
+                        <>
+                          {healthResults[project.id].dirtyFileCount > 0 && (
+                            <Tooltip title={`${healthResults[project.id].dirtyFileCount} 个未提交文件`}>
+                              <Tag color="orange" style={{ fontSize: 11, margin: 0 }} icon={<EditOutlined />}>
+                                {healthResults[project.id].dirtyFileCount}
+                              </Tag>
+                            </Tooltip>
+                          )}
+                          {(healthResults[project.id].aheadCount > 0 || healthResults[project.id].behindCount > 0) && (
+                            <Tag color="blue" style={{ fontSize: 11, margin: 0 }}>
+                              ↑{healthResults[project.id].aheadCount} ↓{healthResults[project.id].behindCount}
+                            </Tag>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* 区域3: 描述 */}
                     <div style={{
                       flex: 1, marginBottom: 10,
                       color: '#6b7a99', fontSize: 13, lineHeight: 1.5,
@@ -1192,7 +1257,7 @@ export default function ProjectsPage() {
                       )}
                     </div>
 
-                    {/* 区域3: 技术栈 */}
+                    {/* 区域4: 技术栈 */}
                     <div style={{ flexShrink: 0 }}>
                       {project.techStack?.length > 0 ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -1324,8 +1389,12 @@ export default function ProjectsPage() {
           <Form.Item name="openCommand" label="启动命令" tooltip="检测后自动填充，支持 {path} 占位符">
             <Input placeholder="如 npm run dev（检测后自动填充）" />
           </Form.Item>
-          <Form.Item name="techStack" label="技术栈（逗号分隔）">
-            <Input placeholder="React, TypeScript, Node.js（检测后自动填充）" />
+          <Form.Item name="techStack" label="技术栈">
+            <Select
+              mode="tags"
+              placeholder="输入后回车添加，如 React、TypeScript"
+              tokenSeparators={[',']}
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -1381,8 +1450,9 @@ export default function ProjectsPage() {
                     key={g.id}
                     color={g.groupType === 'git' ? 'blue' : 'orange'}
                     style={{ marginRight: 8 }}
+                    icon={g.groupType === 'git' ? <LinkOutlined /> : <FolderOutlined />}
                   >
-                    {g.groupType === 'git' ? '🔗 同仓库' : '📁 嵌套'} {g.label}
+                    {g.label}
                   </Tag>
                 ))}
               </div>
@@ -1440,10 +1510,10 @@ export default function ProjectsPage() {
                     if (!groupId) return <Tag>独立</Tag>;
                     const group = scanGroups.find((g: any) => g.id === groupId);
                     const color = group?.groupType === 'git' ? 'blue' : 'orange';
-                    const prefix = group?.groupType === 'git' ? '🔗' : '📁';
+                    const Icon = group?.groupType === 'git' ? LinkOutlined : FolderOutlined;
                     return (
-                      <Tag color={color}>
-                        {prefix} {group?.label || '关联'}
+                      <Tag color={color} icon={<Icon />}>
+                        {group?.label || '关联'}
                       </Tag>
                     );
                   },

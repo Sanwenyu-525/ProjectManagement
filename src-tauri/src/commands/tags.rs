@@ -2,15 +2,15 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tauri::{command, State};
 
-use crate::db::{Database, DEFAULT_USER_ID};
+use crate::db::Database;
 
 #[command]
 pub async fn tags_list(db: State<'_, Database>) -> Result<JsonValue, String> {
     db.query_json(
         "SELECT t.*,
             (SELECT COUNT(*) FROM project_tags WHERE tagId = t.id) as projectCount
-         FROM tags t WHERE t.userId = ?1 ORDER BY t.name ASC",
-        rusqlite::params![DEFAULT_USER_ID],
+         FROM tags t ORDER BY t.name ASC",
+        rusqlite::params![],
     )
     .map_err(|e| e.to_string())
 }
@@ -26,8 +26,8 @@ pub async fn tags_create(db: State<'_, Database>, data: CreateTagInput) -> Resul
     let id = crate::db::new_id();
 
     db.execute(
-        "INSERT INTO tags (id, name, color, userId) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![id, data.name, data.color.unwrap_or_else(|| "#6366F1".into()), DEFAULT_USER_ID],
+        "INSERT INTO tags (id, name, color) VALUES (?1, ?2, ?3)",
+        rusqlite::params![id, data.name, data.color.unwrap_or_else(|| "#6366F1".into())],
     )
     .map_err(|e| e.to_string())?;
 

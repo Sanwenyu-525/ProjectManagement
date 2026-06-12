@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Card, Spin, Button, Space, Typography, List, Tag } from 'antd';
 import { FullscreenOutlined, ReloadOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import { projectsApi, timelineApi } from '../../api';
+import { projectsApi, timelineApi, healthApi, workspacesApi } from '../../api';
 import { STATUS_HEX_COLORS, ACTIVITY_ACTION_CONFIG } from '../../lib/constants';
 
 const { Title, Text } = Typography;
@@ -18,6 +18,8 @@ function cardStyle(extend?: React.CSSProperties): React.CSSProperties {
 export default function DataScreenPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [healthData, setHealthData] = useState<any[]>([]);
+  const [workspaceData, setWorkspaceData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,12 +30,16 @@ export default function DataScreenPage() {
 
   async function loadData() {
     try {
-      const [projData, logData] = await Promise.all([
+      const [projData, logData, healthAll, wsData] = await Promise.all([
         projectsApi.list(),
         timelineApi.list({ limit: 100 }),
+        healthApi.getAllLatest().catch(() => []),
+        workspacesApi.list().catch(() => []),
       ]);
       setProjects(projData);
       setActivityLogs(logData);
+      setHealthData(healthAll);
+      setWorkspaceData(wsData);
     } finally {
       setLoading(false);
     }
@@ -58,6 +64,54 @@ export default function DataScreenPage() {
   }, [projects]);
 
   const repoCount = projects.reduce((sum, p) => sum + (p.remoteRepos?.length || 0), 0);
+
+  // 健康评分分布
+  const healthScoreDist = useMemo(() => {
+    if (healthData.length === 0) return null;
+    const buckets = { healthy: 0, needs_attention: 0, critical: 0, unknown: 0 };
+    healthData.forEach((h: any) => {
+      const status = h.healthStatus || 'unknown';
+      if (status in buckets) (buckets as any)[status]++;
+      else buckets.unknown++;
+    });
+    return [
+      { name: '健康 (80-100)', value: buckets.healthy, itemStyle: { color: '#52c41a' } },
+      { name: '需关注 (50-79)', value: buckets.needs_attention, itemStyle: { color: '#faad14' } },
+      { name: '风险 (0-49)', value: buckets.critical, itemStyle: { color: '#ff4d4f' } },
+      { name: '未检测', value: projects.length - healthData.length, itemStyle: { color: '#d9d9d9' } },
+    ].filter(d => d.value > 0);
+  }, [healthData, projects.length]);
+
+  // 平均健康评分
+  const avgHealthScore = useMemo(() => {
+    const scores = healthData.filter((h: any) => h.healthScore != null).map((h: any) => h.healthScore);
+    if (scores.length === 0) return null;
+    return Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length);
+  }, [healthData]);
+
+  // 运行状态统计
+  const runtimeStats = useMemo(() => {
+    let frontendRunning = 0, backendRunning = 0;
+    projects.forEach(p => {
+      if (p.frontendStatus === 'running') frontendRunning++;
+      if (p.backendStatus === 'running') backendRunning++;
+    });
+    return { frontendRunning, backendRunning, stopped: projects.length - frontendRunning - backendRunning };
+  }, [projects]);
+
+  // 工作区分布
+  const workspaceDist = useMemo(() => {
+    if (workspaceData.length === 0) return null;
+    const items = workspaceData
+      .map((w: any) => ({ name: w.name, value: w.projectCount || 0, itemStyle: { color: w.color || '#6366F1' } }))
+      .filter((d: any) => d.value > 0);
+    const assignedCount = workspaceData.reduce((s: number, w: any) => s + (w.projectCount || 0), 0);
+    const unassigned = projects.length - assignedCount;
+    if (unassigned > 0) {
+      items.push({ name: '未分组', value: unassigned, itemStyle: { color: '#d9d9d9' } });
+    }
+    return items.length > 0 ? items : null;
+  }, [workspaceData, projects.length]);
 
   // 活动热力图数据（最近 30 天）
   const heatmapData = useMemo(() => {
@@ -106,22 +160,24 @@ export default function DataScreenPage() {
       </div>
 
       {/* 统计卡片 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16, marginBottom: 24 }}>
         {[
           { label: '项目总数', value: projects.length, color: '#6366F1' },
           { label: '进行中', value: projects.filter(p => !['Archived', 'Idea'].includes(p.status)).length, color: '#fa8c16' },
           { label: '已部署', value: projects.filter(p => ['Deployed', 'Maintained'].includes(p.status)).length, color: '#52c41a' },
           { label: '远程仓库', value: repoCount, color: '#1677ff' },
+          { label: '前端运行中', value: runtimeStats.frontendRunning, color: '#22c55e' },
+          { label: '平均健康分', value: avgHealthScore ?? '—', color: avgHealthScore != null ? (avgHealthScore >= 80 ? '#52c41a' : avgHealthScore >= 50 ? '#faad14' : '#ff4d4f') : '#9eadc0' },
         ].map((item, i) => (
           <Card key={i} style={cardStyle()}>
-            <div style={{ color: '#6b7a99', fontSize: 14, marginBottom: 8 }}>{item.label}</div>
-            <div style={{ color: item.color, fontSize: 40, fontWeight: 700 }}>{item.value}</div>
+            <div style={{ color: '#6b7a99', fontSize: 13, marginBottom: 8 }}>{item.label}</div>
+            <div style={{ color: item.color, fontSize: 36, fontWeight: 700 }}>{item.value}</div>
           </Card>
         ))}
       </div>
 
       {/* 第一行图表 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginBottom: 16 }}>
         {/* 状态分布饼图 */}
         <Card style={cardStyle()}>
           <Title level={4} style={{ color: '#1a1f36' }}>项目状态分布</Title>
@@ -151,7 +207,7 @@ export default function DataScreenPage() {
       </div>
 
       {/* 第二行图表 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 16 }}>
         {/* 健康度雷达图 */}
         <Card style={cardStyle()}>
           <Title level={4} style={{ color: '#1a1f36' }}>项目健康度</Title>
@@ -227,6 +283,43 @@ export default function DataScreenPage() {
           />
         </Card>
       </div>
+
+      {/* 第三行图表：健康评分分布 + 工作区分布 */}
+      {(healthScoreDist || workspaceDist) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginBottom: 16 }}>
+          {healthScoreDist && (
+            <Card style={cardStyle()}>
+              <Title level={4} style={{ color: '#1a1f36' }}>健康评分分布</Title>
+              <ReactECharts style={{ height: 300 }} option={{
+                tooltip: { trigger: 'item', formatter: '{b}: {c} 个 ({d}%)' },
+                legend: { bottom: 0, textStyle: { color: '#6b7a99' } },
+                series: [{
+                  type: 'pie', radius: ['40%', '65%'],
+                  itemStyle: { borderRadius: 6 },
+                  label: { color: '#1a1f36', formatter: '{b}\n{c}个' },
+                  data: healthScoreDist,
+                }],
+              }} />
+            </Card>
+          )}
+          {workspaceDist && (
+            <Card style={cardStyle()}>
+              <Title level={4} style={{ color: '#1a1f36' }}>工作区分布</Title>
+              <ReactECharts style={{ height: 300 }} option={{
+                tooltip: { trigger: 'item', formatter: '{b}: {c} 个项目 ({d}%)' },
+                legend: { bottom: 0, textStyle: { color: '#6b7a99' } },
+                series: [{
+                  type: 'pie', radius: ['40%', '65%'],
+                  itemStyle: { borderRadius: 6 },
+                  roseType: 'radius',
+                  label: { color: '#1a1f36' },
+                  data: workspaceDist,
+                }],
+              }} />
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }

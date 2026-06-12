@@ -11,3 +11,4 @@ pub mod tags;
 pub mod tasks;
 pub mod terminal;
 pub mod timeline;
+pub mod workspaces;

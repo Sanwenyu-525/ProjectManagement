@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tauri::{command, State};
 
-use crate::db::{Database, DEFAULT_USER_ID};
+use crate::db::Database;
 
 #[derive(Debug, Deserialize)]
 pub struct TimelineParams {
@@ -22,10 +22,9 @@ pub async fn get_timeline(
         "SELECT a.*, p.name as projectName
          FROM activity_logs a
          INNER JOIN projects p ON a.projectId = p.id
-         WHERE p.ownerId = ?1
          ORDER BY a.createdAt DESC
-         LIMIT ?2 OFFSET ?3",
-        rusqlite::params![DEFAULT_USER_ID, limit, offset],
+         LIMIT ?1 OFFSET ?2",
+        rusqlite::params![limit, offset],
     )
     .map_err(|e| e.to_string())
 }

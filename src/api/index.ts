@@ -1,5 +1,30 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { normalizeProject, normalizeProjects } from '../lib/normalize';
+import type {
+  Project,
+  ProjectWithStats,
+  ProjectDetail,
+  Task,
+  RemoteRepo,
+  Milestone,
+  Document,
+  Tag,
+  ActivityLog,
+  SearchResults,
+  CreateProjectInput,
+  UpdateProjectInput,
+  CreateTaskInput,
+  UpdateTaskInput,
+  CreateDocumentInput,
+  UpdateDocumentInput,
+  CreateMilestoneInput,
+  UpdateMilestoneInput,
+  CreateTagInput,
+  UpdateTagInput,
+  AddRepoInput,
+  UpdateRepoInput,
+  DetectedProject,
+} from '../types';
 
 // Type-safe wrapper — components already use `any` for API data
 const cmd = <T = any>(name: string, args?: Record<string, unknown>): Promise<T> =>
@@ -8,114 +33,128 @@ const cmd = <T = any>(name: string, args?: Record<string, unknown>): Promise<T> 
 // ==================== Projects ====================
 
 export const projectsApi = {
-  list: (params?: Record<string, string | undefined>) =>
-    cmd<any[]>('projects_list', { params: params ?? null }).then(normalizeProjects),
-  getById: (id: string) =>
-    cmd<Record<string, any>>('projects_get_by_id', { id }).then(normalizeProject),
-  create: (data: Record<string, unknown>) =>
-    cmd<Record<string, any>>('projects_create', { data }).then(normalizeProject),
-  update: (id: string, data: Record<string, unknown>) =>
-    cmd<Record<string, any>>('projects_update', { id, data }).then(normalizeProject),
-  delete: (id: string) =>
+  list: (params?: Record<string, string | undefined>): Promise<ProjectWithStats[]> =>
+    cmd('projects_list', { params: params ?? null })
+      .then((data) => normalizeProjects(data) as ProjectWithStats[]),
+  getById: (id: string): Promise<ProjectDetail> =>
+    cmd('projects_get_by_id', { id })
+      .then((data) => normalizeProject(data) as ProjectDetail),
+  create: (data: CreateProjectInput): Promise<Project> =>
+    cmd('projects_create', { data })
+      .then((data) => normalizeProject(data) as Project),
+  update: (id: string, data: UpdateProjectInput): Promise<Project> =>
+    cmd('projects_update', { id, data })
+      .then((data) => normalizeProject(data) as Project),
+  delete: (id: string): Promise<void> =>
     cmd('projects_delete', { id }),
-  updateStatus: (id: string, status: string) =>
-    cmd<Record<string, any>>('projects_update_status', { id, status }).then(normalizeProject),
-  getStats: (id: string) =>
+  updateStatus: (id: string, status: string): Promise<Project> =>
+    cmd('projects_update_status', { id, status })
+      .then((data) => normalizeProject(data) as Project),
+  getStats: (id: string): Promise<ProjectWithStats> =>
     cmd('projects_get_stats', { id }),
-  open: (id: string) =>
+  open: (id: string): Promise<void> =>
     cmd('projects_open', { id }),
-  refresh: (id: string) =>
-    cmd<Record<string, any>>('projects_refresh', { id }).then(normalizeProject),
-  detectCwd: (projectPath: string, command: string) =>
-    cmd<string | null>('detect_project_cwd', { projectPath, command }),
-  debugRaw: (id: string) =>
-    cmd<Record<string, any>>('debug_project_raw', { id }),
+  refresh: (id: string): Promise<Project> =>
+    cmd('projects_refresh', { id })
+      .then((data) => normalizeProject(data) as Project),
+  detectCwd: (projectPath: string, command: string): Promise<string | null> =>
+    cmd('detect_project_cwd', { projectPath, command }),
+  debugRaw: (id: string): Promise<Record<string, any>> =>
+    cmd('debug_project_raw', { id }),
+  launch: (id: string, components?: string[]): Promise<{ projectId: string; launched: string[] }> =>
+    cmd('projects_launch', { id, components: components ?? null }),
+  stop: (id: string, components?: string[]): Promise<{ projectId: string; stopped: string[] }> =>
+    cmd('projects_stop', { id, components: components ?? null }),
+  checkEnvironment: (id: string): Promise<{ projectId: string; checks: any[]; overallStatus: string }> =>
+    cmd('projects_check_environment', { id }),
+  batchImport: (projects: Record<string, unknown>[]): Promise<{ imported: number; skipped: number; errors: string[] }> =>
+    cmd('projects_batch_import', { projects }),
 };
 
 // ==================== Tasks ====================
 
 export const tasksApi = {
-  list: (projectId: string, params?: Record<string, string | undefined>) =>
+  list: (projectId: string, params?: Record<string, string | undefined>): Promise<Task[]> =>
     cmd('tasks_list', { projectId, params: params ?? null }),
-  create: (projectId: string, data: Record<string, unknown>) =>
+  create: (projectId: string, data: CreateTaskInput): Promise<Task> =>
     cmd('tasks_create', { projectId, data }),
-  update: (id: string, data: Record<string, unknown>) =>
+  update: (id: string, data: UpdateTaskInput): Promise<Task> =>
     cmd('tasks_update', { id, data }),
-  delete: (id: string) =>
+  delete: (id: string): Promise<void> =>
     cmd('tasks_delete', { id }),
-  updateStatus: (id: string, status: string) =>
+  updateStatus: (id: string, status: string): Promise<Task> =>
     cmd('tasks_update_status', { id, status }),
 };
 
 // ==================== Repos ====================
 
 export const reposApi = {
-  list: (projectId: string) =>
+  list: (projectId: string): Promise<RemoteRepo[]> =>
     cmd('repos_list', { projectId }),
-  add: (projectId: string, data: Record<string, unknown>) =>
+  add: (projectId: string, data: AddRepoInput): Promise<RemoteRepo> =>
     cmd('repos_add', { projectId, data }),
-  update: (id: string, data: Record<string, unknown>) =>
+  update: (id: string, data: UpdateRepoInput): Promise<RemoteRepo> =>
     cmd('repos_update', { id, data }),
-  remove: (id: string) =>
+  remove: (id: string): Promise<void> =>
     cmd('repos_remove', { id }),
-  sync: (id: string) =>
+  sync: (id: string): Promise<RemoteRepo> =>
     cmd('repos_sync', { id }),
 };
 
 // ==================== Timeline ====================
 
 export const timelineApi = {
-  list: (params?: { limit?: number; offset?: number }) =>
+  list: (params?: { limit?: number; offset?: number }): Promise<ActivityLog[]> =>
     cmd('get_timeline', { params: params ?? null }),
-  byProject: (projectId: string, params?: { limit?: number; offset?: number }) =>
+  byProject: (projectId: string, params?: { limit?: number; offset?: number }): Promise<ActivityLog[]> =>
     cmd('get_project_timeline', { projectId, params: params ?? null }),
 };
 
 // ==================== Search ====================
 
 export const searchApi = {
-  search: (q: string) =>
+  search: (q: string): Promise<SearchResults> =>
     cmd('global_search', { q }),
 };
 
 // ==================== Tags ====================
 
 export const tagsApi = {
-  list: () =>
+  list: (): Promise<Tag[]> =>
     cmd('tags_list'),
-  create: (data: { name: string; color?: string }) =>
+  create: (data: CreateTagInput): Promise<Tag> =>
     cmd('tags_create', { data }),
-  update: (id: string, data: Record<string, unknown>) =>
+  update: (id: string, data: UpdateTagInput): Promise<Tag> =>
     cmd('tags_update', { id, data }),
-  delete: (id: string) =>
+  delete: (id: string): Promise<void> =>
     cmd('tags_delete', { id }),
-  assignToProject: (projectId: string, tagId: string) =>
+  assignToProject: (projectId: string, tagId: string): Promise<void> =>
     cmd('tags_assign_to_project', { projectId, tagId }),
-  removeFromProject: (projectId: string, tagId: string) =>
+  removeFromProject: (projectId: string, tagId: string): Promise<void> =>
     cmd('tags_remove_from_project', { projectId, tagId }),
 };
 
 // ==================== Milestones ====================
 
 export const milestonesApi = {
-  list: (projectId: string) =>
+  list: (projectId: string): Promise<Milestone[]> =>
     cmd('milestones_list', { projectId }),
-  create: (projectId: string, data: Record<string, unknown>) =>
+  create: (projectId: string, data: CreateMilestoneInput): Promise<Milestone> =>
     cmd('milestones_create', { projectId, data }),
-  update: (id: string, data: Record<string, unknown>) =>
+  update: (id: string, data: UpdateMilestoneInput): Promise<Milestone> =>
     cmd('milestones_update', { id, data }),
-  delete: (id: string) =>
+  delete: (id: string): Promise<void> =>
     cmd('milestones_delete', { id }),
 };
 
 // ==================== Detect ====================
 
 export const detectApi = {
-  local: (path: string) =>
+  local: (path: string): Promise<DetectedProject> =>
     cmd('detect_local_project', { path }),
-  gitRepo: (repoUrl: string) =>
+  gitRepo: (repoUrl: string): Promise<DetectedProject> =>
     cmd('detect_git_repo', { repoUrl }),
-  scanDirectory: (path: string, maxDepth?: number) =>
+  scanDirectory: (path: string, maxDepth?: number): Promise<DetectedProject[]> =>
     cmd('detect_scan_directory', { path, maxDepth: maxDepth ?? null }),
 };
 
@@ -149,15 +188,15 @@ export const gitApi = {
 // ==================== Documents ====================
 
 export const documentsApi = {
-  list: (projectId: string) =>
+  list: (projectId: string): Promise<Document[]> =>
     cmd('documents_list', { projectId }),
-  create: (projectId: string, data: Record<string, unknown>) =>
+  create: (projectId: string, data: CreateDocumentInput): Promise<Document> =>
     cmd('documents_create', { projectId, data }),
-  getById: (id: string) =>
+  getById: (id: string): Promise<Document> =>
     cmd('documents_get_by_id', { id }),
-  update: (id: string, data: Record<string, unknown>) =>
+  update: (id: string, data: UpdateDocumentInput): Promise<Document> =>
     cmd('documents_update', { id, data }),
-  delete: (id: string) =>
+  delete: (id: string): Promise<void> =>
     cmd('documents_delete', { id }),
 };
 
@@ -208,4 +247,19 @@ export const healthApi = {
     cmd<any[]>('get_project_health_history', { projectId, limit: limit ?? null }),
   getAllLatest: () =>
     cmd<any[]>('get_all_latest_health'),
+};
+
+// ==================== Workspaces ====================
+
+export const workspacesApi = {
+  list: () =>
+    cmd('workspaces_list'),
+  create: (data: { name: string; description?: string; color?: string }) =>
+    cmd('workspaces_create', { data }),
+  update: (id: string, data: Record<string, unknown>) =>
+    cmd('workspaces_update', { id, data }),
+  delete: (id: string) =>
+    cmd('workspaces_delete', { id }),
+  assignProject: (projectId: string, workspaceId: string | null) =>
+    cmd('workspaces_assign_project', { projectId, workspaceId }),
 };

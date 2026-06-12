@@ -18,18 +18,18 @@ export function parseTechStack(raw: unknown): string[] {
  * Normalize a project object from the Rust backend.
  * Converts JSON string fields to proper JS types.
  */
-export function normalizeProject(project: Record<string, any>): Record<string, any> {
+export function normalizeProject<T extends { techStack?: unknown }>(project: T): T {
   if (!project) return project;
   return {
     ...project,
     techStack: parseTechStack(project.techStack),
-  };
+  } as T;
 }
 
 /**
  * Normalize an array of projects.
  */
-export function normalizeProjects(projects: any[]): any[] {
+export function normalizeProjects<T extends { techStack?: unknown }>(projects: T[]): T[] {
   if (!Array.isArray(projects)) return [];
   return projects.map(normalizeProject);
 }

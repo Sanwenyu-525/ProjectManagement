@@ -396,6 +396,29 @@ pub async fn terminal_resize(
     Err("进程不存在".into())
 }
 
+// ── Get terminal IDs for a project ─────────────────────────────────────
+
+pub fn get_terminal_ids_for_project(project_id: &str) -> Vec<String> {
+    let prefix = format!("{}-", project_id);
+    let mut ids = Vec::new();
+
+    if let Ok(procs) = PROCESSES.lock() {
+        for key in procs.keys() {
+            if key.starts_with(&prefix) {
+                ids.push(key.clone());
+            }
+        }
+    }
+    if let Ok(terminals) = PTY_TERMINALS.lock() {
+        for key in terminals.keys() {
+            if key.starts_with(&prefix) && !ids.contains(key) {
+                ids.push(key.clone());
+            }
+        }
+    }
+    ids
+}
+
 // ── Cleanup on app shutdown ──────────────────────────────────────────────
 
 pub fn cleanup_all() {

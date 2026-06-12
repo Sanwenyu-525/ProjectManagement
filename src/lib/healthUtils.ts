@@ -5,6 +5,8 @@ export interface HealthData {
   aheadCount: number;
   behindCount: number;
   outdatedDepCount: number;
+  healthScore?: number | null;
+  healthStatus?: string | null;
   error?: string | null;
 }
 
@@ -27,4 +29,21 @@ export function hasHealthIssues(r: HealthData): boolean {
 /** Whether the result warrants an urgent/high-severity indicator. */
 export function isHealthUrgent(r: HealthData): boolean {
   return r.aheadCount > 5 || r.behindCount > 10;
+}
+
+/** Get health score color. */
+export function getScoreColor(score: number): string {
+  if (score >= 80) return '#52c41a'; // green
+  if (score >= 50) return '#faad14'; // yellow
+  return '#ff4d4f'; // red
+}
+
+/** Get health status label. */
+export function getHealthStatusLabel(status: string): string {
+  switch (status) {
+    case 'healthy': return '健康';
+    case 'needs_attention': return '需要关注';
+    case 'critical': return '风险';
+    default: return '未知';
+  }
 }

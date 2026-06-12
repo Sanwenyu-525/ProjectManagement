@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Tabs, Descriptions, Tag, Button, Space, Spin, Empty, message, Table, Modal, Form, Input, Select, Timeline } from 'antd';
+import { Tabs, Descriptions, Tag, Button, Space, Skeleton, Spin, Empty, message, Table, Modal, Form, Input, Select, Timeline } from 'antd';
 import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined, SaveOutlined, SearchOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi } from '../../api';
 import ProjectIcon from '../../shared/ProjectIcon';
@@ -97,7 +97,17 @@ export default function ProjectDetailPage() {
     }
   }
 
-  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 100 }}><Spin size="large" /></div>;
+  if (loading) return (
+    <div style={{ padding: '28px 32px' }}>
+      <Skeleton.Button active style={{ marginBottom: 20, width: 140 }} />
+      <div className="glass-panel" style={{ padding: '28px 32px', marginBottom: 20 }}>
+        <Skeleton active avatar={{ size: 64 }} paragraph={{ rows: 2 }} />
+      </div>
+      <div className="glass-panel" style={{ padding: '24px' }}>
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </div>
+    </div>
+  );
   if (!project) return <Empty description="项目不存在" />;
 
   return (

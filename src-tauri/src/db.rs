@@ -1,7 +1,8 @@
-use std::sync::Mutex;
-use rusqlite::Connection;
 use std::path::Path;
 use thiserror::Error;
+use r2d2::Pool;
+use std::sync::Mutex;
+use rusqlite::Connection;
 
 /// Generate a new UUID string.
 pub fn new_id() -> String {
@@ -29,36 +30,61 @@ impl serde::Serialize for DbError {
     }
 }
 
-pub const DEFAULT_USER_ID: &str = "default-user";
+// Single-user, no auth needed. Removed DEFAULT_USER_ID.
 
-/// Thread-safe SQLite database wrapper.
-/// Uses std::sync::Mutex whose guards implement Send, making Database Send + Sync.
-pub struct Database {
-    conn: Mutex<Connection>,
+struct ConnectionManager {
+    db_path: std::path::PathBuf,
 }
 
-// Safety: rusqlite::Connection is Send. std::sync::Mutex<Connection> is Send + Sync.
+impl r2d2::ManageConnection for ConnectionManager {
+    type Error = rusqlite::Error;
+    type Connection = Connection;
+
+    fn connect(&self) -> Result<Connection, Self::Error> {
+        let conn = Connection::open(&self.db_path)?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout = 5000;")?;
+        Ok(conn)
+    }
+
+    fn is_valid(&self, conn: &mut Connection) -> Result<(), Self::Error> {
+        conn.execute_batch("SELECT 1").map(|_| ())
+    }
+
+    fn has_broken(&self, _conn: &mut Connection) -> bool {
+        false
+    }
+}
+
+/// Thread-safe SQLite database wrapper with connection pool.
+pub struct Database {
+    pool: Pool<ConnectionManager>,
+}
+
 unsafe impl Send for Database {}
 unsafe impl Sync for Database {}
 
 impl Database {
     pub fn new(path: &Path) -> Result<Self, DbError> {
-        let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-        let db = Self {
-            conn: Mutex::new(conn),
+        let manager = ConnectionManager {
+            db_path: path.to_path_buf(),
         };
+        let pool = Pool::builder()
+            .max_size(10)
+            .build(manager)
+            .map_err(|e| DbError::Lock(e.to_string()))?;
+
+        let db = Self { pool };
         db.run_migrations()?;
         Ok(db)
     }
 
-    fn lock_conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>, DbError> {
-        self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))
+    fn get_conn(&self) -> Result<r2d2::PooledConnection<ConnectionManager>, DbError> {
+        self.pool.get().map_err(|e| DbError::Lock(e.to_string()))
     }
 
     fn run_migrations(&self) -> Result<(), DbError> {
+        let conn = self.get_conn()?;
         let sql = include_str!("../migrations/001_init.sql");
-        let conn = self.lock_conn()?;
         conn.execute_batch(sql)?;
 
         // Incremental migrations for existing databases
@@ -69,7 +95,7 @@ impl Database {
             "ALTER TABLE projects ADD COLUMN backendCwd TEXT",
         ];
         for stmt in &alters {
-            let _ = conn.execute_batch(stmt); // ignore "duplicate column" errors
+            let _ = conn.execute_batch(stmt);
         }
 
         // Health check table
@@ -95,12 +121,33 @@ impl Database {
                 ON \"project_health_checks\"(\"checkDate\");"
         )?;
 
+        // Remove users table and simplify schema
+        let migration_002 = include_str!("../migrations/002_remove_users.sql");
+        let _ = conn.execute_batch(migration_002);
+
+        // Add runtime status fields
+        let migration_003 = include_str!("../migrations/003_runtime_status.sql");
+        for stmt in migration_003.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with("--")) {
+            let _ = conn.execute_batch(stmt);
+        }
+
+        // Add health score fields
+        let migration_004 = include_str!("../migrations/004_health_score.sql");
+        for stmt in migration_004.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with("--")) {
+            let _ = conn.execute_batch(stmt);
+        }
+
+        // Workspaces
+        let migration_005 = include_str!("../migrations/005_workspaces.sql");
+        for stmt in migration_005.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with("--")) {
+            let _ = conn.execute_batch(stmt);
+        }
+
         Ok(())
     }
 
-    /// Execute a query that returns rows (SELECT). Returns rows as JSON array.
     pub fn query_json(&self, sql: &str, params: &[&dyn rusqlite::types::ToSql]) -> Result<serde_json::Value, DbError> {
-        let conn = self.lock_conn()?;
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare(sql)?;
         let column_count = stmt.column_count();
         let column_names: Vec<String> = (0..column_count)
@@ -124,9 +171,8 @@ impl Database {
         Ok(serde_json::Value::Array(result))
     }
 
-    /// Execute a query that returns a single row.
     pub fn query_one_json(&self, sql: &str, params: &[&dyn rusqlite::types::ToSql]) -> Result<Option<serde_json::Value>, DbError> {
-        let conn = self.lock_conn()?;
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare(sql)?;
         let column_count = stmt.column_count();
         let column_names: Vec<String> = (0..column_count)
@@ -149,22 +195,18 @@ impl Database {
         }
     }
 
-    /// Execute a statement that doesn't return rows (INSERT/UPDATE/DELETE).
-    /// Returns the last inserted row id.
     pub fn execute(&self, sql: &str, params: &[&dyn rusqlite::types::ToSql]) -> Result<i64, DbError> {
-        let conn = self.lock_conn()?;
+        let conn = self.get_conn()?;
         conn.execute(sql, params)?;
         Ok(conn.last_insert_rowid())
     }
 
-    /// Execute a statement that changes rows, returning changes count.
     pub fn execute_returning_changes(&self, sql: &str, params: &[&dyn rusqlite::types::ToSql]) -> Result<usize, DbError> {
-        let conn = self.lock_conn()?;
+        let conn = self.get_conn()?;
         let changes = conn.execute(sql, params)?;
         Ok(changes)
     }
 
-    /// Log an activity entry.
     pub fn log_activity(
         &self,
         action: &str,
@@ -186,8 +228,6 @@ impl Database {
         Ok(())
     }
 
-    /// Insert a row and return it as JSON. Caller provides the full INSERT SQL and params.
-    /// `fetch_sql` should be a SELECT * WHERE id = ?1 query; `fetch_id` is the new row's id.
     #[allow(dead_code)]
     pub fn insert_and_fetch(&self, insert_sql: &str, insert_params: &[&dyn rusqlite::types::ToSql], fetch_sql: &str, fetch_id: &str) -> Result<serde_json::Value, DbError> {
         self.execute(insert_sql, insert_params)?;
@@ -195,7 +235,6 @@ impl Database {
             .ok_or_else(|| DbError::Lock("Insert succeeded but row not found".into()))
     }
 
-    /// Delete a row by id. Returns Ok(()) regardless of whether the row existed.
     pub fn delete_by_id(&self, table: &str, id: &str) -> Result<(), DbError> {
         let sql = format!("DELETE FROM \"{}\" WHERE id = ?1", table);
         self.execute_returning_changes(&sql, &[&id])?;

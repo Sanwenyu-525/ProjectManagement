@@ -10,7 +10,6 @@ import {
   SettingOutlined,
   CodeOutlined,
 } from '@ant-design/icons';
-import { useAuthStore } from '../stores/authStore';
 import { useTerminalStore } from '../stores/terminalStore';
 import TerminalManager from './TerminalManager';
 import SearchBox from './components/SearchBox';
@@ -22,14 +21,16 @@ const { Header, Sider, Content } = Layout;
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/projects', icon: <ProjectOutlined />, label: '项目管理' },
+  { key: '/git', icon: <CodeOutlined />, label: 'Git 控制中心' },
+  { key: '/graph', icon: <CodeOutlined />, label: '关系图' },
   { key: '/timeline', icon: <FieldTimeOutlined />, label: '活动时间线' },
   { key: '/data-screen', icon: <BarChartOutlined />, label: '数据大屏' },
+  { key: '/settings', icon: <SettingOutlined />, label: '设置' },
 ];
 
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
   const { terminalOpen, setTerminalOpen, consumeLaunchRequest } = useTerminalStore();
   const [terminalHeight, setTerminalHeight] = useState(400);
@@ -226,12 +227,14 @@ export default function MainLayout() {
             <button
               onClick={() => setTerminalOpen(!terminalOpen)}
               title="终端 (Ctrl+`)"
+              aria-label="终端"
+              aria-pressed={terminalOpen}
               style={{
                 background: terminalOpen ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
                 border: terminalOpen ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid transparent',
                 color: terminalOpen ? '#16a34a' : '#6b7a99',
                 cursor: 'pointer',
-                padding: '6px 10px',
+                padding: '8px 14px',
                 borderRadius: 8,
                 display: 'flex',
                 alignItems: 'center',
@@ -272,14 +275,14 @@ export default function MainLayout() {
               }}
             >
               <Avatar
-                size={26}
+                size={36}
                 icon={<UserOutlined />}
                 style={{
                   background: 'linear-gradient(135deg, #22c55e, #16a34a)',
                   boxShadow: '0 2px 8px rgba(34, 197, 94, 0.2)',
                 }}
               />
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1f36' }}>{user!.username}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1f36' }}>开发者</span>
             </div>
           </Dropdown>
           </div>
@@ -311,7 +314,7 @@ export default function MainLayout() {
           <div
             onMouseDown={handleDragStart}
             style={{
-              height: 6,
+              height: 16,
               cursor: 'row-resize',
               background: 'transparent',
               display: 'flex',
