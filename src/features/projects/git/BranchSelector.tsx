@@ -23,7 +23,7 @@ export default function BranchSelector({ branches, onSwitch, loading }: BranchSe
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <BranchesOutlined style={{ color: '#6b7a99', fontSize: 14 }} />
+      <BranchesOutlined style={{ color: 'var(--color-text-secondary)', fontSize: 14 }} />
       <Select
         value={current?.name || undefined}
         onChange={onSwitch}
@@ -50,7 +50,7 @@ export default function BranchSelector({ branches, onSwitch, loading }: BranchSe
                 options: remoteBranches.map(b => ({
                   value: b.name,
                   label: (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#9eadc0' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-text-muted)' }}>
                       <CloudSyncOutlined style={{ fontSize: 11 }} />
                       <span>{b.name}</span>
                     </span>
@@ -63,12 +63,12 @@ export default function BranchSelector({ branches, onSwitch, loading }: BranchSe
       {current && (current.ahead > 0 || current.behind > 0) && (
         <div style={{ display: 'flex', gap: 4, fontSize: 11 }}>
           {current.ahead > 0 && (
-            <span style={{ color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '1px 6px', borderRadius: 4 }}>
+            <span style={{ color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '1px 6px', borderRadius: 4 }}>
               ↑{current.ahead}
             </span>
           )}
           {current.behind > 0 && (
-            <span style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '1px 6px', borderRadius: 4 }}>
+            <span style={{ color: 'var(--color-amber)', background: 'var(--color-amber-light)', padding: '1px 6px', borderRadius: 4 }}>
               ↓{current.behind}
             </span>
           )}

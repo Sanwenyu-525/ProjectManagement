@@ -114,6 +114,10 @@ pub fn run() {
             commands::git::git_commit,
             commands::git::git_push,
             commands::git::git_diff_commit,
+            commands::git::git_pull,
+            commands::git::git_tag_list,
+            commands::git::git_tag_create,
+            commands::git::git_tag_delete,
             commands::git::git_reset_head,
             // Dependency detection
             commands::dependencies::detect_project_dependencies,

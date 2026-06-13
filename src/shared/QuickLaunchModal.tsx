@@ -218,7 +218,7 @@ export default function QuickLaunchModal({ visible, onClose, projects, onLaunch 
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {profileProjects.slice(0, 5).map((p: any) => (
                         <Tag key={p.id} style={{ fontSize: 11 }}>
-                          <ProjectIcon name={p.name} techStack={p.techStack} size={12} style={{ marginRight: 4 }} />
+                          <ProjectIcon name={p.name} techStack={p.techStack} iconType={p.iconType} iconUrl={p.iconUrl} iconColor={p.iconColor} size={12} style={{ marginRight: 4 }} />
                           {p.name}
                         </Tag>
                       ))}

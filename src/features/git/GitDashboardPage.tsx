@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Typography, Table, Tag, Space, Button, Tooltip, Spin, message, Badge, Empty } from 'antd';
-import { ReloadOutlined, BranchesOutlined, CloudUploadOutlined, CloudDownloadOutlined, FileOutlined } from '@ant-design/icons';
+import { Typography, Table, Tag, Space, Button, Tooltip, Spin, message, Empty } from 'antd';
+import {
+  ReloadOutlined, BranchesOutlined, CloudUploadOutlined, CloudDownloadOutlined,
+  FileOutlined, CheckCircleOutlined, ProjectOutlined, FolderOpenOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { projectsApi, gitApi, healthApi } from '../../api';
 
@@ -175,10 +178,10 @@ export default function GitDashboardPage() {
       ellipsis: true,
       render: (msg: string | null) => msg ? (
         <Tooltip title={msg}>
-          <span style={{ fontSize: 13, color: '#6b7a99' }}>{msg}</span>
+          <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{msg}</span>
         </Tooltip>
       ) : (
-        <span style={{ color: '#c0c8d8' }}>—</span>
+        <span style={{ color: 'var(--color-text-muted)' }}>—</span>
       ),
     },
     {
@@ -226,33 +229,31 @@ export default function GitDashboardPage() {
         <Button icon={<ReloadOutlined />} onClick={loadAll}>刷新全部</Button>
       </div>
 
-      {/* 汇总统计 */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <Badge count={projects.length} showZero color="#3b82f6" overflowCount={999}>
-          <Tag style={{ fontSize: 13, padding: '4px 12px' }}>项目总数</Tag>
-        </Badge>
-        <Badge count={cleanCount} showZero color="#52c41a" overflowCount={999}>
-          <Tag style={{ fontSize: 13, padding: '4px 12px' }}>✓ 干净</Tag>
-        </Badge>
+      <div style={{
+        display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap',
+      }}>
+        <StatCard icon={<ProjectOutlined />} label="项目总数" value={projects.length} color="#3b82f6" />
+        <StatCard icon={<CheckCircleOutlined />} label="干净" value={cleanCount} color="#22c55e" />
         {totalDirty > 0 && (
-          <Badge count={totalDirty} color="#faad14" overflowCount={999}>
-            <Tag style={{ fontSize: 13, padding: '4px 12px' }}>📝 未提交</Tag>
-          </Badge>
+          <StatCard icon={<FileOutlined />} label="未提交" value={totalDirty} color="#f59e0b" />
         )}
         {totalAhead > 0 && (
-          <Badge count={totalAhead} color="#52c41a" overflowCount={999}>
-            <Tag style={{ fontSize: 13, padding: '4px 12px' }}>↑ 待推送</Tag>
-          </Badge>
+          <StatCard icon={<CloudUploadOutlined />} label="待推送" value={totalAhead} color="#22c55e" />
         )}
         {totalBehind > 0 && (
-          <Badge count={totalBehind} color="#ff4d4f" overflowCount={999}>
-            <Tag style={{ fontSize: 13, padding: '4px 12px' }}>↓ 落后</Tag>
-          </Badge>
+          <StatCard icon={<CloudDownloadOutlined />} label="落后" value={totalBehind} color="#ef4444" />
         )}
       </div>
 
       {projects.length === 0 ? (
-        <Empty description="暂无已配置本地路径的项目" />
+        <Empty
+          image={<FolderOpenOutlined style={{ fontSize: 48, color: 'var(--color-text-muted)' }} />}
+          description={
+            <span style={{ color: 'var(--color-text-secondary)' }}>
+              暂无已配置本地路径的项目，请先在项目设置中配置本地路径
+            </span>
+          }
+        />
       ) : (
         <Table
           dataSource={projects}
@@ -260,10 +261,42 @@ export default function GitDashboardPage() {
           rowKey="id"
           pagination={false}
           size="middle"
-          style={{ background: 'rgba(255,255,255,0.6)', borderRadius: 12 }}
+          style={{ background: 'var(--color-bg-card)', borderRadius: 12, backdropFilter: 'blur(12px)' }}
           rowClassName={(record) => record.loading ? 'ant-table-row-loading' : ''}
         />
       )}
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, color }: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '10px 16px', borderRadius: 10,
+      background: 'var(--color-bg-card)',
+      backdropFilter: 'blur(12px)',
+      border: '1px solid var(--color-border)',
+      minWidth: 120,
+    }}>
+      <div style={{
+        width: 32, height: 32, borderRadius: 8,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: `${color}12`, color, fontSize: 15,
+      }}>
+        {icon}
+      </div>
+      <div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.2 }}>
+          {value}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{label}</div>
+      </div>
     </div>
   );
 }

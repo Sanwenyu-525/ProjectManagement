@@ -11,6 +11,9 @@
   margin-bottom: 20px;
   padding: 4px 8px;
   border-radius: 6px;
+  justify-content: flex-start;
+  align-self: flex-start !important;
+  width: auto !important;
 }
 
 .back-link:hover {
@@ -69,4 +72,22 @@
 
 .action-btn-green:hover {
   box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
+}
+
+/* Constrain Ant Tabs height to fill the glass-panel flex container */
+.project-detail-tabs .ant-tabs,
+.project-detail-tabs .ant-tabs-content {
+  height: 100% !important;
+}
+
+.project-detail-tabs .ant-tabs-content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Only constrain the active pane — inactive panes are display:none and don't affect layout */
+.project-detail-tabs .ant-tabs-tabpane-active {
+  height: 100% !important;
+  overflow: auto;
+  min-height: 0;
 }

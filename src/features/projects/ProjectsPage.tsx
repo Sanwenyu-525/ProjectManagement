@@ -342,6 +342,8 @@ export default function ProjectsPage() {
           frontendCommand: project.frontendCommand,
           backendCommand: project.backendCommand,
           iconType: project.iconType,
+          iconUrl: project.iconUrl,
+          iconColor: project.iconColor,
         }));
       const result = await projectsApi.batchImport(toImport);
       if (result.imported > 0) {
@@ -610,7 +612,7 @@ export default function ProjectsPage() {
                         {index + 1}
                       </div>
                     )}
-                    <ProjectIcon name={project.name} techStack={project.techStack} size={20} />
+                    <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={20} />
                     <span style={{ flex: 1, fontSize: 13 }}>{project.name}</span>
                     <Tag color={getPriorityColor(priority)} style={{ fontSize: 11 }}>
                       {getPriorityLabel(priority)}
@@ -798,7 +800,7 @@ export default function ProjectsPage() {
                   borderRadius: 6,
                   marginBottom: 8,
                 }}>
-                  <ProjectIcon name={project.name} techStack={project.techStack} size={24} />
+                  <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={24} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{project.name}</div>
                     <div style={{ fontSize: 12, color: '#92400e' }}>
@@ -1689,7 +1691,7 @@ export default function ProjectsPage() {
                   {/* Project info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <ProjectIcon name={project.name} techStack={project.techStack} size={22} />
+                      <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={22} />
                       <span style={{ fontWeight: 600, fontSize: 14, color: '#1a1f36' }}>{project.name}</span>
                       {smartSortEnabled && (
                         <Tag

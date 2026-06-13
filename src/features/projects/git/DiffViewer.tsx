@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
-import { Empty, Spin } from 'antd';
-import { FileTextOutlined } from '@ant-design/icons';
+import { useMemo, useState } from 'react';
+import { Empty, Spin, Button, Tooltip, message } from 'antd';
+import { FileTextOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
 
 interface DiffViewerProps {
   content: string;
@@ -9,6 +9,17 @@ interface DiffViewerProps {
 }
 
 export default function DiffViewer({ content, loading, title }: DiffViewerProps) {
+  const [copied, setCopied] = useState(false);
+  const sections = useMemo(() => parseDiff(content), [content]);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      message.success('已复制');
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
@@ -21,26 +32,34 @@ export default function DiffViewer({ content, loading, title }: DiffViewerProps)
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
         <Empty
-          image={<FileTextOutlined style={{ fontSize: 48, color: '#c4d0de' }} />}
-          description="选择文件查看差异"
-          styles={{ description: { color: '#9eadc0', fontSize: 12 } }}
+          image={<FileTextOutlined style={{ fontSize: 48, color: 'var(--color-text-muted)' }} />}
+          description="选择文件或提交查看差异"
+          styles={{ description: { color: 'var(--color-text-secondary)', fontSize: 12 } }}
         />
       </div>
     );
   }
 
-  const sections = useMemo(() => parseDiff(content), [content]);
-
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '0 0 16px', background: 'rgba(255,255,255,0.95)' }}>
       {title && (
         <div style={{
-          padding: '8px 16px', fontSize: 12, fontWeight: 600, color: '#1a1f36',
-          borderBottom: '1px solid rgba(0,0,0,0.06)', background: '#f8fafc',
+          padding: '6px 12px', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)',
+          borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-surface)',
           position: 'sticky', top: 0, zIndex: 10,
-          boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          {title}
+          <span style={{ fontFamily: "'Fira Code', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {title}
+          </span>
+          <Tooltip title="复制差异内容">
+            <Button
+              type="text" size="small"
+              icon={copied ? <CheckOutlined style={{ color: 'var(--color-primary)' }} /> : <CopyOutlined />}
+              onClick={handleCopy}
+              style={{ flexShrink: 0, marginLeft: 8, color: 'var(--color-text-secondary)' }}
+            />
+          </Tooltip>
         </div>
       )}
       {sections.map((section, si) => (
@@ -49,8 +68,8 @@ export default function DiffViewer({ content, loading, title }: DiffViewerProps)
           {section.fileName && (
             <div style={{
               padding: '6px 16px', fontSize: 12, fontWeight: 600,
-              color: '#1a1f36', background: 'rgba(0,0,0,0.03)',
-              borderBottom: '1px solid rgba(0,0,0,0.06)',
+              color: 'var(--color-text-primary)', background: 'var(--color-bg-surface)',
+              borderBottom: '1px solid var(--color-border)',
               fontFamily: "'Fira Code', monospace",
             }}>
               {section.fileName}
@@ -60,8 +79,9 @@ export default function DiffViewer({ content, loading, title }: DiffViewerProps)
           {section.hunkHeader && (
             <div style={{
               padding: '3px 16px', fontSize: 11,
-              color: '#6366f1', background: 'rgba(99,102,241,0.05)',
+              color: '#6366f1', background: 'rgba(99,102,241,0.06)',
               fontFamily: "'Fira Code', monospace",
+              borderBottom: '1px solid var(--color-border-subtle)',
             }}>
               {section.hunkHeader}
             </div>
@@ -76,7 +96,7 @@ export default function DiffViewer({ content, loading, title }: DiffViewerProps)
   );
 }
 
-function DiffLine({ line }: { line: DiffLine }) {
+function DiffLine({ line }: { line: DiffLineInfo }) {
   let bg = 'transparent';
   let color = '#1a1f36';
   let gutterBg = 'transparent';
@@ -126,7 +146,7 @@ function DiffLine({ line }: { line: DiffLine }) {
 
 // ── Diff parsing ───────────────────────────────────────────────────────────
 
-interface DiffLine {
+interface DiffLineInfo {
   type: 'context' | 'add' | 'del';
   oldLine: number | null;
   newLine: number | null;
@@ -136,7 +156,7 @@ interface DiffLine {
 interface DiffSection {
   fileName: string | null;
   hunkHeader: string | null;
-  lines: DiffLine[];
+  lines: DiffLineInfo[];
 }
 
 function parseDiff(raw: string): DiffSection[] {
@@ -146,17 +166,41 @@ function parseDiff(raw: string): DiffSection[] {
   let newLine = 0;
 
   for (const line of raw.split('\n')) {
-    // File header: --- a/file or +++ b/file
-    if (line.startsWith('--- ')) {
-      // Start new section
+    // File header: diff --git a/file b/file
+    if (line.startsWith('diff --git ')) {
       if (current.lines.length > 0 || current.fileName) {
         sections.push(current);
       }
       current = { fileName: null, hunkHeader: null, lines: [] };
+      // Extract "b/file" from "diff --git a/file b/file"
+      const parts = line.split(' b/');
+      if (parts.length > 1) {
+        current.fileName = parts[parts.length - 1];
+      }
+      continue;
+    }
+    // File header: --- a/file or +++ b/file
+    if (line.startsWith('--- ')) {
+      if (!current.fileName && current.lines.length > 0) {
+        sections.push(current);
+        current = { fileName: null, hunkHeader: null, lines: [] };
+      }
       continue;
     }
     if (line.startsWith('+++ ')) {
       current.fileName = line.slice(4).replace(/^b\//, '');
+      continue;
+    }
+
+    // Binary files
+    if (line.startsWith('Binary files ')) {
+      if (current.lines.length > 0 || current.fileName) {
+        sections.push(current);
+      }
+      current = { fileName: current.fileName, hunkHeader: null, lines: [] };
+      current.lines.push({ type: 'context', oldLine: null, newLine: null, content: line });
+      sections.push(current);
+      current = { fileName: null, hunkHeader: null, lines: [] };
       continue;
     }
 

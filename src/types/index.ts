@@ -7,7 +7,7 @@ export type JSONString = string;
 export type ProjectStatus = 'Idea' | 'Planning' | 'Active' | 'Completed' | 'Archived';
 export type ProjectPriority = 'Low' | 'Medium' | 'High' | 'Critical';
 export type ProjectSource = 'Local' | 'GitHub' | 'GitLab' | 'Gitee' | 'Bitbucket';
-export type IconType = 'Auto' | 'Emoji' | 'Initial' | 'URL';
+export type IconType = 'Auto' | 'Emoji' | 'Initial' | 'URL' | 'Custom';
 
 // Task status enum
 export type TaskStatus = 'Todo' | 'InProgress' | 'Done';
@@ -370,14 +370,22 @@ export interface PaginatedResponse<T> {
 // ==================== Detect ====================
 
 export interface DetectedProject {
-  path: string;
-  name: string;
+  name?: string;
+  description?: string;
   techStack: string[];
-  hasGit: boolean;
-  frameworks: string[];
+  source: string;
+  localPath?: string;
+  repoUrl?: string;
+  repoPlatform?: string;
   openCommand?: string;
   frontendCommand?: string;
   backendCommand?: string;
+  gitRoot?: string;
+  groupId?: string;
+  parentPath?: string;
+  iconType?: string;
+  iconUrl?: string;
+  iconColor?: string;
 }
 
 export interface ScanResult {

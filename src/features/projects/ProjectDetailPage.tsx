@@ -98,7 +98,7 @@ export default function ProjectDetailPage() {
   }
 
   if (loading) return (
-    <div style={{ padding: '28px 32px' }}>
+    <div style={{ padding: '28px 32px', height: '100%', boxSizing: 'border-box' }}>
       <Skeleton.Button active style={{ marginBottom: 20, width: 140 }} />
       <div className="glass-panel" style={{ padding: '28px 32px', marginBottom: 20 }}>
         <Skeleton active avatar={{ size: 64 }} paragraph={{ rows: 2 }} />
@@ -111,7 +111,7 @@ export default function ProjectDetailPage() {
   if (!project) return <Empty description="项目不存在" />;
 
   return (
-    <div style={{ padding: '28px 32px' }}>
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
       {/* Back button */}
       <Button
         type="text"
@@ -183,8 +183,9 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Tabs content */}
-      <div className="glass-panel animate-in animate-in-delay-2" style={{ padding: '4px 24px 24px' }}>
+      <div className="glass-panel animate-in animate-in-delay-2" style={{ padding: '4px 24px 24px', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <Tabs
+          className="project-detail-tabs"
           activeKey={activeTab}
           onChange={setActiveTab}
           items={[
@@ -266,7 +267,7 @@ function ConfigTab({ project, onSaved }: { project: any; onSaved: (p: any) => vo
       const selected = await open({ directory: true });
       if (selected) {
         // Store relative path from project root
-        const relative = selected.replace(project.localPath, '').replace(/\\/g, '').replace(/^\//, '');
+        const relative = selected.replace(project.localPath, '').replace(/\\/g, '/').replace(/^\//, '');
         setCwd(relative || '.');
       }
     } catch (err) {

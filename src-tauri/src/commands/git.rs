@@ -13,13 +13,17 @@ fn run_git_raw(repo_path: &str, args: &[&str]) -> Result<Output, String> {
 }
 
 /// For read-only commands: returns stdout even on non-zero exit
-/// (e.g. git diff returns 1 when there are differences)
+/// (e.g. git diff returns 1 when there are differences).
+/// Only treats exit code >= 2 or "not a git repository" stderr as errors.
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
     let output = run_git_raw(repo_path, args)?;
-    if output.status.success() || !String::from_utf8_lossy(&output.stderr).contains("not a git repository") {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let code = output.status.code().unwrap_or(1);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if code >= 2 || stderr.contains("not a git repository") {
+        let msg = stderr.trim();
+        Err(if msg.is_empty() { "git 命令执行失败".into() } else { msg.to_string() })
     } else {
-        Err("该路径不是 Git 仓库".into())
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 }
 
@@ -157,7 +161,8 @@ pub fn git_log(repo_path: String, limit: Option<usize>) -> Result<GitLogResult, 
         }
         let hash = parts[0].to_string();
         let short_hash = parts[1].to_string();
-        let message = parts[2].to_string();
+        // Replace | in message to avoid breaking the delimiter-based parsing
+        let message = parts[2].replace('|', "｜").to_string();
         let author = parts[3].to_string();
         let date = parts[4].to_string();
         let parents: Vec<String> = parts[5]
@@ -209,7 +214,7 @@ fn parse_branches(output: &str) -> Vec<GitBranchInfo> {
         let name = parts[0].to_string();
         let rest = if parts.len() > 1 { parts[1] } else { "" };
 
-        let is_remote = name.starts_with("remotes/") || name.contains("origin/");
+        let is_remote = name.starts_with("remotes/");
         let display_name = name
             .strip_prefix("remotes/")
             .unwrap_or(&name)
@@ -418,9 +423,94 @@ pub fn git_push(repo_path: String, remote: Option<String>, branch: Option<String
 
 // ── Diff commit ────────────────────────────────────────────────────────────
 
+fn is_root_commit(repo_path: &str, hash: &str) -> bool {
+    let output = run_git_raw(repo_path, &["cat-file", "-p", hash]);
+    if let Ok(out) = output {
+        let text = String::from_utf8_lossy(&out.stdout);
+        return !text.contains("\nparent ");
+    }
+    true
+}
+
 #[command]
 pub fn git_diff_commit(repo_path: String, hash: String) -> Result<String, String> {
-    run_git(&repo_path, &["diff", &format!("{}^..{}", hash, hash)])
+    if is_root_commit(&repo_path, &hash) {
+        run_git(&repo_path, &["show", "--format=", "--stat", &hash])
+    } else {
+        run_git(&repo_path, &["diff", &format!("{}^..{}", hash, hash)])
+    }
+}
+
+// ── Pull ──────────────────────────────────────────────────────────────────
+
+#[command]
+pub fn git_pull(repo_path: String, remote: Option<String>, branch: Option<String>) -> Result<String, String> {
+    let remote_str = remote.unwrap_or_else(|| "origin".into());
+
+    // Check if remote exists
+    let remotes = run_git_checked(&repo_path, &["remote"])?;
+    if !remotes.lines().any(|l| l.trim() == remote_str) {
+        return Err(format!("未配置远程仓库 '{}'", remote_str));
+    }
+
+    let mut args = vec!["pull", &remote_str];
+    let branch_str;
+    if let Some(ref b) = branch {
+        branch_str = b.clone();
+        args.push(&branch_str);
+    }
+    let output = run_git_checked(&repo_path, &args)?;
+    Ok(if output.trim().is_empty() { "已拉取".into() } else { output.trim().to_string() })
+}
+
+// ── Tags (Git) ─────────────────────────────────────────────────────────────
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitTag {
+    pub name: String,
+    pub hash: String,
+    pub message: String,
+    pub date: String,
+}
+
+#[command]
+pub fn git_tag_list(repo_path: String) -> Result<Vec<GitTag>, String> {
+    let output = run_git(&repo_path, &[
+        "tag",
+        "--format=%(refname:short)|%(objectname:short)|%(subject)|%(creatordate:iso)",
+    ])?;
+    let mut tags = Vec::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.splitn(4, '|').collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        tags.push(GitTag {
+            name: parts[0].to_string(),
+            hash: parts[1].to_string(),
+            message: parts.get(2).map(|s| s.to_string()).unwrap_or_default(),
+            date: parts.get(3).map(|s| s.to_string()).unwrap_or_default(),
+        });
+    }
+    Ok(tags)
+}
+
+#[command]
+pub fn git_tag_create(repo_path: String, name: String, message: Option<String>) -> Result<String, String> {
+    let mut args = vec!["tag", &name];
+    if let Some(ref m) = message {
+        args.push("-m");
+        args.push(m);
+    }
+    run_git_checked(&repo_path, &args)?;
+    Ok(format!("标签 '{}' 创建成功", name))
+}
+
+#[command]
+pub fn git_tag_delete(repo_path: String, name: String) -> Result<String, String> {
+    run_git_checked(&repo_path, &["tag", "-d", &name])?;
+    Ok(format!("标签 '{}' 已删除", name))
 }
 
 // ── Reset (unstage) ────────────────────────────────────────────────────────

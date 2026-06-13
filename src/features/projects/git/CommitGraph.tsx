@@ -40,13 +40,25 @@ const LANE_Y_START = 44;
 
 export default function CommitGraph({ commits, branches, selectedHash, onSelect }: CommitGraphProps) {
   const [hoveredHash, setHoveredHash] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollOffset, setScrollOffset] = useState({ top: 0, left: 0 });
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (containerRef.current) {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Only intercept vertical scroll when at the vertical boundary
+    const atTop = el.scrollTop <= 0;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) {
       e.preventDefault();
-      containerRef.current.scrollLeft += e.deltaY;
+      el.scrollLeft += e.deltaY;
     }
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setScrollOffset({ top: el.scrollTop, left: el.scrollLeft });
   }, []);
 
   const { displayBranches, displayCommits, positions, hashIdx, width, height } = useMemo(() => {
@@ -103,21 +115,21 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
 
   if (displayCommits.length === 0) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#9eadc0', fontSize: 13 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--color-text-muted)', fontSize: 13 }}>
         无提交记录
       </div>
     );
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
+    <div style={{ height: '100%', display: 'flex', overflow: 'hidden', position: 'relative' }}>
       {/* Fixed branch labels on the left */}
       <div style={{
         width: LEFT_MARGIN,
         flexShrink: 0,
         overflow: 'hidden',
-        borderRight: '1px solid rgba(0,0,0,0.06)',
-        background: 'rgba(255,255,255,0.4)',
+        borderRight: '1px solid var(--color-border)',
+        background: 'var(--color-bg-card)',
       }}>
         <svg width={LEFT_MARGIN} height={height} style={{ display: 'block' }}>
           {displayBranches.map((branch, i) => {
@@ -127,12 +139,12 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
               <g key={`label-${i}`}>
                 <rect x={8} y={LANE_Y_START + i * LANE_HEIGHT - 10}
                   width={branch.name.length * 7.2 + 16} height={20} rx={4}
-                  fill={isCurrent ? color : 'rgba(0,0,0,0.04)'}
+                  fill={isCurrent ? color : 'var(--color-bg-surface)'}
                 />
                 <text x={16} y={LANE_Y_START + i * LANE_HEIGHT + 4}
                   fontSize={11} fontFamily="'Fira Code', monospace"
                   fontWeight={isCurrent ? 600 : 400}
-                  fill={isCurrent ? '#fff' : '#6b7a99'}
+                  fill={isCurrent ? '#fff' : 'var(--color-text-secondary)'}
                 >
                   {branch.name}
                 </text>
@@ -144,9 +156,10 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
 
       {/* Scrollable commit graph */}
       <div
-        ref={containerRef}
+        ref={scrollRef}
         style={{ flex: 1, overflow: 'auto', position: 'relative' }}
         onWheel={handleWheel}
+        onScroll={handleScroll}
       >
         <svg width={width} height={height} style={{ display: 'block' }}>
 
@@ -215,6 +228,10 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
                 onMouseLeave={() => setHoveredHash(null)}
                 style={{ cursor: 'pointer' }}
               >
+                {/* Invisible large hit area for click/hover detection */}
+                <circle cx={pos.x} cy={pos.y} r={22}
+                  fill="white" fillOpacity={0} stroke="none"
+                />
                 {/* Selection ring */}
                 {isSelected && (
                   <circle cx={pos.x} cy={pos.y} r={COMMIT_RADIUS + 5}
@@ -237,10 +254,10 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
                 {/* Time label below dot */}
                 <text
                   x={pos.x}
-                  y={pos.y + COMMIT_RADIUS + 16}
+                  y={pos.y + COMMIT_RADIUS + 18}
                   textAnchor="middle"
                   fontSize={9}
-                  fill="#94a3b8"
+                  fill="var(--color-text-muted)"
                   fontFamily="'Fira Code', monospace"
                 >
                   {formatDate(commit.date)}
@@ -249,59 +266,72 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
             );
           })}
         </svg>
+      </div>
 
-        {/* Hover tooltip - always on top */}
-        {displayCommits.map((commit, i) => {
-          if (commit.hash !== hoveredHash && commit.hash !== selectedHash) return null;
-          const pos = positions[i];
-          const branch = displayBranches[commit.branchIdx];
-          const branchColor = LANE_COLORS[commit.branchIdx % LANE_COLORS.length];
+      {/* Hover/selected tooltip — rendered outside scroll container to avoid clipping */}
+      {displayCommits.map((commit, i) => {
+        if (commit.hash !== hoveredHash && commit.hash !== selectedHash) return null;
+        const pos = positions[i];
+        const branch = displayBranches[commit.branchIdx];
+        const branchColor = LANE_COLORS[commit.branchIdx % LANE_COLORS.length];
 
-          return (
-            <div key={`tip-${commit.hash}`}
-              style={{
-                position: 'absolute',
-                left: pos.x - 140,
-                top: pos.y - 95,
-                width: 280,
-                pointerEvents: 'none',
-                zIndex: 9999999,
-                isolation: 'isolate',
-              }}
-            >
-              <div style={{
-                background: '#1e1e2e', color: '#e2e8f0', borderRadius: 8,
-                padding: '8px 12px', fontSize: 11, lineHeight: 1.5,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <span style={{
-                    fontFamily: "'Fira Code', monospace",
-                    background: branchColor,
-                    color: '#fff',
-                    padding: '1px 6px',
-                    borderRadius: 4,
-                    fontSize: 10,
-                    fontWeight: 600,
-                  }}>
-                    {branch?.name || 'unknown'}
-                  </span>
-                  <span style={{ fontFamily: "'Fira Code', monospace", color: branchColor }}>
-                    {commit.shortHash}
-                  </span>
-                </div>
-                <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {commit.message}
-                </div>
-                <div style={{ color: '#94a3b8', fontSize: 10, marginTop: 2 }}>
-                  {commit.author} · {formatDate(commit.date)}
-                </div>
+        // Position relative to visible area (account for scroll), always above node
+        const visibleY = pos.y - scrollOffset.top;
+        const visibleX = pos.x - scrollOffset.left;
+        const viewportW = scrollRef.current?.clientWidth || 800;
+        const tipHeight = 80;
+        const tipTop = visibleY - tipHeight;
+        const tipLeft = visibleX < 140 ? 8
+          : visibleX > viewportW - 140 ? viewportW - 288
+          : visibleX - 140;
+
+        return (
+          <div key={`tip-${commit.hash}`}
+            style={{
+              position: 'absolute',
+              left: tipLeft,
+              top: tipTop,
+              width: 280,
+              pointerEvents: 'none',
+              zIndex: 9999,
+            }}
+          >
+            <div style={{
+              background: 'var(--color-bg-elevated, rgba(255,255,255,0.95))',
+              color: 'var(--color-text-primary)',
+              borderRadius: 8,
+              padding: '8px 12px', fontSize: 11, lineHeight: 1.5,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+              border: '1px solid var(--color-border)',
+              backdropFilter: 'blur(12px)',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <span style={{
+                  fontFamily: "'Fira Code', monospace",
+                  background: branchColor,
+                  color: '#fff',
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}>
+                  {branch?.name || 'unknown'}
+                </span>
+                <span style={{ fontFamily: "'Fira Code', monospace", color: branchColor }}>
+                  {commit.shortHash}
+                </span>
+              </div>
+              <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {commit.message}
+              </div>
+              <div style={{ color: 'var(--color-text-secondary)', fontSize: 10, marginTop: 2 }}>
+                {commit.author} · {formatDate(commit.date)}
               </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

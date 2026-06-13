@@ -8,6 +8,8 @@ import {
   UserOutlined,
   FieldTimeOutlined,
   SettingOutlined,
+  ShareAltOutlined,
+  BranchesOutlined,
   CodeOutlined,
 } from '@ant-design/icons';
 import { useTerminalStore } from '../stores/terminalStore';
@@ -21,8 +23,8 @@ const { Header, Sider, Content } = Layout;
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/projects', icon: <ProjectOutlined />, label: '项目管理' },
-  { key: '/git', icon: <CodeOutlined />, label: 'Git 控制中心' },
-  { key: '/graph', icon: <CodeOutlined />, label: '关系图' },
+  { key: '/git', icon: <BranchesOutlined />, label: 'Git 控制中心' },
+  { key: '/graph', icon: <ShareAltOutlined />, label: '关系图' },
   { key: '/timeline', icon: <FieldTimeOutlined />, label: '活动时间线' },
   { key: '/data-screen', icon: <BarChartOutlined />, label: '数据大屏' },
   { key: '/settings', icon: <SettingOutlined />, label: '设置' },
@@ -189,7 +191,7 @@ export default function MainLayout() {
         />
       </Sider>
 
-      <Layout style={{ display: 'flex', flexDirection: 'column', flex: 1, marginLeft: collapsed ? 64 : 220, height: '100vh', overflow: 'hidden' }}>
+      <Layout style={{ flex: 1, marginLeft: collapsed ? 64 : 220, height: '100vh', overflow: 'hidden', position: 'relative' }}>
         <Header style={{
           background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)',
           padding: '0 24px',
@@ -201,11 +203,11 @@ export default function MainLayout() {
           lineHeight: '64px',
           backdropFilter: 'blur(20px) saturate(1.8)',
           WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
-          position: 'sticky',
-          top: 0,
+          position: 'relative',
           zIndex: 10,
           boxShadow: 'inset 0 -1px 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(0, 0, 0, 0.06)',
           flexWrap: 'nowrap',
+          flexShrink: 0,
         }}>
           {/* Logo和菜单 - 左侧 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -291,51 +293,41 @@ export default function MainLayout() {
         <Content style={{
           background: 'transparent',
           flex: 1,
-          position: 'relative',
-          zIndex: 1,
+          position: 'absolute',
+          top: 64,
+          left: 0,
+          right: 0,
+          bottom: terminalOpen ? terminalHeight : 0,
           overflow: 'auto',
+          zIndex: 1,
+          transition: isDragging ? 'none' : 'bottom 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         }}>
           <Outlet />
         </Content>
 
-        {/* Global terminal panel */}
+        {/* Global terminal panel — absolute bottom, overlays content */}
         <div
+          onMouseDown={e => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            if (e.clientY - rect.top <= 4) handleDragStart(e);
+          }}
           style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
             height: terminalOpen ? terminalHeight : 0,
             transition: isDragging ? 'none' : 'height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
             overflow: 'hidden',
-            position: 'relative',
             zIndex: 10,
-            borderTop: terminalOpen ? '1px solid rgba(255, 255, 255, 0.4)' : 'none',
-            flexShrink: 0,
+            borderTop: terminalOpen ? '3px solid rgba(255, 255, 255, 0.25)' : 'none',
+            background: '#1a1b26',
           }}
         >
-          {/* Drag handle */}
-          <div
-            onMouseDown={handleDragStart}
-            style={{
-              height: 16,
-              cursor: 'row-resize',
-              background: 'transparent',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              position: 'relative',
-              zIndex: 11,
-            }}
-          >
-            <div style={{
-              width: 40,
-              height: 3,
-              borderRadius: 2,
-              background: 'rgba(255, 255, 255, 0.2)',
-              transition: 'background 0.15s',
-            }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.5)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
-            />
-          </div>
+          {/* Hover cursor zone — only for showing row-resize cursor */}
+          {terminalOpen && (
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, cursor: 'row-resize', zIndex: 12 }} />
+          )}
           <TerminalManager visible={terminalOpen} consumeLaunchRequest={consumeLaunchRequest} />
         </div>
       </Layout>

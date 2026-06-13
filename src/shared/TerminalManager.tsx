@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { terminalApi } from '../api';
+import { terminalApi, projectsApi } from '../api';
 import { Terminal, TerminalExitEvent } from './terminalTypes';
 import { LaunchRequest, useTerminalStore } from '../stores/terminalStore';
 import TerminalPane from './terminal/TerminalPane';
@@ -48,7 +48,6 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
     const cfg = SHELL_MAP[shellPrefRef.current] || SHELL_MAP[DEFAULT_SHELL];
     const shell = cfg.shell;
     const shellArgs = cfg.args;
-    const cwd = cwdOverride || defaultCwd;
 
     // Resolve groupId: project takes priority, then explicit groupId
     let groupId: string | null = existingGroupId || null;
@@ -64,9 +63,32 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
       }
     }
 
+    // Resolve cwd: if not provided, look up project's localPath from group or projectId
+    let cwd = cwdOverride || defaultCwd;
+    if (!cwdOverride) {
+      const pid = projectId || (existingGroupId?.startsWith('project-') ? existingGroupId.slice(8) : null);
+      if (pid) {
+        try {
+          const project = await projectsApi.getById(pid);
+          if (project?.localPath) cwd = project.localPath;
+        } catch { /* fall back to defaultCwd */ }
+      }
+    }
+
+    // Deduplicate terminal name within group
+    let name = label || `终端 ${terminalsRef.current.length + 1}`;
+    if (groupId) {
+      const siblings = terminalsRef.current.filter(t => t.groupId === groupId);
+      if (siblings.some(t => t.label === name)) {
+        let n = 2;
+        while (siblings.some(t => t.label === `${name} ${n}`)) n++;
+        name = `${name} ${n}`;
+      }
+    }
+
     const newTerminal: Terminal = {
       id,
-      label: label || `终端 ${terminalsRef.current.length + 1}`,
+      label: name,
       createdAt: new Date(),
       shell,
       cwd,
@@ -186,7 +208,10 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
       }}>
         <TerminalPane
           pane="left"
-          onCreateTerminal={(groupId) => createTerminal(undefined, undefined, undefined, undefined, groupId)}
+          onCreateTerminal={(groupId) => {
+            const group = groupsRef.current.find(g => g.id === groupId);
+            createTerminal(group?.label, undefined, undefined, undefined, groupId);
+          }}
           onTerminalInput={handleTerminalInput}
         />
       </div>
@@ -203,7 +228,10 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
         }}>
           <TerminalPane
             pane="right"
-            onCreateTerminal={(groupId) => createTerminal(undefined, undefined, undefined, undefined, groupId)}
+            onCreateTerminal={(groupId) => {
+              const group = groupsRef.current.find(g => g.id === groupId);
+              createTerminal(group?.label, undefined, undefined, undefined, groupId);
+            }}
             onTerminalInput={handleTerminalInput}
           />
         </div>

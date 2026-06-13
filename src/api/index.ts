@@ -183,6 +183,14 @@ export const gitApi = {
     cmd('git_diff_commit', { repoPath, hash }),
   unstage: (repoPath: string, files: string[]) =>
     cmd('git_reset_head', { repoPath, files }),
+  pull: (repoPath: string, remote?: string, branch?: string) =>
+    cmd('git_pull', { repoPath, remote: remote ?? null, branch: branch ?? null }),
+  tagList: (repoPath: string) =>
+    cmd('git_tag_list', { repoPath }),
+  tagCreate: (repoPath: string, name: string, message?: string) =>
+    cmd('git_tag_create', { repoPath, name, message: message ?? null }),
+  tagDelete: (repoPath: string, name: string) =>
+    cmd('git_tag_delete', { repoPath, name }),
 };
 
 // ==================== Documents ====================

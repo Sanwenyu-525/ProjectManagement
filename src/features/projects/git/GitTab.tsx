@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Spin, message, Button, Tooltip } from 'antd';
+import { Spin, message, Button, Tooltip, Tabs } from 'antd';
 import { ReloadOutlined, CloudUploadOutlined, InboxOutlined } from '@ant-design/icons';
 import { gitApi } from '../../../api';
 import BranchSelector from './BranchSelector';
 import CommitGraph from './CommitGraph';
 import DiffViewer from './DiffViewer';
 import StagingArea from './StagingArea';
+import GitTagList from './GitTagList';
 
 interface GitTabProps {
   project: {
@@ -166,12 +167,12 @@ export default function GitTab({ project }: GitTabProps) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 500 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '8px 0', marginBottom: 8,
-        borderBottom: '1px solid rgba(0,0,0,0.06)',
+        borderBottom: '1px solid var(--color-border)',
       }}>
         <BranchSelector
           branches={branches}
@@ -204,46 +205,65 @@ export default function GitTab({ project }: GitTabProps) {
 
       {/* Three-panel layout */}
       <div
-        style={{ flex: 1, display: 'flex', gap: 1, overflow: 'hidden', borderRadius: 8, border: '1px solid rgba(0,0,0,0.06)' }}
+        style={{ flex: 1, display: 'flex', gap: 1, overflow: 'hidden', borderRadius: 8, border: '1px solid var(--color-border)' }}
         onMouseMove={handleDrag}
         onMouseUp={handleDragEnd}
         onMouseLeave={handleDragEnd}
       >
-        {/* Left: Staging area */}
+        {/* Left: Staging area + Tags */}
         <div style={{
-          width: leftWidth, flexShrink: 0, borderRight: '1px solid rgba(0,0,0,0.06)',
-          background: 'rgba(255,255,255,0.3)', overflow: 'hidden',
+          width: leftWidth, flexShrink: 0, borderRight: '1px solid var(--color-border)',
+          background: 'var(--color-bg-card)', overflow: 'hidden', display: 'flex', flexDirection: 'column',
         }}>
-          <StagingArea
-            repoPath={repoPath}
-            files={files}
-            loading={loading}
-            onRefresh={refresh}
-            onFileClick={handleFileClick}
-            selectedFile={selectedFile}
+          <Tabs
+            defaultActiveKey="staging"
+            size="small"
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            tabBarStyle={{ padding: '0 8px', marginBottom: 0, flexShrink: 0 }}
+            items={[
+              {
+                key: 'staging',
+                label: '暂存区',
+                children: (
+                  <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <StagingArea
+                      repoPath={repoPath}
+                      files={files}
+                      loading={loading}
+                      onRefresh={refresh}
+                      onFileClick={handleFileClick}
+                      selectedFile={selectedFile}
+                    />
+                  </div>
+                ),
+              },
+              {
+                key: 'tags',
+                label: '标签',
+                children: (
+                  <div style={{ flex: 1, overflow: 'auto' }}>
+                    <GitTagList
+                      repoPath={repoPath}
+                      onSelect={() => {}}
+                    />
+                  </div>
+                ),
+              },
+            ]}
           />
         </div>
 
         {/* Left drag handle */}
-        <div
-          onMouseDown={handleDragStart('left')}
-          style={{
-            width: 6, flexShrink: 0, cursor: 'col-resize',
-            background: isDragging.current === 'left' ? 'rgba(59,130,246,0.5)' : 'transparent',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59,130,246,0.3)'; }}
-          onMouseLeave={(e) => { if (!isDragging.current) e.currentTarget.style.background = 'transparent'; }}
-        />
+        <DragHandle isDragging={isDragging.current === 'left'} onMouseDown={handleDragStart('left')} />
 
         {/* Center: Commit graph */}
         <div style={{
           flex: 1, overflow: 'hidden',
-          background: 'rgba(255,255,255,0.15)',
+          background: 'var(--color-bg-card)',
         }}>
           <div style={{
-            padding: '6px 12px', fontSize: 12, fontWeight: 600, color: '#1a1f36',
-            borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(0,0,0,0.015)',
+            padding: '6px 12px', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)',
+            borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-surface)',
           }}>
             提交历史
           </div>
@@ -256,21 +276,12 @@ export default function GitTab({ project }: GitTabProps) {
         </div>
 
         {/* Right drag handle */}
-        <div
-          onMouseDown={handleDragStart('right')}
-          style={{
-            width: 6, flexShrink: 0, cursor: 'col-resize',
-            background: isDragging.current === 'right' ? 'rgba(59,130,246,0.5)' : 'transparent',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59,130,246,0.3)'; }}
-          onMouseLeave={(e) => { if (!isDragging.current) e.currentTarget.style.background = 'transparent'; }}
-        />
+        <DragHandle isDragging={isDragging.current === 'right'} onMouseDown={handleDragStart('right')} />
 
         {/* Right: Diff viewer */}
         <div style={{
-          width: rightWidth, flexShrink: 0, borderLeft: '1px solid rgba(0,0,0,0.06)',
-          background: 'rgba(255,255,255,0.2)', overflow: 'hidden',
+          width: rightWidth, flexShrink: 0, borderLeft: '1px solid var(--color-border)',
+          background: 'var(--color-bg-card)', overflow: 'hidden',
         }}>
           <DiffViewer
             content={diffContent}
@@ -279,6 +290,32 @@ export default function GitTab({ project }: GitTabProps) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function DragHandle({ isDragging, onMouseDown }: {
+  isDragging: boolean;
+  onMouseDown: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      style={{
+        width: 8, flexShrink: 0, cursor: 'col-resize',
+        background: isDragging ? 'rgba(34,197,94,0.4)' : 'transparent',
+        transition: 'background 0.15s',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+      onMouseEnter={(e) => { if (!isDragging) e.currentTarget.style.background = 'rgba(34,197,94,0.2)'; }}
+      onMouseLeave={(e) => { if (!isDragging) e.currentTarget.style.background = 'transparent'; }}
+    >
+      <div style={{
+        width: 2, height: 20, borderRadius: 1,
+        background: isDragging ? 'var(--color-primary)' : 'var(--color-text-muted)',
+        opacity: isDragging ? 0.8 : 0.4,
+        transition: 'opacity 0.15s',
+      }} />
     </div>
   );
 }

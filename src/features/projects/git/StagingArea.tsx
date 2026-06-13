@@ -51,6 +51,18 @@ export default function StagingArea({ repoPath, files, loading, onRefresh, onFil
     }
   };
 
+  const handleUnstage = async (filePaths: string[]) => {
+    setStaging(true);
+    try {
+      await gitApi.unstage(repoPath, filePaths);
+      onRefresh();
+    } catch (err) {
+      message.error(String(err));
+    } finally {
+      setStaging(false);
+    }
+  };
+
   const handleUnstageAll = async () => {
     setStaging(true);
     try {
@@ -99,25 +111,25 @@ export default function StagingArea({ repoPath, files, loading, onRefresh, onFil
       <div style={{ flex: stagedFiles.length > 0 ? 'none' : 1, overflow: 'auto', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#1a1f36',
+          padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)',
         }}>
           <span>暂存区 ({stagedFiles.length})</span>
           {stagedFiles.length > 0 && (
             <Button type="text" size="small" onClick={handleUnstageAll}
-              style={{ fontSize: 11, color: '#6b7a99', padding: '0 4px' }}>
+              style={{ fontSize: 11, color: 'var(--color-text-secondary)', padding: '0 4px' }}>
               全部取消
             </Button>
           )}
         </div>
         {stagedFiles.length === 0 ? (
-          <div style={{ padding: '8px 12px', fontSize: 12, color: '#9eadc0' }}>无暂存文件</div>
+          <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--color-text-muted)' }}>无暂存文件</div>
         ) : (
           stagedFiles.map(f => (
             <FileRow
               key={`s-${f.path}`}
               file={f}
               checked
-              onToggle={() => handleStage([f.path])}
+              onToggle={() => handleUnstage([f.path])}
               onClick={() => onFileClick(f.path, true)}
               selected={selectedFile === f.path}
               disabled={staging}
@@ -129,22 +141,24 @@ export default function StagingArea({ repoPath, files, loading, onRefresh, onFil
       {/* Unstaged files */}
       <div style={{ flex: 1, overflow: 'auto', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <div style={{
+          position: 'sticky', top: 0, zIndex: 1,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#1a1f36',
+          padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)',
+          background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(8px)',
         }}>
           <span>更改 ({unstagedFiles.length})</span>
           {unstagedFiles.length > 0 && (
             <Button type="text" size="small"
               icon={<PlusOutlined />}
               onClick={() => handleStage(unstagedFiles.map(f => f.path))}
-              style={{ fontSize: 11, color: '#22c55e', padding: '0 4px' }}
+              style={{ fontSize: 11, color: 'var(--color-primary)', padding: '0 4px' }}
               disabled={staging}>
               全部暂存
             </Button>
           )}
         </div>
         {unstagedFiles.length === 0 ? (
-          <div style={{ padding: '8px 12px', fontSize: 12, color: '#9eadc0' }}>工作区干净</div>
+          <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--color-text-muted)' }}>工作区干净</div>
         ) : (
           unstagedFiles.map(f => (
             <FileRow
@@ -199,30 +213,37 @@ function FileRow({ file, checked, onToggle, onClick, selected, disabled }: {
   selected: boolean;
   disabled: boolean;
 }) {
-  const info = STATUS_LABELS[file.status] || { text: '?', color: '#6b7a99' };
+  const info = STATUS_LABELS[file.status] || { text: '?', color: 'var(--color-text-secondary)' };
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        padding: '4px 12px', cursor: 'pointer', fontSize: 12,
-        background: selected ? 'rgba(34,197,94,0.08)' : 'transparent',
+        padding: '5px 12px', cursor: 'pointer', fontSize: 12,
+        background: selected ? 'var(--color-primary-light)' : 'transparent',
         transition: 'background 0.1s',
+        outline: 'none',
       }}
       onClick={onClick}
-      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'rgba(0,0,0,0.02)'; }}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      onFocus={(e) => { if (!selected) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+      onBlur={(e) => { if (!selected) e.currentTarget.style.background = 'transparent'; }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'transparent'; }}
     >
       <Checkbox checked={checked} onChange={onToggle} disabled={disabled} onClick={e => e.stopPropagation()} />
-      <FileOutlined style={{ fontSize: 11, color: '#9eadc0' }} />
+      <FileOutlined style={{ fontSize: 11, color: 'var(--color-text-muted)' }} />
       <span style={{
-        display: 'inline-block', width: 14, textAlign: 'center',
+        display: 'inline-block', minWidth: 16, height: 16, textAlign: 'center',
         fontSize: 10, fontWeight: 700, color: info.color,
-        background: `${info.color}15`, borderRadius: 2, lineHeight: '16px',
+        background: `${info.color}15`, borderRadius: 3, lineHeight: '16px',
+        padding: '0 2px',
       }}>
         {info.text}
       </span>
-      <span style={{ color: '#1a1f36', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {file.path}
       </span>
     </div>

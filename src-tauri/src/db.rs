@@ -55,11 +55,9 @@ impl r2d2::ManageConnection for ConnectionManager {
     }
 }
 
-/// Execute a migration SQL file line by line, ignoring errors (for idempotency).
+/// Execute a migration SQL file as a single batch (handles multi-line statements).
 fn run_migration_sql(conn: &Connection, sql: &str) {
-    for stmt in sql.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with("--")) {
-        let _ = conn.execute_batch(stmt);
-    }
+    let _ = conn.execute_batch(sql);
 }
 
 /// Thread-safe SQLite database wrapper with connection pool.
@@ -128,8 +126,40 @@ impl Database {
                 ON \"project_health_checks\"(\"checkDate\");"
         )?;
 
+        // Safety check: if migration 002 partially ran and left projects table missing,
+        // recover by renaming projects_new back to projects.
+        let projects_exists: bool = conn
+            .prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projects'")
+            .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+            .unwrap_or(0) > 0;
+        let projects_new_exists: bool = conn
+            .prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projects_new'")
+            .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+            .unwrap_or(0) > 0;
+
+        if !projects_exists && projects_new_exists {
+            let _ = conn.execute_batch("ALTER TABLE \"projects_new\" RENAME TO \"projects\"");
+        } else if !projects_exists && !projects_new_exists {
+            // Both missing — recreate from init schema (data is lost)
+            conn.execute_batch(sql)?;
+        }
+
         // Remove users table and simplify schema
         run_migration_sql(&conn, include_str!("../migrations/002_remove_users.sql"));
+
+        // Safety check again after 002: if projects is still missing but projects_new exists
+        let projects_exists: bool = conn
+            .prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projects'")
+            .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+            .unwrap_or(0) > 0;
+        let projects_new_exists: bool = conn
+            .prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projects_new'")
+            .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+            .unwrap_or(0) > 0;
+
+        if !projects_exists && projects_new_exists {
+            let _ = conn.execute_batch("ALTER TABLE \"projects_new\" RENAME TO \"projects\"");
+        }
 
         // Add runtime status fields
         run_migration_sql(&conn, include_str!("../migrations/003_runtime_status.sql"));
