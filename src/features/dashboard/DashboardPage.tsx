@@ -50,7 +50,7 @@ function StatCard({ title, value, icon: Icon, iconColor, delay }: {
         boxShadow: isHovered ? `0 4px 12px ${iconColor}15` : undefined,
         transition: 'all 0.3s ease',
       }}
-      bodyStyle={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
+      styles={{ body: { padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' } }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -89,7 +89,7 @@ function StatusMonitorCard({ title, value, icon: Icon, color, delay }: {
         boxShadow: isHovered ? `0 4px 12px ${color}15` : undefined,
         transition: 'all 0.3s ease',
       }}
-      bodyStyle={{ padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
+      styles={{ body: { padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' } }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -123,7 +123,7 @@ function ProjectStatusCard({ project }: { project: any }) {
           boxShadow: `0 2px 8px ${statusColor}10`,
           transition: 'all 0.3s ease',
         }}
-        bodyStyle={{ padding: 16, height: '100%', display: 'flex', flexDirection: 'column' }}
+        styles={{ body: { padding: 16, height: '100%', display: 'flex', flexDirection: 'column' } }}
       >
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>

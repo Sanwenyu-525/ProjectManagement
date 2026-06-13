@@ -1088,12 +1088,12 @@ export default function ProjectsPage() {
                     transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
                     cursor: 'pointer',
                   }}
-                  bodyStyle={{
+                  styles={{ body: {
                     padding: 16,
                     height: '100%',
                     display: 'flex',
                     flexDirection: 'column',
-                  }}
+                  } }}
                 >
                   {/* 右上角操作按钮 */}
                   <div style={{

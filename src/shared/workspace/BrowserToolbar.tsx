@@ -1,0 +1,165 @@
+import { useState, useRef, useEffect } from 'react';
+import { LeftOutlined, RightOutlined, ReloadOutlined, ExportOutlined, CodeOutlined, ApiOutlined } from '@ant-design/icons';
+import { open } from '@tauri-apps/plugin-shell';
+
+interface Props {
+  url?: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onNavigate: (url: string) => void;
+  onBack: () => void;
+  onForward: () => void;
+  onReload: () => void;
+  errorCount?: number;
+  networkCount?: number;
+  activePanel: 'none' | 'console' | 'network';
+  onTogglePanel: (panel: 'none' | 'console' | 'network') => void;
+}
+
+export default function BrowserToolbar({
+  url, canGoBack, canGoForward,
+  onNavigate, onBack, onForward, onReload,
+  errorCount = 0, networkCount = 0,
+  activePanel, onTogglePanel,
+}: Props) {
+  const [inputValue, setInputValue] = useState(url || '');
+  const lastExternalUrl = useRef(url);
+
+  useEffect(() => {
+    if (url !== undefined && url !== lastExternalUrl.current) {
+      lastExternalUrl.current = url;
+      setInputValue(url);
+    }
+  }, [url]);
+
+  const handleSubmit = () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed) return;
+    const finalUrl = trimmed.startsWith('http://') || trimmed.startsWith('https://')
+      ? trimmed
+      : `http://${trimmed}`;
+    onNavigate(finalUrl);
+  };
+
+  return (
+    <div style={styles.toolbar}>
+      <button onClick={onBack} disabled={!canGoBack} style={{ ...styles.navBtn, opacity: canGoBack ? 1 : 0.3 }} title="后退">
+        <LeftOutlined style={styles.navIcon} />
+      </button>
+      <button onClick={onForward} disabled={!canGoForward} style={{ ...styles.navBtn, opacity: canGoForward ? 1 : 0.3 }} title="前进">
+        <RightOutlined style={styles.navIcon} />
+      </button>
+      <button onClick={onReload} style={styles.navBtn} title="刷新">
+        <ReloadOutlined style={styles.navIcon} />
+      </button>
+      {url && (
+        <button onClick={() => open(url)} style={styles.navBtn} title="在外部浏览器中打开">
+          <ExportOutlined style={styles.navIcon} />
+        </button>
+      )}
+      <input
+        type="text"
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+        placeholder="输入 URL（如 localhost:5173）"
+        style={styles.urlInput}
+      />
+      <div style={styles.devtoolsGroup}>
+        <button
+          onClick={() => onTogglePanel(activePanel === 'console' ? 'none' : 'console')}
+          style={{
+            ...styles.navBtn,
+            ...(activePanel === 'console' ? styles.navBtnActive : {}),
+          }}
+          title="Console"
+        >
+          <CodeOutlined style={styles.navIcon} />
+          {errorCount > 0 && <span style={styles.errorDot} />}
+        </button>
+        <button
+          onClick={() => onTogglePanel(activePanel === 'network' ? 'none' : 'network')}
+          style={{
+            ...styles.navBtn,
+            ...(activePanel === 'network' ? styles.navBtnActive : {}),
+          }}
+          title="Network"
+        >
+          <ApiOutlined style={styles.navIcon} />
+          {networkCount > 0 && <span style={styles.countDot} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  toolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    height: 32,
+    background: 'rgba(255, 255, 255, 0.03)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+    padding: '0 8px',
+    gap: 4,
+    flexShrink: 0,
+  },
+  navBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    border: 'none',
+    background: 'transparent',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    padding: 0,
+    flexShrink: 0,
+    position: 'relative',
+  },
+  navBtnActive: {
+    background: 'rgba(255, 255, 255, 0.1)',
+    color: '#e2e8f0',
+  },
+  navIcon: {
+    fontSize: 10,
+  },
+  urlInput: {
+    flex: 1,
+    height: 22,
+    background: 'rgba(255, 255, 255, 0.06)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: 4,
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontFamily: "'Fira Code', monospace",
+    padding: '0 8px',
+    outline: 'none',
+  },
+  devtoolsGroup: {
+    display: 'flex',
+    gap: 2,
+    marginLeft: 4,
+    flexShrink: 0,
+  },
+  errorDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 5,
+    height: 5,
+    borderRadius: '50%',
+    background: '#ef4444',
+  },
+  countDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 5,
+    height: 5,
+    borderRadius: '50%',
+    background: '#60a5fa',
+  },
+};

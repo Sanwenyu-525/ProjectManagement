@@ -11,9 +11,11 @@ import {
   ShareAltOutlined,
   BranchesOutlined,
   CodeOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import { useTerminalStore } from '../stores/terminalStore';
 import TerminalManager from './TerminalManager';
+import WorkspacePreview from './workspace/WorkspacePreview';
 import SearchBox from './components/SearchBox';
 import { healthApi } from '../api';
 import { formatHealthIssues, isHealthUrgent } from '../lib/healthUtils';
@@ -34,17 +36,27 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const { terminalOpen, setTerminalOpen, consumeLaunchRequest } = useTerminalStore();
+  const terminalOpen = useTerminalStore(s => s.terminalOpen);
+  const setTerminalOpen = useTerminalStore(s => s.setTerminalOpen);
+  const consumeLaunchRequest = useTerminalStore(s => s.consumeLaunchRequest);
   const [terminalHeight, setTerminalHeight] = useState(400);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ dragging: false, startY: 0, startHeight: 0 });
   const [notifApi, contextHolder] = notification.useNotification();
+  const [workspaceMode, setWorkspaceMode] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === '`') {
         e.preventDefault();
         setTerminalOpen(!terminalOpen);
+        if (!terminalOpen) setWorkspaceMode(false);
+      }
+      // Ctrl+Shift+` to toggle workspace mode
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '~') {
+        e.preventDefault();
+        setWorkspaceMode(prev => !prev);
+        if (!terminalOpen) setTerminalOpen(true);
       }
     };
     window.addEventListener('keydown', handler);
@@ -227,7 +239,38 @@ export default function MainLayout() {
           {/* 用户菜单 - 右侧 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
-              onClick={() => setTerminalOpen(!terminalOpen)}
+              onClick={() => {
+                setWorkspaceMode(true);
+                if (!terminalOpen) setTerminalOpen(true);
+              }}
+              title="工作区 (Ctrl+Shift+`)"
+              aria-label="工作区"
+              aria-pressed={workspaceMode && terminalOpen}
+              style={{
+                background: workspaceMode && terminalOpen ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                border: workspaceMode && terminalOpen ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid transparent',
+                color: workspaceMode && terminalOpen ? '#6366f1' : '#6b7a99',
+                cursor: 'pointer',
+                padding: '8px 14px',
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={e => { if (!workspaceMode || !terminalOpen) { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)'; e.currentTarget.style.color = '#6366f1'; } }}
+              onMouseLeave={e => { if (!workspaceMode || !terminalOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7a99'; } }}
+            >
+              <AppstoreOutlined style={{ fontSize: 14 }} />
+              <span>工作区</span>
+            </button>
+            <button
+              onClick={() => {
+                setWorkspaceMode(false);
+                setTerminalOpen(!terminalOpen);
+              }}
               title="终端 (Ctrl+`)"
               aria-label="终端"
               aria-pressed={terminalOpen}
@@ -328,7 +371,8 @@ export default function MainLayout() {
           {terminalOpen && (
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, cursor: 'row-resize', zIndex: 12 }} />
           )}
-          <TerminalManager visible={terminalOpen} consumeLaunchRequest={consumeLaunchRequest} />
+          <TerminalManager visible={terminalOpen && !workspaceMode} consumeLaunchRequest={consumeLaunchRequest} />
+          {workspaceMode && <WorkspacePreview />}
         </div>
       </Layout>
     </Layout>

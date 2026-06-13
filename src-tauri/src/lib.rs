@@ -135,6 +135,8 @@ pub fn run() {
             commands::workspaces::workspaces_update,
             commands::workspaces::workspaces_delete,
             commands::workspaces::workspaces_assign_project,
+            commands::workspaces::workspaces_save_layout,
+            commands::workspaces::workspaces_load_layout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

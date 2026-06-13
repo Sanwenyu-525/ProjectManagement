@@ -1,13 +1,13 @@
 import { create } from 'zustand';
 import { DEFAULT_CWD } from '../lib/constants';
-import { Terminal, TerminalTheme } from '../shared/terminalTypes';
+import { Terminal, TerminalTheme, PanePosition } from '../shared/terminalTypes';
 
 export interface LaunchRequest {
   cwd: string;
   command?: string;
   label?: string;
   projectId?: string;
-  pane?: 'left' | 'right';
+  pane?: PanePosition;
 }
 
 export interface TerminalGroup {
@@ -43,7 +43,9 @@ interface TerminalStore {
   // Pane state
   leftPane: PaneState;
   rightPane: PaneState;
-  setActiveId: (pane: 'left' | 'right', id: string | null) => void;
+  topPane: PaneState;
+  bottomPane: PaneState;
+  setActiveId: (pane: PanePosition, id: string | null) => void;
 
   // Theme
   theme: TerminalTheme;
@@ -57,12 +59,18 @@ interface TerminalStore {
   toggleGroupCollapse: (id: string) => void;
   moveTerminalToGroup: (terminalId: string, groupId: string | null) => void;
 
-  // Split pane
+  // Split pane - Horizontal
   splitPaneOpen: boolean;
   setSplitPaneOpen: (v: boolean) => void;
   splitRatio: number;
   setSplitRatio: (r: number) => void;
-  moveTerminalToPane: (terminalId: string, targetPane: 'left' | 'right') => void;
+  moveTerminalToPane: (terminalId: string, targetPane: PanePosition) => void;
+
+  // Split pane - Vertical (for right pane)
+  splitVerticalOpen: boolean;
+  setSplitVerticalOpen: (v: boolean) => void;
+  splitVerticalRatio: number;
+  setSplitVerticalRatio: (r: number) => void;
 
   // Tab bar width
   tabBarWidth: number;
@@ -104,9 +112,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   // Pane state
   leftPane: { activeId: null },
   rightPane: { activeId: null },
-  setActiveId: (pane, id) => set(() => ({
-    [pane === 'left' ? 'leftPane' : 'rightPane']: { activeId: id },
-  })),
+  topPane: { activeId: null },
+  bottomPane: { activeId: null },
+  setActiveId: (pane, id) => set(() => {
+    const paneKey = pane === 'left' ? 'leftPane' : pane === 'right' ? 'rightPane' : pane === 'top' ? 'topPane' : 'bottomPane';
+    return { [paneKey]: { activeId: id } };
+  }),
 
   // Theme
   theme: (() => {
@@ -161,6 +172,13 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   setSplitPaneOpen: (v) => set({ splitPaneOpen: v }),
   splitRatio: 0.5,
   setSplitRatio: (r) => set({ splitRatio: Math.min(Math.max(r, 0.2), 0.8) }),
+
+  // Split pane - Vertical (for right pane)
+  splitVerticalOpen: false,
+  setSplitVerticalOpen: (v) => set({ splitVerticalOpen: v }),
+  splitVerticalRatio: 0.5,
+  setSplitVerticalRatio: (r) => set({ splitVerticalRatio: Math.min(Math.max(r, 0.2), 0.8) }),
+
   moveTerminalToPane: (terminalId, targetPane) => {
     const state = get();
     const terminal = state.terminals.find(t => t.id === terminalId);
@@ -169,16 +187,23 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const sourcePane = terminal.pane;
     const sourceTerminals = state.terminals.filter(t => t.pane === sourcePane && t.id !== terminalId);
 
+    const getPaneKey = (pane: PanePosition) => {
+      if (pane === 'left') return 'leftPane';
+      if (pane === 'right') return 'rightPane';
+      if (pane === 'top') return 'topPane';
+      return 'bottomPane';
+    };
+
     set({
       terminals: state.terminals.map(t =>
         t.id === terminalId ? { ...t, pane: targetPane } : t
       ),
-      [sourcePane === 'left' ? 'leftPane' : 'rightPane']: {
+      [getPaneKey(sourcePane)]: {
         activeId: sourceTerminals.length > 0
           ? sourceTerminals[sourceTerminals.length - 1].id
           : null,
       },
-      [targetPane === 'left' ? 'leftPane' : 'rightPane']: {
+      [getPaneKey(targetPane)]: {
         activeId: terminalId,
       },
     });

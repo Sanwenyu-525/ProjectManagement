@@ -103,3 +103,31 @@ pub async fn workspaces_assign_project(db: State<'_, Database>, project_id: Stri
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[command]
+pub async fn workspaces_save_layout(db: State<'_, Database>, id: String, layout: String) -> Result<(), String> {
+    let now = now_str();
+    db.execute(
+        "UPDATE workspaces SET layout = ?1, updatedAt = ?2 WHERE id = ?3",
+        rusqlite::params![layout, now, id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[command]
+pub async fn workspaces_load_layout(db: State<'_, Database>, id: String) -> Result<Option<String>, String> {
+    let val = db.query_json(
+        "SELECT layout FROM workspaces WHERE id = ?1",
+        rusqlite::params![id],
+    ).map_err(|e| e.to_string())?;
+
+    match val {
+        serde_json::Value::Array(rows) if !rows.is_empty() => {
+            match rows[0].get("layout") {
+                Some(serde_json::Value::String(s)) if !s.is_empty() => Ok(Some(s.clone())),
+                _ => Ok(None),
+            }
+        }
+        _ => Ok(None),
+    }
+}

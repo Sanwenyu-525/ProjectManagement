@@ -1,0 +1,315 @@
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { ClearOutlined, WarningOutlined, CloseCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
+
+export interface ConsoleEntry {
+  id: number;
+  method: 'error' | 'warn' | 'log';
+  args: string[];
+  timestamp: number;
+}
+
+export interface NetworkEntry {
+  id: number;
+  method: string;
+  url: string;
+  status: number;
+  duration: number;
+  timestamp: number;
+}
+
+interface Props {
+  consoleLogs: ConsoleEntry[];
+  networkRequests: NetworkEntry[];
+  onClearConsole: () => void;
+  onClearNetwork: () => void;
+}
+
+type DevToolsTab = 'console' | 'network';
+
+export default function BrowserDevTools({ consoleLogs, networkRequests, onClearConsole, onClearNetwork }: Props) {
+  const [activeTab, setActiveTab] = useState<DevToolsTab>('console');
+  const [expandedRequest, setExpandedRequest] = useState<number | null>(null);
+  const consoleEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll console to bottom
+  useEffect(() => {
+    if (activeTab === 'console' && consoleEndRef.current) {
+      consoleEndRef.current.scrollIntoView({ block: 'end' });
+    }
+  }, [consoleLogs.length, activeTab]);
+
+  const errorCount = useMemo(() => consoleLogs.filter(l => l.method === 'error').length, [consoleLogs]);
+  const warnCount = useMemo(() => consoleLogs.filter(l => l.method === 'warn').length, [consoleLogs]);
+
+  return (
+    <div style={styles.container}>
+      {/* Tab bar */}
+      <div style={styles.tabBar}>
+        <button
+          onClick={() => setActiveTab('console')}
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'console' ? styles.tabActive : {}),
+          }}
+        >
+          Console
+          {errorCount > 0 && <span style={styles.errorBadge}>{errorCount}</span>}
+          {warnCount > 0 && <span style={styles.warnBadge}>{warnCount}</span>}
+        </button>
+        <button
+          onClick={() => setActiveTab('network')}
+          style={{
+            ...styles.tab,
+            ...(activeTab === 'network' ? styles.tabActive : {}),
+          }}
+        >
+          Network
+          {networkRequests.length > 0 && <span style={styles.countBadge}>{networkRequests.length}</span>}
+        </button>
+        <div style={styles.tabRight}>
+          <button
+            onClick={activeTab === 'console' ? onClearConsole : onClearNetwork}
+            style={styles.clearBtn}
+            title="清空"
+          >
+            <ClearOutlined style={{ fontSize: 10 }} />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={styles.content}>
+        {activeTab === 'console' ? (
+          consoleLogs.length === 0 ? (
+            <div style={styles.empty}>暂无日志</div>
+          ) : (
+            <div style={styles.scrollArea}>
+              {consoleLogs.map(entry => (
+                <div
+                  key={entry.id}
+                  style={{
+                    ...styles.logRow,
+                    background: entry.method === 'error'
+                      ? 'rgba(239, 68, 68, 0.08)'
+                      : entry.method === 'warn'
+                      ? 'rgba(234, 179, 8, 0.06)'
+                      : 'transparent',
+                  }}
+                >
+                  <span style={styles.logIcon}>
+                    {entry.method === 'error' ? <CloseCircleOutlined style={{ color: '#ef4444', fontSize: 11 }} />
+                      : entry.method === 'warn' ? <WarningOutlined style={{ color: '#eab308', fontSize: 11 }} />
+                      : <InfoCircleOutlined style={{ color: '#64748b', fontSize: 11 }} />}
+                  </span>
+                  <span style={styles.logText}>{entry.args.join(' ')}</span>
+                </div>
+              ))}
+              <div ref={consoleEndRef} />
+            </div>
+          )
+        ) : (
+          networkRequests.length === 0 ? (
+            <div style={styles.empty}>暂无请求</div>
+          ) : (
+            <div style={styles.scrollArea}>
+              {networkRequests.map(req => {
+                const isExpanded = expandedRequest === req.id;
+                const statusColor = req.status >= 200 && req.status < 300 ? '#22c55e'
+                  : req.status >= 400 && req.status < 500 ? '#eab308'
+                  : req.status >= 500 ? '#ef4444'
+                  : '#64748b';
+                return (
+                  <div key={req.id}>
+                    <div
+                      onClick={() => setExpandedRequest(isExpanded ? null : req.id)}
+                      style={styles.netRow}
+                    >
+                      <span style={{ ...styles.netMethod, color: statusColor }}>{req.method}</span>
+                      <span style={styles.netUrl}>{req.url}</span>
+                      <span style={{ ...styles.netStatus, color: statusColor }}>{req.status}</span>
+                      <span style={styles.netDuration}>{req.duration}ms</span>
+                    </div>
+                    {isExpanded && (
+                      <div style={styles.netExpanded}>
+                        <div style={styles.netDetail}>
+                          <span style={styles.netDetailLabel}>URL:</span> {req.url}
+                        </div>
+                        <div style={styles.netDetail}>
+                          <span style={styles.netDetailLabel}>Status:</span> {req.status}
+                        </div>
+                        <div style={styles.netDetail}>
+                          <span style={styles.netDetailLabel}>Duration:</span> {req.duration}ms
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+    background: '#1a1b26',
+    flexShrink: 0,
+  },
+  tabBar: {
+    display: 'flex',
+    alignItems: 'center',
+    height: 28,
+    background: 'rgba(255, 255, 255, 0.03)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+    padding: '0 8px',
+    gap: 2,
+  },
+  tab: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '0 10px',
+    height: 22,
+    border: 'none',
+    background: 'transparent',
+    color: '#94a3b8',
+    fontSize: 11,
+    fontFamily: "'Fira Code', monospace",
+    cursor: 'pointer',
+    borderRadius: 3,
+  },
+  tabActive: {
+    background: 'rgba(255, 255, 255, 0.08)',
+    color: '#e2e8f0',
+  },
+  tabRight: {
+    marginLeft: 'auto',
+    display: 'flex',
+    gap: 4,
+  },
+  clearBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    border: 'none',
+    background: 'transparent',
+    color: '#64748b',
+    cursor: 'pointer',
+    padding: 0,
+  },
+  errorBadge: {
+    fontSize: 9,
+    color: '#ef4444',
+    background: 'rgba(239, 68, 68, 0.15)',
+    padding: '0 4px',
+    borderRadius: 3,
+    lineHeight: '14px',
+  },
+  warnBadge: {
+    fontSize: 9,
+    color: '#eab308',
+    background: 'rgba(234, 179, 8, 0.12)',
+    padding: '0 4px',
+    borderRadius: 3,
+    lineHeight: '14px',
+  },
+  countBadge: {
+    fontSize: 9,
+    color: '#64748b',
+    background: 'rgba(255, 255, 255, 0.06)',
+    padding: '0 4px',
+    borderRadius: 3,
+    lineHeight: '14px',
+  },
+  content: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  scrollArea: {
+    height: '100%',
+    overflow: 'auto',
+    padding: '4px 0',
+  },
+  empty: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    fontSize: 11,
+    color: '#64748b',
+    fontStyle: 'italic',
+  },
+  logRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 6,
+    padding: '3px 8px',
+    fontSize: 11,
+    fontFamily: "'Fira Code', monospace",
+    lineHeight: '16px',
+  },
+  logIcon: {
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  logText: {
+    flex: 1,
+    color: '#cbd5e1',
+    wordBreak: 'break-all',
+  },
+  netRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '3px 8px',
+    fontSize: 11,
+    fontFamily: "'Fira Code', monospace",
+    cursor: 'pointer',
+  },
+  netMethod: {
+    width: 32,
+    fontWeight: 600,
+    flexShrink: 0,
+  },
+  netUrl: {
+    flex: 1,
+    color: '#cbd5e1',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  netStatus: {
+    width: 28,
+    textAlign: 'right',
+    flexShrink: 0,
+  },
+  netDuration: {
+    width: 44,
+    textAlign: 'right',
+    color: '#64748b',
+    flexShrink: 0,
+  },
+  netExpanded: {
+    padding: '4px 8px 4px 48px',
+    fontSize: 11,
+    fontFamily: "'Fira Code', monospace",
+    color: '#94a3b8',
+    background: 'rgba(255, 255, 255, 0.02)',
+  },
+  netDetail: {
+    padding: '1px 0',
+  },
+  netDetailLabel: {
+    color: '#64748b',
+    marginRight: 6,
+  },
+};

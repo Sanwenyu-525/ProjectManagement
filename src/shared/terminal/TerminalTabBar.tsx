@@ -1,11 +1,11 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-import { Terminal } from '../terminalTypes';
+import { Terminal, PanePosition } from '../terminalTypes';
 import { TerminalGroup as TerminalGroupType, useTerminalStore } from '../../stores/terminalStore';
 import TerminalGroup from './TerminalGroup';
 import { PlusOutlined, PartitionOutlined } from '@ant-design/icons';
 
 interface TerminalTabBarProps {
-  pane: 'left' | 'right';
+  pane: PanePosition;
   activeId: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
@@ -30,6 +30,8 @@ export default function TerminalTabBar({
   const toggleGroupCollapse = useTerminalStore(s => s.toggleGroupCollapse);
   const splitPaneOpen = useTerminalStore(s => s.splitPaneOpen);
   const setSplitPaneOpen = useTerminalStore(s => s.setSplitPaneOpen);
+  const splitVerticalOpen = useTerminalStore(s => s.splitVerticalOpen);
+  const setSplitVerticalOpen = useTerminalStore(s => s.setSplitVerticalOpen);
   const tabBarWidth = useTerminalStore(s => s.tabBarWidth);
   const setTabBarWidth = useTerminalStore(s => s.setTabBarWidth);
   const removeGroup = useTerminalStore(s => s.removeGroup);
@@ -191,6 +193,33 @@ export default function TerminalTabBar({
           >
             <PlusOutlined style={{ fontSize: 11 }} />
           </button>
+          {pane === 'right' && (
+            <button
+              onClick={() => setSplitVerticalOpen(!splitVerticalOpen)}
+              title={splitVerticalOpen ? '关闭上下分屏' : '上下分屏'}
+              style={{
+                background: splitVerticalOpen ? 'rgba(59, 130, 246, 0.2)' : 'none',
+                border: splitVerticalOpen ? '1px solid rgba(59, 130, 246, 0.3)' : 'none',
+                color: splitVerticalOpen ? '#60a5fa' : '#888',
+                cursor: 'pointer',
+                padding: '3px 6px',
+                borderRadius: 3,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+              onMouseEnter={e => {
+                if (!splitVerticalOpen) e.currentTarget.style.background = '#3c3c3c';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = splitVerticalOpen ? 'rgba(59, 130, 246, 0.2)' : 'none';
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
+                <rect x="0" y="0" width="11" height="5" rx="1" />
+                <rect x="0" y="6" width="11" height="5" rx="1" />
+              </svg>
+            </button>
+          )}
           <button
             onClick={() => setSplitPaneOpen(!splitPaneOpen)}
             title={splitPaneOpen ? '关闭分屏' : '左右分屏'}
@@ -313,7 +342,7 @@ function ContextMenu({
 }: {
   x: number; y: number;
   terminalId?: string; groupId?: string;
-  pane: 'left' | 'right';
+  pane: PanePosition;
   onClose: () => void;
   onSelect: (id: string) => void;
   onCloseTerminal: (id: string) => void;
@@ -328,11 +357,28 @@ function ContextMenu({
   const items: { label: string; action: () => void; danger?: boolean }[] = [];
 
   if (terminalId) {
+    // Determine target pane based on current pane
+    let targetPane: PanePosition;
+    let targetLabel: string;
+    if (pane === 'left') {
+      targetPane = 'right';
+      targetLabel = '右';
+    } else if (pane === 'right') {
+      targetPane = 'left';
+      targetLabel = '左';
+    } else if (pane === 'top') {
+      targetPane = 'bottom';
+      targetLabel = '下';
+    } else {
+      targetPane = 'top';
+      targetLabel = '上';
+    }
+
     items.push(
       { label: '切换到此终端', action: () => { onSelect(terminalId); onClose(); } },
       {
-        label: `移到${pane === 'left' ? '右' : '左'}面板`,
-        action: () => { moveTerminalToPane(terminalId, pane === 'left' ? 'right' : 'left'); onClose(); },
+        label: `移到${targetLabel}面板`,
+        action: () => { moveTerminalToPane(terminalId, targetPane); onClose(); },
       },
       { label: '移到分组...', action: () => setShowGroupSubmenu(true) },
       { label: '从分组移出', action: () => { moveTerminalToGroup(terminalId, null); onClose(); } },

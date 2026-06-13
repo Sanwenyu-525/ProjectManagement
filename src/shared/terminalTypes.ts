@@ -1,3 +1,5 @@
+export type PanePosition = 'left' | 'right' | 'top' | 'bottom';
+
 export interface Terminal {
   id: string;
   label: string;
@@ -7,7 +9,7 @@ export interface Terminal {
   status: 'running' | 'exited' | 'error';
   projectId?: string | null;
   groupId?: string | null;
-  pane: 'left' | 'right';
+  pane: PanePosition;
 }
 
 export type TerminalTheme = 'dark' | 'modern' | 'matrix' | 'light';

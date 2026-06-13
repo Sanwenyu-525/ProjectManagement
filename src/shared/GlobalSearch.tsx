@@ -176,7 +176,7 @@ export default function GlobalSearch() {
         margin: '0 auto',
         borderRadius: 12,
       }}
-      bodyStyle={{ padding: 16 }}
+      styles={{ body: { padding: 16 } }}
     >
       {/* Search Input */}
       <Input

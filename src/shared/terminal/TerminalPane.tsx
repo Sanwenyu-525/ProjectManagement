@@ -3,16 +3,22 @@ import { useTerminalStore } from '../../stores/terminalStore';
 import TerminalInstance from '../TerminalInstance';
 import TerminalTabBar from './TerminalTabBar';
 import { terminalApi } from '../../api';
+import { PanePosition } from '../terminalTypes';
 
 interface TerminalPaneProps {
-  pane: 'left' | 'right';
+  pane: PanePosition;
   onCreateTerminal: (groupId?: string) => void;
   onTerminalInput: (terminalId: string, data: string) => void;
 }
 
 export default function TerminalPane({ pane, onCreateTerminal, onTerminalInput }: TerminalPaneProps) {
   const terminals = useTerminalStore(s => s.terminals);
-  const paneState = useTerminalStore(s => pane === 'left' ? s.leftPane : s.rightPane);
+  const paneState = useTerminalStore(s => {
+    if (pane === 'left') return s.leftPane;
+    if (pane === 'right') return s.rightPane;
+    if (pane === 'top') return s.topPane;
+    return s.bottomPane;
+  });
   const setActiveId = useTerminalStore(s => s.setActiveId);
   const updateTerminal = useTerminalStore(s => s.updateTerminal);
   const removeTerminal = useTerminalStore(s => s.removeTerminal);

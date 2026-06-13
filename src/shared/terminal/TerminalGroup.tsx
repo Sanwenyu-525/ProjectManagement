@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Terminal } from '../terminalTypes';
 import { TerminalGroup as TerminalGroupType } from '../../stores/terminalStore';
 import TerminalTab from './TerminalTab';
@@ -33,7 +32,6 @@ export default function TerminalGroup({
 }: TerminalGroupProps) {
   const count = terminals.length;
   const hasActive = terminals.some(t => t.id === activeId);
-  const [hovered, setHovered] = useState(false);
 
   return (
     <div>
@@ -41,8 +39,6 @@ export default function TerminalGroup({
       <div
         onClick={() => onToggleCollapse(group.id)}
         onContextMenu={(e) => onGroupContextMenu?.(e, group.id)}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -71,33 +67,47 @@ export default function TerminalGroup({
             {count}
           </span>
         </span>
-        <PlusOutlined
+        <span
           onClick={(e) => {
             e.stopPropagation();
             onCreateTerminal?.(group.id === 'global' ? undefined : group.id);
           }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = '#e0e6f0'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7a8399'; }}
           style={{
-            fontSize: 9,
-            color: hovered ? '#888' : 'transparent',
+            fontSize: 12,
+            color: '#7a8399',
             cursor: 'pointer',
-            padding: '0 2px',
-            transition: 'color 0.15s',
+            padding: '2px 4px',
+            borderRadius: 3,
+            display: 'flex',
+            alignItems: 'center',
+            transition: 'all 0.15s',
           }}
-        />
+        >
+          <PlusOutlined />
+        </span>
         {group.id !== 'global' && (
-          <CloseOutlined
+          <span
             onClick={(e) => {
               e.stopPropagation();
               onDeleteGroup?.(group.id);
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; e.currentTarget.style.color = '#ef4444'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7a8399'; }}
             style={{
-              fontSize: 9,
-              color: hovered ? '#888' : 'transparent',
+              fontSize: 12,
+              color: '#7a8399',
               cursor: 'pointer',
-              padding: '0 2px',
-              transition: 'color 0.15s',
+              padding: '2px 4px',
+              borderRadius: 3,
+              display: 'flex',
+              alignItems: 'center',
+              transition: 'all 0.15s',
             }}
-          />
+          >
+            <CloseOutlined />
+          </span>
         )}
       </div>
 

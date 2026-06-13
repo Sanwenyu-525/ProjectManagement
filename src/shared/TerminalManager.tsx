@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { terminalApi, projectsApi } from '../api';
-import { Terminal, TerminalExitEvent } from './terminalTypes';
+import { Terminal, TerminalExitEvent, PanePosition } from './terminalTypes';
 import { LaunchRequest, useTerminalStore } from '../stores/terminalStore';
 import TerminalPane from './terminal/TerminalPane';
 import SplitDivider from './terminal/SplitDivider';
@@ -21,6 +21,8 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
   const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
   const splitPaneOpen = useTerminalStore(s => s.splitPaneOpen);
   const splitRatio = useTerminalStore(s => s.splitRatio);
+  const splitVerticalOpen = useTerminalStore(s => s.splitVerticalOpen);
+  const splitVerticalRatio = useTerminalStore(s => s.splitVerticalRatio);
   const groups = useTerminalStore(s => s.groups);
   const addGroup = useTerminalStore(s => s.addGroup);
   const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
@@ -38,7 +40,7 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
   const shellPrefRef = useRef(shellPref);
   shellPrefRef.current = shellPref;
 
-  const createTerminal = useCallback(async (label?: string, cwdOverride?: string, idOverride?: string, projectId?: string, existingGroupId?: string) => {
+  const createTerminal = useCallback(async (label?: string, cwdOverride?: string, idOverride?: string, projectId?: string, existingGroupId?: string, pane?: PanePosition) => {
     if (terminalsRef.current.length >= 10) {
       console.warn('Max terminals reached');
       return;
@@ -86,6 +88,16 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
       }
     }
 
+    // Determine which pane to use
+    let terminalPane: PanePosition = pane || 'left';
+    if (!pane) {
+      // Auto-assign based on current split state
+      const state = useTerminalStore.getState();
+      if (state.splitPaneOpen) {
+        terminalPane = 'right';
+      }
+    }
+
     const newTerminal: Terminal = {
       id,
       label: name,
@@ -95,7 +107,7 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
       status: 'running',
       projectId: projectId || null,
       groupId,
-      pane: 'left',
+      pane: terminalPane,
     };
 
     await terminalApi.startShell(id, shell, cwd, shellArgs);
@@ -224,16 +236,65 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
         <div style={{
           flex: 1 - splitRatio,
           display: 'flex',
+          flexDirection: 'column',
           overflow: 'hidden',
         }}>
-          <TerminalPane
-            pane="right"
-            onCreateTerminal={(groupId) => {
-              const group = groupsRef.current.find(g => g.id === groupId);
-              createTerminal(group?.label, undefined, undefined, undefined, groupId);
-            }}
-            onTerminalInput={handleTerminalInput}
-          />
+          {/* Top pane (or full right pane if no vertical split) */}
+          <div style={{
+            flex: splitVerticalOpen ? splitVerticalRatio : 1,
+            display: 'flex',
+            overflow: 'hidden',
+            transition: 'flex 0.2s ease',
+          }}>
+            <TerminalPane
+              pane="right"
+              onCreateTerminal={(groupId) => {
+                const group = groupsRef.current.find(g => g.id === groupId);
+                createTerminal(group?.label, undefined, undefined, undefined, groupId, 'right');
+              }}
+              onTerminalInput={handleTerminalInput}
+            />
+          </div>
+
+          {/* Vertical split divider */}
+          {splitVerticalOpen && (
+            <div style={{
+              height: 8,
+              cursor: 'row-resize',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              background: 'rgba(255,255,255,0.05)',
+              borderTop: '1px solid rgba(255,255,255,0.08)',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <div style={{
+                width: 20,
+                height: 2,
+                background: 'rgba(255,255,255,0.3)',
+                borderRadius: 1,
+              }} />
+            </div>
+          )}
+
+          {/* Bottom pane */}
+          {splitVerticalOpen && (
+            <div style={{
+              flex: 1 - splitVerticalRatio,
+              display: 'flex',
+              overflow: 'hidden',
+            }}>
+              <TerminalPane
+                pane="bottom"
+                onCreateTerminal={(groupId) => {
+                  const group = groupsRef.current.find(g => g.id === groupId);
+                  createTerminal(group?.label, undefined, undefined, undefined, groupId, 'bottom');
+                }}
+                onTerminalInput={handleTerminalInput}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

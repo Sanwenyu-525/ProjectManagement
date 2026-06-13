@@ -170,6 +170,9 @@ impl Database {
         // Workspaces
         run_migration_sql(&conn, include_str!("../migrations/005_workspaces.sql"));
 
+        // Workspace layout persistence
+        run_migration_sql(&conn, include_str!("../migrations/006_workspace_layout.sql"));
+
         Ok(())
     }
 
