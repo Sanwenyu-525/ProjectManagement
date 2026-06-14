@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Dropdown } from 'antd';
-import { PlusOutlined, CaretDownOutlined, CaretRightOutlined, CodeOutlined, RobotOutlined, ThunderboltOutlined, GlobalOutlined, LinkOutlined, CloseOutlined, CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined, ClearOutlined } from '@ant-design/icons';
+import { PlusOutlined, CaretDownOutlined, CaretRightOutlined, CodeOutlined, RobotOutlined, ThunderboltOutlined, GlobalOutlined, LinkOutlined, CloseOutlined, CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined, ClearOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import type { TestReport } from '../../stores/workspaceStore';
@@ -278,23 +278,7 @@ export default function WorkspaceNavigator() {
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
 
   const handleCreateTerminal = async () => {
-    // Ask user for path via folder picker
-    let cwd: string | undefined;
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({ directory: true, title: '选择终端工作目录' });
-      if (selected) {
-        cwd = selected as string;
-      } else {
-        // User cancelled dialog — use default path
-        cwd = undefined;
-      }
-    } catch {
-      // Dialog plugin not available — use default path
-      cwd = undefined;
-    }
-
-    const result = await createTerminal(cwd ? { cwd } : undefined);
+    const result = await createTerminal();
     if (!result) return;
     const { terminal } = result;
     const wsState = useWorkspaceStore.getState();
@@ -306,6 +290,29 @@ export default function WorkspaceNavigator() {
         contentType: 'terminal',
         status: 'running',
       });
+    }
+  };
+
+  const handleCreateTerminalWithCwd = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({ directory: true, title: '选择终端工作目录' });
+      if (!selected) return;
+      const result = await createTerminal({ cwd: selected as string });
+      if (!result) return;
+      const { terminal } = result;
+      const wsState = useWorkspaceStore.getState();
+      const leaves = getAllLeaves(wsState.root);
+      if (leaves[0]) {
+        wsState.addTab(leaves[0].id, {
+          id: terminal.id,
+          label: terminal.label,
+          contentType: 'terminal',
+          status: 'running',
+        });
+      }
+    } catch {
+      // Dialog plugin not available
     }
   };
 
@@ -437,7 +444,24 @@ export default function WorkspaceNavigator() {
         title="终端"
         icon={<CodeOutlined style={styles.sectionIcon} />}
         count={terminals.length}
-        onAdd={handleCreateTerminal}
+        addButton={
+          <div style={{ display: 'flex', gap: 2 }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCreateTerminalWithCwd(); }}
+              style={styles.addBtn}
+              title="新建终端（选择路径）"
+            >
+              <FolderOpenOutlined style={{ fontSize: 9 }} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCreateTerminal(); }}
+              style={styles.addBtn}
+              title="新建终端"
+            >
+              <PlusOutlined style={{ fontSize: 9 }} />
+            </button>
+          </div>
+        }
       >
         {terminals.length === 0 ? (
           <div style={styles.emptyHint}>无活动终端</div>
