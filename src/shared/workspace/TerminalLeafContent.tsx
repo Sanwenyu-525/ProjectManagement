@@ -71,7 +71,7 @@ export default function TerminalLeafContent({ leafId, activeTabId, terminalIds }
     const id = `global-${Math.random().toString(36).slice(2, 10)}`;
     const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
     const cfg = SHELL_MAP[shellPref] || SHELL_MAP[DEFAULT_SHELL];
-    const label = `终端 ${state.terminals.length + 1}`;
+    const label = `终端 ${state.nextTerminalNumber()}`;
 
     const newTerminal: Terminal = {
       id,

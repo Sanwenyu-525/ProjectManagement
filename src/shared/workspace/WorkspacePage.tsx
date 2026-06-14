@@ -46,7 +46,7 @@ export default function WorkspacePage() {
 
           const newTerminal = {
             id,
-            label: req.label || `终端 ${state.terminals.length + 1}`,
+            label: req.label || `终端 ${state.nextTerminalNumber()}`,
             createdAt: new Date(),
             shell: cfg.shell,
             cwd: req.cwd || state.defaultCwd,

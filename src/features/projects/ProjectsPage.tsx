@@ -492,6 +492,7 @@ export default function ProjectsPage() {
                           e.stopPropagation();
                           if (project.localPath) {
                             requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id });
+                            navigate('/');
                           }
                         }}
                         style={{ color: '#8b95a5' }}

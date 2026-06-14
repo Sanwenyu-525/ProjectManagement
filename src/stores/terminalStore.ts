@@ -30,8 +30,10 @@ interface TerminalStore {
   // Config
   defaultCwd: string;
 
-  // Terminal instances (lifted from TerminalManager)
+  // Terminal instances
+  _terminalCounter: number;
   terminals: Terminal[];
+  nextTerminalNumber: () => number;
   addTerminal: (t: Terminal) => void;
   removeTerminal: (id: string) => void;
   updateTerminal: (id: string, patch: Partial<Terminal>) => void;
@@ -91,7 +93,14 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   defaultCwd: localStorage.getItem('devhub_terminal_default_cwd') || DEFAULT_CWD,
 
   // Terminal instances
+  _terminalCounter: 0,
   terminals: [],
+  nextTerminalNumber: () => {
+    const state = get();
+    const next = state._terminalCounter + 1;
+    set({ _terminalCounter: next });
+    return next;
+  },
   addTerminal: (t) => set(state => ({ terminals: [...state.terminals, t] })),
   removeTerminal: (id) => set(state => ({
     terminals: state.terminals.filter(t => t.id !== id),

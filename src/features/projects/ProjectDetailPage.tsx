@@ -182,7 +182,7 @@ export default function ProjectDetailPage() {
               <Button
                 type="primary"
                 icon={<CodeOutlined />}
-                onClick={() => project.localPath && requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id })}
+                onClick={() => { if (project.localPath) { requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id }); navigate('/'); } }}
                 className="action-btn action-btn-green"
               >
                 打开终端
