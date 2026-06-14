@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '../../stores/workspaceStore';
 import TerminalInstance from '../TerminalInstance';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import type { Terminal } from '../terminalTypes';
+import { folderName } from './terminalFactory';
 
 interface Props {
   leafId: string;
@@ -71,7 +72,7 @@ export default function TerminalLeafContent({ leafId, activeTabId, terminalIds }
     const id = `global-${Math.random().toString(36).slice(2, 10)}`;
     const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
     const cfg = SHELL_MAP[shellPref] || SHELL_MAP[DEFAULT_SHELL];
-    const label = `终端 ${state.nextTerminalNumber()}`;
+    const label = folderName(defaultCwd);
 
     const newTerminal: Terminal = {
       id,

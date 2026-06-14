@@ -16,6 +16,22 @@ export interface CreateTerminalOptions {
   label?: string;
 }
 
+/** Extract the last folder name from a path, e.g. "D:\Develop\MyApp" → "MyApp" */
+export function folderName(cwd: string): string {
+  const sep = cwd.includes('\\') ? '\\' : '/';
+  const parts = cwd.replace(/[\\/]+$/, '').split(sep);
+  return parts[parts.length - 1] || cwd;
+}
+
+/** Generate a unique label based on the cwd folder name */
+function uniqueLabel(cwd: string): string {
+  const base = folderName(cwd);
+  const terminals = useTerminalStore.getState().terminals;
+  const existing = terminals.filter(t => t.label === base || t.label.startsWith(base + ' '));
+  if (existing.length === 0) return base;
+  return `${base} ${existing.length + 1}`;
+}
+
 /**
  * Create and start a terminal. Returns the terminal data for the caller to
  * bind to a pane leaf via workspaceStore.addTab().
@@ -27,8 +43,8 @@ export async function createTerminal(options?: CreateTerminalOptions): Promise<C
   const id = `global-${Math.random().toString(36).slice(2, 10)}`;
   const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
   const cfg = SHELL_MAP[shellPref] || SHELL_MAP[DEFAULT_SHELL];
-  const label = options?.label || `终端 ${state.nextTerminalNumber()}`;
   const cwd = options?.cwd || state.defaultCwd;
+  const label = options?.label || uniqueLabel(cwd);
 
   const terminal: Terminal = {
     id,

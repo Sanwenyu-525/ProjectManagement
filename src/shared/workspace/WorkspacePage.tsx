@@ -10,6 +10,7 @@ import WorkspaceNavigator from './WorkspaceNavigator';
 import WorkspacePane from './WorkspacePane';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { useWorkspaceShortcuts } from './WorkspaceShortcuts';
+import { folderName } from './terminalFactory';
 import AutomationRouter from './AutomationRouter';
 import AgentSessionRecorder from './AgentSessionRecorder';
 
@@ -46,7 +47,7 @@ export default function WorkspacePage() {
 
           const newTerminal = {
             id,
-            label: req.label || `终端 ${state.nextTerminalNumber()}`,
+            label: req.label || folderName(req.cwd || state.defaultCwd),
             createdAt: new Date(),
             shell: cfg.shell,
             cwd: req.cwd || state.defaultCwd,
