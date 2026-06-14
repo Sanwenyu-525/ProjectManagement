@@ -278,7 +278,23 @@ export default function WorkspaceNavigator() {
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
 
   const handleCreateTerminal = async () => {
-    const result = await createTerminal();
+    // Ask user for path via folder picker
+    let cwd: string | undefined;
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({ directory: true, title: '选择终端工作目录' });
+      if (selected) {
+        cwd = selected as string;
+      } else {
+        // User cancelled dialog — use default path
+        cwd = undefined;
+      }
+    } catch {
+      // Dialog plugin not available — use default path
+      cwd = undefined;
+    }
+
+    const result = await createTerminal(cwd ? { cwd } : undefined);
     if (!result) return;
     const { terminal } = result;
     const wsState = useWorkspaceStore.getState();
