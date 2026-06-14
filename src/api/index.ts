@@ -203,6 +203,10 @@ export const gitApi = {
     cmd('git_tag_create', { repoPath, name, message: message ?? null }),
   tagDelete: (repoPath: string, name: string) =>
     cmd('git_tag_delete', { repoPath, name }),
+  restore: (repoPath: string, files: string[]) =>
+    cmd<string>('git_restore', { repoPath, files }),
+  showFile: (repoPath: string, file: string) =>
+    cmd<string>('git_show_file', { repoPath, file }),
 };
 
 // ==================== Documents ====================
@@ -356,4 +360,56 @@ export const browserMemoryApi = {
     cmd<BrowserVisit[]>('browser_list_visits', { tabId: tabId ?? null, limit: limit ?? null }),
   findByUrl: (url: string) =>
     cmd<BrowserVisit[]>('browser_find_visits_by_url', { url }),
+};
+
+// ==================== Files ====================
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  modified: string;
+  extension?: string;
+}
+
+export interface FileTreeNode {
+  name: string;
+  path: string;
+  isDir: boolean;
+  children?: FileTreeNode[];
+  size?: number;
+  extension?: string;
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  language: string;
+  size: number;
+  lineCount: number;
+  isBinary: boolean;
+  isWritable: boolean;
+  modified: string;
+}
+
+export const filesApi = {
+  listDirectory: (path: string) =>
+    cmd<FileEntry[]>('files_list_directory', { path }),
+  read: (path: string) =>
+    cmd<FileContent>('files_read', { path }),
+  write: (path: string, content: string) =>
+    cmd<void>('files_write', { path, content }),
+  writeBase64: (path: string, data: string) =>
+    cmd<void>('files_write_base64', { path, data }),
+  getTree: (root: string, depth?: number) =>
+    cmd<FileTreeNode[]>('files_get_tree', { root, depth }),
+  openInIde: (path: string, ide?: string) =>
+    cmd<void>('files_open_in_ide', { path, ide }),
+  create: (path: string, isDir?: boolean) =>
+    cmd<void>('files_create', { path, isDir: isDir ?? false }),
+  rename: (oldPath: string, newPath: string) =>
+    cmd<void>('files_rename', { oldPath, newPath }),
+  delete: (path: string) =>
+    cmd<void>('files_delete', { path }),
 };

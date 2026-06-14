@@ -65,10 +65,10 @@ export default function PaneDivider({ direction, onDrag, style }: Props) {
           : { height: 3, width: '40%', minWidth: 24, maxWidth: 80 }),
         borderRadius: 2,
         background: isDragging
-          ? 'rgba(255, 255, 255, 0.5)'
+          ? 'var(--ws-active-border)'
           : isHovered
-            ? 'rgba(255, 255, 255, 0.35)'
-            : 'rgba(255, 255, 255, 0.15)',
+            ? 'var(--ws-handle)'
+            : 'var(--ws-border)',
         transition: isDragging ? 'none' : 'background 0.15s',
       }} />
     </div>

@@ -14,6 +14,10 @@ interface XtermOptions {
   onData?: (data: string) => void;
   /** Called when the PTY process exits. */
   onExit?: (code: number | null) => void;
+  /** Called when a directory change is detected from shell output. */
+  onCwdChange?: (cwd: string) => void;
+  /** Called when the shell sets a title (OSC 0/2) — usually the running program name. */
+  onTitleChange?: (title: string) => void;
 }
 
 /**
@@ -28,8 +32,12 @@ export function useXtermTerminal(
   const fitAddonRef = useRef<FitAddon | null>(null);
   const onDataRef = useRef(options.onData);
   const onExitRef = useRef(options.onExit);
+  const onCwdChangeRef = useRef(options.onCwdChange);
+  const onTitleChangeRef = useRef(options.onTitleChange);
   onDataRef.current = options.onData;
   onExitRef.current = options.onExit;
+  onCwdChangeRef.current = options.onCwdChange;
+  onTitleChangeRef.current = options.onTitleChange;
 
   const { terminalId, theme } = options;
 
@@ -71,9 +79,52 @@ export function useXtermTerminal(
       ? term.onData((data) => onDataRef.current!(data))
       : null;
 
+    let cwdDebounce: ReturnType<typeof setTimeout> | null = null;
+    let lastDetectedCwd = '';
+    let titleDebounce: ReturnType<typeof setTimeout> | null = null;
+
     const unlistenOutput = listen<TerminalOutputEvent>('terminal-output', (event) => {
-      if (event.payload.terminalId === terminalId) {
-        term.write(event.payload.data);
+      if (event.payload.terminalId !== terminalId) return;
+      let data = event.payload.data;
+
+      // Detect OSC 0 / OSC 2 title sequences: ESC ] 0;title BEL  or  ESC ] 2;title BEL(ST)
+      if (onTitleChangeRef.current) {
+        const oscMatch = data.match(/\x1b\]0;([^\x07\x1b]*)/);
+        if (oscMatch) {
+          const title = oscMatch[1].trim();
+          if (title) {
+            if (titleDebounce) clearTimeout(titleDebounce);
+            titleDebounce = setTimeout(() => onTitleChangeRef.current?.(title), 300);
+          }
+        }
+        // Strip OSC sequences before writing to xterm
+        data = data.replace(/\x1b\][02];[^\x07\x1b]*(?:\x07|\x1b\\)/g, '');
+      }
+
+      term.write(data);
+
+      // Detect cwd from shell prompts
+      if (onCwdChangeRef.current) {
+        let detected: string | null = null;
+        const psMatch = data.match(/PS\s+([A-Za-z]:\\[^\n\r]+?)\s*>/);
+        if (psMatch) {
+          detected = psMatch[1].replace(/[\\]+$/, '');
+        } else {
+          const cmdMatch = data.match(/([A-Za-z]:\\[^\s>]+)\s*>/);
+          if (cmdMatch) {
+            detected = cmdMatch[1];
+          } else {
+            const bashMatch = data.match(/[~\/][^\s$#]*[\$#]\s?$/);
+            if (bashMatch) {
+              detected = bashMatch[0].replace(/[\$#]\s?$/, '').trim();
+            }
+          }
+        }
+        if (detected && detected !== lastDetectedCwd) {
+          lastDetectedCwd = detected;
+          if (cwdDebounce) clearTimeout(cwdDebounce);
+          cwdDebounce = setTimeout(() => onCwdChangeRef.current?.(detected!), 300);
+        }
       }
     });
 
@@ -86,6 +137,8 @@ export function useXtermTerminal(
     return () => {
       clearTimeout(fitTimer);
       if (resizeTimer) clearTimeout(resizeTimer);
+      if (cwdDebounce) clearTimeout(cwdDebounce);
+      if (titleDebounce) clearTimeout(titleDebounce);
       observer.disconnect();
       inputDisposable?.dispose();
       unlistenOutput.then(fn => fn());

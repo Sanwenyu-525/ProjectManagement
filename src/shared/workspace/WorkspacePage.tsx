@@ -185,7 +185,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     width: '100%',
     height: '100%',
-    background: '#1a1b26',
+    background: 'var(--ws-bg)',
     overflow: 'hidden',
   },
   body: {
@@ -199,9 +199,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
   },
   resizeHandle: {
-    width: 4,
+    width: 5,
     cursor: 'col-resize',
-    background: 'transparent',
+    background: 'var(--ws-handle)',
     flexShrink: 0,
     transition: 'background 0.15s',
   },

@@ -61,7 +61,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     width: '100%',
     height: '100%',
-    background: '#1a1b26',
+    background: '#161821',
   },
   card: {
     display: 'flex',

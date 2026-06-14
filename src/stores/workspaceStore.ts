@@ -95,12 +95,24 @@ function scheduleFlush() {
   logFlushTimer = setTimeout(flushLogs, LOG_FLUSH_INTERVAL);
 }
 
+// ── Git change types (for FilePane diff) ──
+
+export interface GitChange {
+  path: string;
+  status: string;
+  staged: boolean;
+}
+
 // ── Tree utilities (store-private) ──
 
-function mapNode(node: PaneNode, fn: (n: PaneNode) => PaneNode): PaneNode {
+function mapNode(node: PaneNode, fn: (n: PaneNode) => PaneNode, depth = 0): PaneNode {
+  if (depth > 50) {
+    console.error('[mapNode] max depth exceeded — possible tree corruption', node);
+    return node;
+  }
   const mapped = fn(node);
   if (mapped.type === 'leaf') return mapped;
-  return { ...mapped, children: mapped.children.map(c => mapNode(c, fn)) };
+  return { ...mapped, children: mapped.children.map(c => mapNode(c, fn, depth + 1)) };
 }
 
 function removeNode(root: PaneNode, id: string): PaneNode | null {
@@ -174,13 +186,15 @@ interface WorkspaceStore extends WorkspaceLayout {
   focusedLeafId: string | null;
 
   // Tree mutations
-  splitPane: (leafId: string, tabId: string, direction?: 'horizontal' | 'vertical', ratio?: number) => void;
+  splitPane: (leafId: string, tabId: string, direction?: 'horizontal' | 'vertical', ratio?: number, newFirst?: boolean) => void;
   closePane: (leafId: string) => void;
 
   // Tab management
   addTab: (leafId: string, tab: PaneTab) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (leafId: string, tabId: string) => void;
+  updateTabLabel: (tabId: string, label: string) => void;
+  setTabNamePinned: (tabId: string, pinned: boolean) => void;
 
   // Layout
   updateSizes: (splitId: string, sizes: number[]) => void;
@@ -193,6 +207,7 @@ interface WorkspaceStore extends WorkspaceLayout {
 
   // Tab reordering (used by drag-and-drop)
   reorderTabs: (leafId: string, tabIds: string[]) => void;
+  sortLeafTabs: (leafId: string, compareFn: (a: PaneTab, b: PaneTab) => number) => void;
 
   // Workspace switching
   setActiveWorkspace: (id: string | null) => void;
@@ -219,6 +234,31 @@ interface WorkspaceStore extends WorkspaceLayout {
   testReports: TestReport[];
   addTestReport: (report: TestReport) => void;
   clearTestReports: () => void;
+
+  // File panel state (ephemeral, keyed by FileTab id)
+  filePanelState: Record<string, {
+    expandedDirs: Set<string>;
+    selectedFile: string | null;
+    fileContent: string | null;
+    originalContent: string | null;
+    language: string;
+    isBinary: boolean;
+    isWritable: boolean;
+    loading: boolean;
+    gitChanges: GitChange[];
+    diffTarget: string | null;
+    diffOriginal: string | null;
+    diffLoading: boolean;
+  }>;
+  toggleFileDir: (tabId: string, dirPath: string) => void;
+  selectFile: (tabId: string, filePath: string | null) => void;
+  setFileContent: (tabId: string, content: string, original: string, language: string, isBinary: boolean, isWritable: boolean) => void;
+  updateFileContent: (tabId: string, content: string) => void;
+  setFileLoading: (tabId: string, loading: boolean) => void;
+  clearFileDirty: (tabId: string) => void;
+  setGitChanges: (tabId: string, changes: GitChange[]) => void;
+  openDiff: (tabId: string, filePath: string, headContent: string) => void;
+  closeDiff: (tabId: string) => void;
 }
 
 const initialWsId = localStorage.getItem('devhub_active_workspace');
@@ -238,8 +278,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
   browserPanelState: {},
   browserAutomation: {},
   testReports: JSON.parse(localStorage.getItem('devhub_test_reports') || '[]'),
+  filePanelState: {},
 
-  splitPane: (leafId, tabId, direction = 'horizontal', ratio = 0.5) => {
+  splitPane: (leafId, tabId, direction = 'horizontal', ratio = 0.5, newFirst = false) => {
     set(state => {
       const leaf = findLeaf(state.root, leafId);
       if (!leaf) return state;
@@ -251,8 +292,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
         activeTabId: tabId,
       };
 
+      // Give the remaining pane a new ID so mapNode's fn won't match it again
       const updatedLeaf: PaneLeaf = {
-        ...leaf,
+        type: 'leaf',
+        id: `pane-${uid()}`,
         tabIds: leaf.tabIds.filter(id => id !== tabId),
         activeTabId: leaf.tabIds.filter(id => id !== tabId).slice(-1)[0] || null,
       };
@@ -261,7 +304,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
         type: 'split',
         id: `split-${uid()}`,
         direction,
-        children: [updatedLeaf, newLeaf],
+        children: newFirst ? [newLeaf, updatedLeaf] : [updatedLeaf, newLeaf],
         sizes: [ratio, 1 - ratio],
       };
 
@@ -295,14 +338,34 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
         return { ...n, tabIds: [...n.tabIds, tab.id], activeTabId: tab.id };
       });
       const tabs = { ...state.tabs, [tab.id]: tab };
+      // Initialize file panel state for file tabs
+      const filePanelState = tab.contentType === 'file'
+        ? {
+            ...state.filePanelState,
+            [tab.id]: {
+              expandedDirs: new Set<string>(),
+              selectedFile: null as string | null,
+              fileContent: null as string | null,
+              originalContent: null as string | null,
+              language: 'text',
+              isBinary: false,
+              isWritable: true,
+              loading: false,
+              gitChanges: [] as GitChange[],
+              diffTarget: null as string | null,
+              diffOriginal: null as string | null,
+              diffLoading: false,
+            },
+          }
+        : state.filePanelState;
       scheduleBackendSave(state.activeWorkspaceId, root, tabs);
-      return { root, tabs };
+      return { root, tabs, filePanelState };
     });
   },
 
   closeTab: (tabId) => {
     set(state => {
-      const { [tabId]: _, ...restTabs } = state.tabs;
+      const { [tabId]: closedTab, ...restTabs } = state.tabs;
       let root = mapNode(state.root, n => {
         if (n.type !== 'leaf') return n;
         if (!n.tabIds.includes(tabId)) return n;
@@ -323,8 +386,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
         }
       }
 
+      // Clean up file panel state for file tabs
+      const { [tabId]: _panel, ...restPanel } = state.filePanelState;
+      const filePanelState = closedTab?.contentType === 'file' ? restPanel : state.filePanelState;
+
       scheduleBackendSave(state.activeWorkspaceId, root, restTabs);
-      return { root, tabs: restTabs };
+      return { root, tabs: restTabs, filePanelState };
     });
   },
 
@@ -337,6 +404,26 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       );
       scheduleBackendSave(state.activeWorkspaceId, root, state.tabs);
       return { root };
+    });
+  },
+
+  updateTabLabel: (tabId, label) => {
+    set(state => {
+      const tab = state.tabs[tabId];
+      if (!tab || tab.label === label) return {};
+      const tabs = { ...state.tabs, [tabId]: { ...tab, label } };
+      scheduleBackendSave(state.activeWorkspaceId, state.root, tabs);
+      return { tabs };
+    });
+  },
+
+  setTabNamePinned: (tabId, pinned) => {
+    set(state => {
+      const tab = state.tabs[tabId];
+      if (!tab) return {};
+      const tabs = { ...state.tabs, [tabId]: { ...tab, namePinned: pinned } };
+      scheduleBackendSave(state.activeWorkspaceId, state.root, tabs);
+      return { tabs };
     });
   },
 
@@ -360,17 +447,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
   getAllLeaves: () => getAllLeaves(get().root),
 
   resetLayout: () => {
-    // Try to restore from localStorage, fallback to fresh layout
-    const wsId = get().activeWorkspaceId;
-    const local = loadLocal(wsId);
-    if (local && Object.keys(local.tabs).length > 0) {
-      set({ root: local.root, tabs: local.tabs });
-      scheduleBackendSave(get().activeWorkspaceId, local.root, local.tabs);
-    } else {
-      const fresh = createDefaultLayout();
-      scheduleBackendSave(get().activeWorkspaceId, fresh.root, fresh.tabs);
-      set(fresh);
-    }
+    const fresh = createDefaultLayout();
+    scheduleBackendSave(get().activeWorkspaceId, fresh.root, fresh.tabs);
+    set(fresh);
   },
 
   setActiveWorkspace: (id) => {
@@ -385,6 +464,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       const root = mapNode(state.root, n =>
         n.type === 'leaf' && n.id === leafId ? { ...n, tabIds } : n
       );
+      scheduleBackendSave(state.activeWorkspaceId, root, state.tabs);
+      return { root };
+    });
+  },
+
+  sortLeafTabs: (leafId, compareFn) => {
+    set(state => {
+      const tabs = state.tabs;
+      const root = mapNode(state.root, n => {
+        if (n.type !== 'leaf' || n.id !== leafId) return n;
+        const sorted = [...n.tabIds].sort((a, b) => {
+          const ta = tabs[a];
+          const tb = tabs[b];
+          if (!ta || !tb) return 0;
+          return compareFn(ta, tb);
+        });
+        return { ...n, tabIds: sorted };
+      });
       scheduleBackendSave(state.activeWorkspaceId, root, state.tabs);
       return { root };
     });
@@ -514,6 +611,164 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
   clearTestReports: () => {
     localStorage.removeItem('devhub_test_reports');
     set({ testReports: [] });
+  },
+
+  // File panel
+  toggleFileDir: (tabId, dirPath) => {
+    set(state => {
+      const existing = state.filePanelState[tabId];
+      const panel = existing || {
+        expandedDirs: new Set<string>(),
+        selectedFile: null as string | null,
+        fileContent: null as string | null,
+        originalContent: null as string | null,
+        language: 'text',
+        isBinary: false,
+        isWritable: true,
+        loading: false,
+        gitChanges: [] as GitChange[],
+        diffTarget: null as string | null,
+        diffOriginal: null as string | null,
+        diffLoading: false,
+      };
+      const expanded = new Set(panel.expandedDirs);
+      if (expanded.has(dirPath)) {
+        expanded.delete(dirPath);
+      } else {
+        expanded.add(dirPath);
+      }
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, expandedDirs: expanded },
+        },
+      };
+    });
+  },
+
+  selectFile: (tabId, filePath) => {
+    set(state => {
+      const existing = state.filePanelState[tabId];
+      const panel = existing || {
+        expandedDirs: new Set<string>(),
+        selectedFile: null as string | null,
+        fileContent: null as string | null,
+        originalContent: null as string | null,
+        language: 'text',
+        isBinary: false,
+        isWritable: true,
+        loading: false,
+        gitChanges: [] as GitChange[],
+        diffTarget: null as string | null,
+        diffOriginal: null as string | null,
+        diffLoading: false,
+      };
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, selectedFile: filePath, loading: !!filePath },
+        },
+      };
+    });
+  },
+
+  setFileContent: (tabId, content, original, language, isBinary, isWritable) => {
+    set(state => {
+      const panel = state.filePanelState[tabId];
+      if (!panel) return state;
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: {
+            ...panel,
+            fileContent: content,
+            originalContent: original,
+            language,
+            isBinary,
+            isWritable,
+            loading: false,
+          },
+        },
+      };
+    });
+  },
+
+  updateFileContent: (tabId, content) => {
+    set(state => {
+      const panel = state.filePanelState[tabId];
+      if (!panel) return state;
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, fileContent: content },
+        },
+      };
+    });
+  },
+
+  setFileLoading: (tabId, loading) => {
+    set(state => {
+      const panel = state.filePanelState[tabId];
+      if (!panel) return state;
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, loading },
+        },
+      };
+    });
+  },
+
+  clearFileDirty: (tabId) => {
+    set(state => {
+      const panel = state.filePanelState[tabId];
+      if (!panel || panel.fileContent === null) return state;
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, originalContent: panel.fileContent },
+        },
+      };
+    });
+  },
+
+  setGitChanges: (tabId, changes) => {
+    set(state => {
+      const panel = state.filePanelState[tabId];
+      if (!panel) return state;
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, gitChanges: changes },
+        },
+      };
+    });
+  },
+
+  openDiff: (tabId, filePath, headContent) => {
+    set(state => {
+      const panel = state.filePanelState[tabId];
+      if (!panel) return state;
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, diffTarget: filePath, diffOriginal: headContent, diffLoading: false },
+        },
+      };
+    });
+  },
+
+  closeDiff: (tabId) => {
+    set(state => {
+      const panel = state.filePanelState[tabId];
+      if (!panel) return state;
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, diffTarget: null, diffOriginal: null, diffLoading: false },
+        },
+      };
+    });
   },
 };
 });

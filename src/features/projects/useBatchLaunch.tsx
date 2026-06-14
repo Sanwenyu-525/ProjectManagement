@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Modal, message } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
 import { terminalApi } from '../../api';
+import { useTerminalStore } from '../../stores/terminalStore';
 import type { ProjectWithStats } from '../../types';
 import { getEffectiveCommand } from '../../lib/launchUtils';
 import { getProjectPriority, getPriorityColor, extractPortFromCommand } from './projectUtils';
@@ -190,11 +191,16 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
           continue;
         }
 
-        const tid = await terminalApi.start(project.id, getEffectiveCommand(project) || '', localPath);
+        useTerminalStore.getState().requestLaunch({
+          cwd: localPath,
+          command: getEffectiveCommand(project) || undefined,
+          label: project.name,
+          projectId: project.id,
+        });
 
         setBatchLaunchProgress(prev => {
           const next = new Map(prev);
-          next.set(project.id, { status: 'success', terminalId: tid });
+          next.set(project.id, { status: 'success' });
           return next;
         });
         successCount++;

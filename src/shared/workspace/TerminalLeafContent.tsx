@@ -65,6 +65,26 @@ export default function TerminalLeafContent({ leafId, activeTabId, terminalIds }
     updateTerminal(terminalId, { status: code === 0 ? 'exited' : 'error' });
   }, [updateTerminal]);
 
+  const handleCwdChange = useCallback((terminalId: string, cwd: string) => {
+    const tab = useWorkspaceStore.getState().tabs[terminalId];
+    if (!tab || tab.namePinned) return;
+    const name = folderName(cwd);
+    if (name && name !== tab.label) {
+      useWorkspaceStore.getState().updateTabLabel(terminalId, name);
+      updateTerminal(terminalId, { label: name, cwd });
+    }
+  }, [updateTerminal]);
+
+  const handleTitleChange = useCallback((terminalId: string, title: string) => {
+    const tab = useWorkspaceStore.getState().tabs[terminalId];
+    if (!tab || tab.namePinned) return;
+    const name = title.replace(/[\\\/]+$/, '').split(/[\\\/]/).pop() || title;
+    if (name && name !== tab.label) {
+      useWorkspaceStore.getState().updateTabLabel(terminalId, name);
+      updateTerminal(terminalId, { label: name });
+    }
+  }, [updateTerminal]);
+
   const handleCreate = useCallback(async () => {
     const state = useTerminalStore.getState();
     if (state.terminals.length >= 10) return;
@@ -101,7 +121,24 @@ export default function TerminalLeafContent({ leafId, activeTabId, terminalIds }
   // All terminals rendered, active one visible (xterm persists across tab switches)
   if (leafTerminals.length > 0) {
     return (
-      <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <div
+        style={{ width: '100%', height: '100%', position: 'relative' }}
+        onDragOver={e => {
+          if (e.dataTransfer.types.includes('text/plain')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+          }
+        }}
+        onDrop={e => {
+          e.preventDefault();
+          const filePath = e.dataTransfer.getData('text/plain');
+          if (filePath && activeTabId) {
+            // Quote path if it contains spaces
+            const quoted = filePath.includes(' ') ? `"${filePath}"` : filePath;
+            terminalApi.input(activeTabId, quoted).catch(() => {});
+          }
+        }}
+      >
         {leafTerminals.map(t => (
           <TerminalInstance
             key={t.id}
@@ -110,6 +147,8 @@ export default function TerminalLeafContent({ leafId, activeTabId, terminalIds }
             isActive={t.id === activeTabId}
             onInput={handleInput}
             onExit={handleExit}
+            onCwdChange={handleCwdChange}
+            onTitleChange={handleTitleChange}
           />
         ))}
       </div>
@@ -126,9 +165,9 @@ export default function TerminalLeafContent({ leafId, activeTabId, terminalIds }
       width: '100%',
       height: '100%',
       gap: 12,
-      background: '#1a1b26',
+      background: 'var(--ws-content-bg)',
     }}>
-      <span style={{ fontSize: 20, opacity: 0.3, fontFamily: "'Fira Code', monospace", color: '#94a3b8' }}>
+      <span style={{ fontSize: 20, opacity: 0.3, fontFamily: "'Fira Code', monospace", color: 'var(--ws-text-secondary)' }}>
         ⌘
       </span>
       <button
@@ -139,21 +178,21 @@ export default function TerminalLeafContent({ leafId, activeTabId, terminalIds }
           gap: 6,
           padding: '8px 16px',
           borderRadius: 6,
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          background: 'rgba(255, 255, 255, 0.05)',
-          color: '#94a3b8',
+          border: '1px solid var(--ws-border)',
+          background: 'var(--ws-hover)',
+          color: 'var(--ws-text-secondary)',
           cursor: 'pointer',
           fontSize: 12,
           fontFamily: "'Fira Code', monospace",
           transition: 'all 0.15s',
         }}
         onMouseEnter={e => {
-          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+          e.currentTarget.style.background = 'var(--ws-active-bg)';
+          e.currentTarget.style.borderColor = 'var(--ws-active-border)';
         }}
         onMouseLeave={e => {
-          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+          e.currentTarget.style.background = 'var(--ws-hover)';
+          e.currentTarget.style.borderColor = 'var(--ws-border)';
         }}
       >
         <PlusOutlined style={{ fontSize: 11 }} />

@@ -14,6 +14,7 @@ import { createAgent } from './agentFactory';
  * - Ctrl+Shift+B: New browser tab in focused pane
  * - Ctrl+Shift+P: New plugin tab in focused pane
  * - Ctrl+Shift+W: Close focused pane
+ * - Ctrl+Arrow: Directional split focused pane
  */
 export function useWorkspaceShortcuts() {
   const focusedLeafId = useWorkspaceStore(s => s.focusedLeafId);
@@ -34,11 +35,30 @@ export function useWorkspaceShortcuts() {
         return;
       }
 
-      if (!e.shiftKey) return;
-
       const targetId = focusedLeafId && leaves.some(l => l.id === focusedLeafId)
         ? focusedLeafId
         : leaves[0].id;
+
+      // Ctrl+Arrow: Directional split
+      const arrowMap: Record<string, { dir: 'horizontal' | 'vertical'; newFirst: boolean }> = {
+        ArrowLeft:  { dir: 'horizontal', newFirst: true },
+        ArrowRight: { dir: 'horizontal', newFirst: false },
+        ArrowUp:    { dir: 'vertical',   newFirst: true },
+        ArrowDown:  { dir: 'vertical',   newFirst: false },
+      };
+      if (arrowMap[e.key]) {
+        e.preventDefault();
+        const { splitPane } = useWorkspaceStore.getState();
+        const leaf = leaves.find(l => l.id === targetId);
+        const activeTabId = leaf?.activeTabId;
+        if (leaf && activeTabId) {
+          const { dir, newFirst } = arrowMap[e.key];
+          splitPane(targetId, activeTabId, dir, 0.5, newFirst);
+        }
+        return;
+      }
+
+      if (!e.shiftKey) return;
 
       if (e.key === 'C' || e.key === 'c') {
         // Ctrl+Shift+C: New terminal

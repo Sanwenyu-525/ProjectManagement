@@ -11,6 +11,7 @@ import WorkspacePage from './workspace/WorkspacePage';
 import SearchBox from './components/SearchBox';
 import { healthApi } from '../api';
 import { formatHealthIssues, isHealthUrgent } from '../lib/healthUtils';
+import { useThemeStore } from '../stores/themeStore';
 
 const { Header, Sider, Content } = Layout;
 
@@ -28,9 +29,11 @@ export default function MainLayout() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [notifApi, contextHolder] = notification.useNotification();
+  const isDarkTheme = useThemeStore(s => s.mode === 'dark');
 
   const isFullPage = fullPageRoutes.some(r => location.pathname.startsWith(r));
   const showWorkspace = !isFullPage;
+  const isDark = isDarkTheme;  // global dark theme from store
 
   // Daily project health check — runs once per day on first app open
   useEffect(() => {
@@ -80,7 +83,7 @@ export default function MainLayout() {
   )?.key || '/';
 
   return (
-    <Layout className="bg-gradient-main" style={{ minHeight: '100vh', position: 'relative' }}>
+    <Layout className={`bg-gradient-main${isDark ? ' workspace-mode' : ''}`} style={{ minHeight: '100vh', position: 'relative' }}>
       {contextHolder}
       <Sider
         collapsible
@@ -89,16 +92,22 @@ export default function MainLayout() {
         width={220}
         collapsedWidth={64}
         style={{
-          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 100%), rgba(255, 255, 255, 0.3)',
-          borderRight: '1px solid rgba(255, 255, 255, 0.45)',
-          backdropFilter: 'blur(20px) saturate(1.8)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
+          background: isDark
+            ? 'rgba(13, 14, 22, 0.98)'
+            : 'linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 100%), rgba(255, 255, 255, 0.3)',
+          borderRight: isDark
+            ? '1px solid rgba(255, 255, 255, 0.08)'
+            : '1px solid rgba(255, 255, 255, 0.45)',
+          backdropFilter: isDark ? 'none' : 'blur(20px) saturate(1.8)',
+          WebkitBackdropFilter: isDark ? 'none' : 'blur(20px) saturate(1.8)',
           position: 'fixed',
           top: 0,
           left: 0,
           height: '100vh',
           zIndex: 10,
-          boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 16px rgba(0, 0, 0, 0.06)',
+          boxShadow: isDark
+            ? 'none'
+            : 'inset -1px 0 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 16px rgba(0, 0, 0, 0.06)',
         }}
       >
         {/* Logo */}
@@ -109,7 +118,7 @@ export default function MainLayout() {
             alignItems: 'center',
             justifyContent: collapsed ? 'center' : 'flex-start',
             padding: collapsed ? 0 : '0 20px',
-            borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
+            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.06)',
             gap: 10,
             cursor: 'pointer',
           }}
@@ -127,7 +136,7 @@ export default function MainLayout() {
           />
           {!collapsed && (
             <span style={{
-              color: '#1a1f36',
+              color: isDark ? '#c8d0de' : '#1a1f36',
               fontSize: 16,
               fontWeight: 700,
               fontFamily: "'Fira Code', monospace",
@@ -142,25 +151,38 @@ export default function MainLayout() {
           selectedKeys={[selectedKey]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
-          style={{ borderRight: 'none', marginTop: 8 }}
+          style={{
+            borderRight: 'none',
+            marginTop: 8,
+            ...(isDark ? {
+              background: 'transparent',
+              color: '#8892a8',
+            } : {}),
+          }}
         />
       </Sider>
 
       <Layout style={{ flex: 1, marginLeft: collapsed ? 64 : 220, height: '100vh', overflow: 'hidden', position: 'relative' }}>
         <Header style={{
-          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)',
+          background: isDark
+            ? 'rgba(13, 14, 22, 0.98)'
+            : 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)',
           padding: '0 24px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.45)',
+          borderBottom: isDark
+            ? '1px solid rgba(255, 255, 255, 0.08)'
+            : '1px solid rgba(255, 255, 255, 0.45)',
           height: 64,
           lineHeight: '64px',
-          backdropFilter: 'blur(20px) saturate(1.8)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
+          backdropFilter: isDark ? 'none' : 'blur(20px) saturate(1.8)',
+          WebkitBackdropFilter: isDark ? 'none' : 'blur(20px) saturate(1.8)',
           position: 'relative',
           zIndex: 10,
-          boxShadow: 'inset 0 -1px 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(0, 0, 0, 0.06)',
+          boxShadow: isDark
+            ? 'none'
+            : 'inset 0 -1px 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(0, 0, 0, 0.06)',
           flexWrap: 'nowrap',
           flexShrink: 0,
         }}>
@@ -190,18 +212,18 @@ export default function MainLayout() {
                 borderRadius: 8,
                 border: '1px solid transparent',
                 background: 'transparent',
-                color: '#1a1f36',
+                color: isDark ? '#c8d0de' : '#1a1f36',
                 transition: 'all 0.15s ease',
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)';
-                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.3)';
-                e.currentTarget.style.color = '#16a34a';
+                e.currentTarget.style.background = isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(34, 197, 94, 0.15)';
+                e.currentTarget.style.borderColor = isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(34, 197, 94, 0.3)';
+                e.currentTarget.style.color = isDark ? '#a5b4fc' : '#16a34a';
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.background = 'transparent';
                 e.currentTarget.style.borderColor = 'transparent';
-                e.currentTarget.style.color = '#1a1f36';
+                e.currentTarget.style.color = isDark ? '#c8d0de' : '#1a1f36';
               }}
             >
               <Avatar
@@ -212,7 +234,7 @@ export default function MainLayout() {
                   boxShadow: '0 2px 8px rgba(34, 197, 94, 0.2)',
                 }}
               />
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1f36' }}>开发者</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: isDark ? '#c8d0de' : '#1a1f36' }}>开发者</span>
             </div>
           </Dropdown>
           </div>

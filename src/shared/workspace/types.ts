@@ -21,6 +21,8 @@ interface PaneTabBase {
   id: string;
   label: string;
   status?: 'running' | 'exited' | 'error';
+  /** When true, the label won't be auto-updated by cwd tracking */
+  namePinned?: boolean;
 }
 
 export interface TerminalTab extends PaneTabBase {
@@ -57,7 +59,17 @@ export interface PluginTab extends PaneTabBase {
   pluginState?: Record<string, unknown>;
 }
 
-export type PaneTab = TerminalTab | AgentTab | BrowserTab | BuildTab | LogTab | PluginTab;
+export interface FileTab extends PaneTabBase {
+  contentType: 'file';
+  /** Project root path for file tree */
+  rootPath?: string;
+  /** Currently opened file path */
+  filePath?: string;
+  /** Whether the editor has unsaved changes */
+  isDirty?: boolean;
+}
+
+export type PaneTab = TerminalTab | AgentTab | BrowserTab | BuildTab | LogTab | PluginTab | FileTab;
 
 // ── Type guards ──
 
@@ -75,6 +87,10 @@ export function isBrowserTab(tab: PaneTab): tab is BrowserTab {
 
 export function isPluginTab(tab: PaneTab): tab is PluginTab {
   return tab.contentType === 'plugin';
+}
+
+export function isFileTab(tab: PaneTab): tab is FileTab {
+  return tab.contentType === 'file';
 }
 
 export interface WorkspaceLayout {

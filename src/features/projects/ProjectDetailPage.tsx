@@ -56,6 +56,7 @@ export default function ProjectDetailPage() {
       return;
     }
     requests.forEach(req => requestLaunch(req));
+    navigate('/');
   }
 
   async function handleRefresh() {

@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { searchApi } from '../../api';
 import ProjectIcon from '../ProjectIcon';
 import { parseTechStack } from '../../lib/normalize';
+import { useThemeStore } from '../../stores/themeStore';
 
 interface SearchResult {
   type: 'project' | 'task' | 'document' | 'member';
@@ -20,6 +21,84 @@ interface SearchResult {
   techStack?: string[];
 }
 
+interface ThemeColors {
+  inputBg: string;
+  inputBgHover: string;
+  border: string;
+  borderFocus: string;
+  borderHover: string;
+  text: string;
+  icon: string;
+  iconFocus: string;
+  placeholder: string;
+  kbdBg: string;
+  kbdBorder: string;
+  kbdText: string;
+  boxShadow: string;
+  boxShadowFocus: string;
+  boxShadowHover: string;
+  dropdownBg: string;
+  dropdownBorder: string;
+  dropdownShadow: string;
+  resultHover: string;
+  resultText: string;
+  resultMeta: string;
+  emptyText: string;
+  loadingText: string;
+}
+
+const LIGHT_THEME: ThemeColors = {
+  inputBg: 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.12) 100%), rgba(255,255,255,0.25)',
+  inputBgHover: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.18) 100%), rgba(255,255,255,0.3)',
+  border: 'rgba(255,255,255,0.35)',
+  borderFocus: 'rgba(34,197,94,0.5)',
+  borderHover: 'rgba(34,197,94,0.3)',
+  text: '#1a1f36',
+  icon: '#9eadc0',
+  iconFocus: '#22c55e',
+  placeholder: '#9eadc0',
+  kbdBg: 'rgba(255,255,255,0.15)',
+  kbdBorder: 'rgba(255,255,255,0.2)',
+  kbdText: '#9eadc0',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 8px rgba(0,0,0,0.06)',
+  boxShadowFocus: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 0 20px rgba(34,197,94,0.15)',
+  boxShadowHover: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 12px rgba(0,0,0,0.1)',
+  dropdownBg: 'rgba(255,255,255,0.95)',
+  dropdownBorder: 'rgba(255,255,255,0.5)',
+  dropdownShadow: '0 8px 32px rgba(0,0,0,0.12)',
+  resultHover: 'rgba(34,197,94,0.15)',
+  resultText: '#1a1f36',
+  resultMeta: '#9eadc0',
+  emptyText: '#9eadc0',
+  loadingText: '#9eadc0',
+};
+
+const DARK_THEME: ThemeColors = {
+  inputBg: 'rgba(255,255,255,0.06)',
+  inputBgHover: 'rgba(255,255,255,0.1)',
+  border: 'rgba(255,255,255,0.08)',
+  borderFocus: 'rgba(99,102,241,0.5)',
+  borderHover: 'rgba(99,102,241,0.3)',
+  text: '#e2e8f0',
+  icon: '#7c8db0',
+  iconFocus: '#a5b4fc',
+  placeholder: '#5e6a80',
+  kbdBg: 'rgba(255,255,255,0.08)',
+  kbdBorder: 'rgba(255,255,255,0.08)',
+  kbdText: '#7c8db0',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+  boxShadowFocus: '0 0 0 2px rgba(99,102,241,0.3), 0 2px 12px rgba(0,0,0,0.3)',
+  boxShadowHover: '0 4px 12px rgba(0,0,0,0.25)',
+  dropdownBg: 'rgba(22,24,33,0.98)',
+  dropdownBorder: 'rgba(255,255,255,0.08)',
+  dropdownShadow: '0 8px 32px rgba(0,0,0,0.4)',
+  resultHover: 'rgba(99,102,241,0.12)',
+  resultText: '#e2e8f0',
+  resultMeta: '#7c8db0',
+  emptyText: '#5e6a80',
+  loadingText: '#5e6a80',
+};
+
 export default function SearchBox() {
   const navigate = useNavigate();
   const [focused, setFocused] = useState(false);
@@ -27,8 +106,12 @@ export default function SearchBox() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const isDark = useThemeStore(s => s.mode === 'dark');
+  const toggleTheme = useThemeStore(s => s.toggle);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const theme = isDark ? DARK_THEME : LIGHT_THEME;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -145,17 +228,13 @@ export default function SearchBox() {
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)',
-          backdropFilter: 'blur(20px) saturate(1.8)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
-          border: `1px solid ${focused ? 'rgba(34, 197, 94, 0.5)' : 'rgba(255, 255, 255, 0.35)'}`,
+          background: theme.inputBg,
+          border: `1px solid ${focused ? theme.borderFocus : theme.border}`,
           borderRadius: 8,
-          padding: '8px 16px',
+          padding: '8px 12px',
           height: 36,
           minWidth: 0,
-          boxShadow: focused
-            ? 'inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 20px rgba(34, 197, 94, 0.15)'
-            : 'inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 8px rgba(0, 0, 0, 0.06)',
+          boxShadow: focused ? theme.boxShadowFocus : theme.boxShadow,
           transition: 'all 0.3s ease',
           cursor: 'pointer',
           boxSizing: 'border-box',
@@ -163,16 +242,14 @@ export default function SearchBox() {
           overflow: 'hidden',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.3)';
-          e.currentTarget.style.boxShadow = 'inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 4px 12px rgba(0, 0, 0, 0.1)';
-          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.18) 100%), rgba(255, 255, 255, 0.3)';
+          e.currentTarget.style.borderColor = focused ? theme.borderFocus : theme.borderHover;
+          e.currentTarget.style.boxShadow = theme.boxShadowHover;
+          e.currentTarget.style.background = theme.inputBgHover;
         }}
         onMouseLeave={(e) => {
-          if (!focused) {
-            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
-            e.currentTarget.style.boxShadow = 'inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 8px rgba(0, 0, 0, 0.06)';
-            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)';
-          }
+          e.currentTarget.style.borderColor = focused ? theme.borderFocus : theme.border;
+          e.currentTarget.style.boxShadow = focused ? theme.boxShadowFocus : theme.boxShadow;
+          e.currentTarget.style.background = theme.inputBg;
         }}
         onFocus={() => {
           setFocused(true);
@@ -183,7 +260,7 @@ export default function SearchBox() {
       >
         <SearchOutlined
           style={{
-            color: focused ? '#22c55e' : '#9eadc0',
+            color: focused ? theme.iconFocus : theme.icon,
             fontSize: 14,
             transition: 'color 0.3s ease',
           }}
@@ -205,7 +282,7 @@ export default function SearchBox() {
           style={{
             border: 'none',
             background: 'transparent',
-            color: '#1a1f36',
+            color: theme.text,
             fontSize: 13,
             flex: 1,
             outline: 'none',
@@ -213,14 +290,40 @@ export default function SearchBox() {
           }}
           placeholder="搜索项目、任务、文档..."
         />
+        {/* Theme toggle */}
+        <button
+          onClick={(e) => { e.stopPropagation(); toggleTheme(); }}
+          title={isDark ? '切换到浅色主题' : '切换到深色主题'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 20,
+            height: 20,
+            borderRadius: 4,
+            border: 'none',
+            background: 'transparent',
+            color: theme.icon,
+            cursor: 'pointer',
+            padding: 0,
+            fontSize: 11,
+            flexShrink: 0,
+            transition: 'color 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = theme.text; }}
+          onMouseLeave={e => { e.currentTarget.style.color = theme.icon; }}
+        >
+          {isDark ? '☀' : '☾'}
+        </button>
         <kbd style={{
           fontSize: 10,
-          color: '#9eadc0',
-          background: 'rgba(255, 255, 255, 0.15)',
+          color: theme.kbdText,
+          background: theme.kbdBg,
           padding: '2px 6px',
           borderRadius: 4,
-          border: '1px solid rgba(255, 255, 255, 0.2)',
+          border: `1px solid ${theme.kbdBorder}`,
           fontFamily: "'Fira Code', monospace",
+          flexShrink: 0,
         }}>
           ⌘K
         </kbd>
@@ -234,24 +337,24 @@ export default function SearchBox() {
           left: 0,
           right: 0,
           marginTop: 8,
-          background: 'rgba(255, 255, 255, 0.95)',
+          background: theme.dropdownBg,
           backdropFilter: 'blur(20px)',
           borderRadius: 12,
-          border: '1px solid rgba(255, 255, 255, 0.5)',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+          border: `1px solid ${theme.dropdownBorder}`,
+          boxShadow: theme.dropdownShadow,
           padding: results.length === 0 ? 16 : 8,
           maxHeight: 320,
           overflow: 'auto',
           zIndex: 100,
         }}>
           {loading && (
-            <div style={{ textAlign: 'center', padding: 16, color: '#9eadc0', fontSize: 13 }}>
+            <div style={{ textAlign: 'center', padding: 16, color: theme.loadingText, fontSize: 13 }}>
               搜索中...
             </div>
           )}
 
           {!loading && results.length === 0 && (
-            <div style={{ textAlign: 'center', padding: 16, color: '#9eadc0', fontSize: 13 }}>
+            <div style={{ textAlign: 'center', padding: 16, color: theme.emptyText, fontSize: 13 }}>
               未找到匹配结果
             </div>
           )}
@@ -271,7 +374,7 @@ export default function SearchBox() {
                 marginBottom: 2,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)';
+                e.currentTarget.style.background = theme.resultHover;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent';
@@ -300,7 +403,7 @@ export default function SearchBox() {
                 <div style={{
                   fontSize: 13,
                   fontWeight: 500,
-                  color: '#1a1f36',
+                  color: theme.resultText,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -308,14 +411,14 @@ export default function SearchBox() {
                   {result.title}
                 </div>
                 {result.projectName && result.type !== 'project' && (
-                  <div style={{ fontSize: 11, color: '#9eadc0', marginTop: 2 }}>
+                  <div style={{ fontSize: 11, color: theme.resultMeta, marginTop: 2 }}>
                     {result.projectName}
                   </div>
                 )}
               </div>
               <div style={{
                 fontSize: 11,
-                color: '#9eadc0',
+                color: theme.resultMeta,
                 flexShrink: 0,
               }}>
                 {result.type === 'project' && '项目'}

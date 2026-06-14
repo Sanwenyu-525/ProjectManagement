@@ -513,6 +513,28 @@ pub fn git_tag_delete(repo_path: String, name: String) -> Result<String, String>
     Ok(format!("标签 '{}' 已删除", name))
 }
 
+// ── Restore (discard changes) ──────────────────────────────────────────────
+
+#[command]
+pub fn git_restore(repo_path: String, files: Vec<String>) -> Result<String, String> {
+    if files.is_empty() {
+        return Ok("无文件需要恢复".into());
+    }
+    let mut args = vec!["restore"];
+    for f in &files {
+        args.push(f);
+    }
+    run_git_checked(&repo_path, &args)?;
+    Ok("已丢弃更改".into())
+}
+
+// ── Show file at HEAD ──────────────────────────────────────────────────────
+
+#[command]
+pub fn git_show_file(repo_path: String, file: String) -> Result<String, String> {
+    run_git(&repo_path, &["show", &format!("HEAD:{}", file)])
+}
+
 // ── Reset (unstage) ────────────────────────────────────────────────────────
 
 #[command]

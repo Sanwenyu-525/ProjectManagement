@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Dropdown } from 'antd';
-import { PlusOutlined, CaretDownOutlined, CaretRightOutlined, CodeOutlined, RobotOutlined, ThunderboltOutlined, GlobalOutlined, LinkOutlined, CloseOutlined, CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined, ClearOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { PlusOutlined, CaretDownOutlined, CaretRightOutlined, CodeOutlined, RobotOutlined, ThunderboltOutlined, GlobalOutlined, LinkOutlined, CloseOutlined, CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined, ClearOutlined, FolderOpenOutlined, PushpinOutlined, PushpinFilled } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import type { TestReport } from '../../stores/workspaceStore';
@@ -22,6 +22,7 @@ function Section({
   onAdd,
   addButton,
   children,
+  separator = true,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -30,17 +31,18 @@ function Section({
   onAdd?: () => void;
   addButton?: React.ReactNode;
   children: React.ReactNode;
+  separator?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [hovered, setHovered] = useState(false);
 
   return (
-    <div style={{ marginBottom: 4 }}>
+    <div style={{ marginBottom: 4, borderBottom: separator ? '1px solid var(--ws-border-subtle)' : 'none' }}>
       <div
         onClick={() => setOpen(!open)}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        style={styles.sectionHeader}
+        style={{ ...styles.sectionHeader, background: hovered ? 'var(--ws-hover)' : 'transparent' }}
       >
         <div style={styles.sectionLeft}>
           {open ? <CaretDownOutlined style={styles.caret} /> : <CaretRightOutlined style={styles.caret} />}
@@ -84,19 +86,40 @@ type DragProps = {
   isDragging: boolean;
 };
 
-function NavItem({ label, isActive, icon, onClick, onClose, dragProps }: {
+function NavItem({ label, isActive, icon, onClick, onClose, onRename, dragProps, namePinned, onTogglePin }: {
   label: string;
   isActive: boolean;
   icon: React.ReactNode;
   onClick: () => void;
   onClose?: () => void;
+  onRename?: (newLabel: string) => void;
   dragProps?: DragProps;
+  namePinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startEdit = (e: React.MouseEvent) => {
+    if (!onRename) return;
+    e.stopPropagation();
+    setEditing(true);
+    setEditValue(label);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
+  const commitEdit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== label) onRename?.(trimmed);
+    setEditing(false);
+  };
 
   return (
     <div
-      onClick={onClick}
+      onClick={editing ? undefined : onClick}
+      onDoubleClick={startEdit}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       draggable={!!dragProps}
@@ -107,12 +130,50 @@ function NavItem({ label, isActive, icon, onClick, onClose, dragProps }: {
       style={{
         ...styles.item,
         ...(isActive ? styles.itemActive : {}),
+        ...(!isActive && hovered ? { background: 'var(--ws-hover)' } : {}),
         ...(dragProps?.isDragOver ? { background: 'rgba(99, 102, 241, 0.15)', outline: '1px dashed rgba(99, 102, 241, 0.4)' } : {}),
         ...(dragProps?.isDragging ? { opacity: 0.4 } : {}),
       }}
     >
       {icon}
-      <span style={styles.itemLabel}>{label}</span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          autoFocus
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') commitEdit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          onClick={e => e.stopPropagation()}
+          style={{
+            background: 'transparent',
+            border: '1px solid #6366f1',
+            color: 'var(--ws-text)',
+            padding: '0 4px',
+            fontSize: 12,
+            flex: 1,
+            minWidth: 0,
+            outline: 'none',
+            borderRadius: 3,
+          }}
+        />
+      ) : (
+        <span style={styles.itemLabel}>{label}</span>
+      )}
+      {onTogglePin && (namePinned || hovered) && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+          style={styles.pinBtn}
+          title={namePinned ? '取消固定名称' : '固定名称'}
+        >
+          {namePinned
+            ? <PushpinFilled style={{ fontSize: 8, color: '#6366f1' }} />
+            : <PushpinOutlined style={{ fontSize: 8 }} />}
+        </button>
+      )}
       {hovered && onClose && (
         <button
           onClick={(e) => { e.stopPropagation(); onClose(); }}
@@ -254,6 +315,11 @@ export default function WorkspaceNavigator() {
     [tabs],
   );
 
+  const fileSessions = useMemo(
+    () => Object.values(tabs).filter(t => t.contentType === 'file'),
+    [tabs],
+  );
+
   // Detect installed agent CLIs
   const [installedAgents, setInstalledAgents] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -289,6 +355,8 @@ export default function WorkspaceNavigator() {
         label: terminal.label,
         contentType: 'terminal',
         status: 'running',
+        shell: terminal.shell,
+        cwd: terminal.cwd,
       });
     }
   };
@@ -296,19 +364,23 @@ export default function WorkspaceNavigator() {
   const handleCreateTerminalWithCwd = async () => {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({ directory: true, title: '选择终端工作目录' });
+      const selected = await open({ directory: true, multiple: true, title: '选择终端工作目录' });
       if (!selected) return;
-      const result = await createTerminal({ cwd: selected as string });
-      if (!result) return;
-      const { terminal } = result;
+      const paths = Array.isArray(selected) ? selected : [selected];
       const wsState = useWorkspaceStore.getState();
       const leaves = getAllLeaves(wsState.root);
-      if (leaves[0]) {
-        wsState.addTab(leaves[0].id, {
-          id: terminal.id,
-          label: terminal.label,
+      const targetLeaf = leaves[0];
+      if (!targetLeaf) return;
+      for (const cwd of paths) {
+        const result = await createTerminal({ cwd });
+        if (!result) continue;
+        wsState.addTab(targetLeaf.id, {
+          id: result.terminal.id,
+          label: result.terminal.label,
           contentType: 'terminal',
           status: 'running',
+          shell: result.terminal.shell,
+          cwd: result.terminal.cwd,
         });
       }
     } catch {
@@ -328,6 +400,11 @@ export default function WorkspaceNavigator() {
     terminalApi.stop(terminalId).catch(() => {});
     useTerminalStore.getState().removeTerminal(terminalId);
     useWorkspaceStore.getState().closeTab(terminalId);
+  };
+
+  const handleRenameTerminal = (terminalId: string, newLabel: string) => {
+    useTerminalStore.getState().updateTerminal(terminalId, { label: newLabel });
+    useWorkspaceStore.getState().updateTabLabel(terminalId, newLabel);
   };
 
   const handleCloseAgent = (agentId: string) => {
@@ -437,6 +514,40 @@ export default function WorkspaceNavigator() {
     }
   };
 
+  const handleCreateFilePane = async () => {
+    let rootPath: string | null = null;
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      rootPath = await open({ directory: true, title: '选择项目文件夹' });
+    } catch {}
+    if (!rootPath) return;
+
+    const id = `file-${Date.now()}`;
+    const wsState = useWorkspaceStore.getState();
+    const leaves = getAllLeaves(wsState.root);
+    if (leaves[0]) {
+      const name = (rootPath as string).split(/[/\\]/).pop() || rootPath;
+      wsState.addTab(leaves[0].id, {
+        id,
+        label: name,
+        contentType: 'file',
+        rootPath: rootPath as string,
+      });
+    }
+  };
+
+  const handleSelectFile = (fileId: string) => {
+    const wsState = useWorkspaceStore.getState();
+    const leaf = findLeafWithTab(wsState.root, fileId);
+    if (leaf) {
+      wsState.setActiveTab(leaf.id, fileId);
+    }
+  };
+
+  const handleCloseFile = (fileId: string) => {
+    useWorkspaceStore.getState().closeTab(fileId);
+  };
+
   return (
     <div style={styles.container}>
       {/* Terminal section */}
@@ -468,6 +579,7 @@ export default function WorkspaceNavigator() {
         ) : (
           terminals.map(t => {
             const statusColor = t.status === 'running' ? '#22c55e' : t.status === 'exited' ? '#6b7280' : '#ef4444';
+            const tab = tabs[t.id];
             return (
               <NavItem
                 key={t.id}
@@ -476,6 +588,12 @@ export default function WorkspaceNavigator() {
                 icon={<span style={{ ...styles.statusDot, background: statusColor, boxShadow: t.status === 'running' ? '0 0 4px rgba(34, 197, 94, 0.4)' : 'none' }} />}
                 onClick={() => handleSelectTerminal(t.id)}
                 onClose={() => handleCloseTerminal(t.id)}
+                onRename={(newLabel) => handleRenameTerminal(t.id, newLabel)}
+                namePinned={tab?.namePinned}
+                onTogglePin={() => {
+                  const current = useWorkspaceStore.getState().tabs[t.id];
+                  if (current) useWorkspaceStore.getState().setTabNamePinned(t.id, !current.namePinned);
+                }}
                 dragProps={{
                   onDragStart: (e) => handleDragStart(e, t.id),
                   onDragOver: (e) => handleItemDragOver(e, t.id),
@@ -503,7 +621,7 @@ export default function WorkspaceNavigator() {
                 if (available.length === 0) {
                   return [{
                     key: 'none',
-                    label: <span style={{ color: '#94a3b8', fontSize: 12 }}>未检测到已安装的 Agent</span>,
+                    label: <span style={{ color: 'var(--ws-text-tertiary)', fontSize: 12 }}>未检测到已安装的 Agent</span>,
                     disabled: true,
                   }];
                 }
@@ -518,7 +636,7 @@ export default function WorkspaceNavigator() {
                       }}>
                         <RobotOutlined />
                       </span>
-                      <span style={{ fontWeight: 500, color: '#1a1f36' }}>{rt.name}</span>
+                      <span style={{ fontWeight: 500, color: 'var(--ws-text)' }}>{rt.name}</span>
                     </div>
                   ),
                   onClick: () => handleCreateAgent(rt.id),
@@ -644,11 +762,46 @@ export default function WorkspaceNavigator() {
         )}
       </Section>
 
+      {/* File section */}
+      <Section
+        title="文件"
+        icon={<FolderOpenOutlined style={styles.sectionIcon} />}
+        count={fileSessions.length}
+        onAdd={handleCreateFilePane}
+      >
+        {fileSessions.length === 0 ? (
+          <div style={styles.emptyHint}>无打开的文件面板</div>
+        ) : (
+          fileSessions.map(file => {
+            const f = file as { id: string; label: string; rootPath?: string };
+            return (
+              <NavItem
+                key={f.id}
+                label={f.label}
+                isActive={f.id === activeTabId}
+                icon={<FolderOpenOutlined style={{ fontSize: 11, color: '#fbbf24', flexShrink: 0 }} />}
+                onClick={() => handleSelectFile(f.id)}
+                onClose={() => handleCloseFile(f.id)}
+                dragProps={{
+                  onDragStart: (e) => handleDragStart(e, f.id),
+                  onDragOver: (e) => handleItemDragOver(e, f.id),
+                  onDrop: (e) => handleItemDrop(e, f.id),
+                  onDragEnd: handleDragEnd,
+                  isDragOver: dragOverId === f.id,
+                  isDragging: draggedId === f.id,
+                }}
+              />
+            );
+          })
+        )}
+      </Section>
+
       {/* Build section (placeholder) */}
       <Section
         title="构建"
         icon={<ThunderboltOutlined style={styles.sectionIcon} />}
         defaultOpen={false}
+        separator={false}
       >
         <div style={styles.emptyHint}>即将推出</div>
       </Section>
@@ -660,116 +813,124 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     width: '100%',
     height: '100%',
-    background: 'rgba(255, 255, 255, 0.02)',
-    borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+    background: 'var(--ws-navigator-bg)',
+    backdropFilter: 'var(--ws-glass-blur)',
+    WebkitBackdropFilter: 'var(--ws-glass-blur)',
+    borderRight: '1px solid var(--ws-border)',
     overflow: 'auto',
-    padding: '8px 0',
+    padding: '6px 0',
   },
   sectionHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '6px 12px',
+    padding: '7px 14px 7px 10px',
     cursor: 'pointer',
     userSelect: 'none',
+    borderRadius: 0,
+    transition: 'background 0.15s',
   },
   sectionLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
   },
   caret: {
-    fontSize: 8,
-    color: '#64748b',
+    fontSize: 9,
+    color: 'var(--ws-text-secondary)',
     width: 10,
   },
   sectionIcon: {
-    fontSize: 11,
-    color: '#64748b',
+    fontSize: 12,
+    color: 'var(--ws-text-secondary)',
   },
   sectionTitle: {
     fontSize: 11,
     fontWeight: 600,
-    color: '#94a3b8',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
+    color: 'var(--ws-text-secondary)',
+    letterSpacing: '0.4px',
     fontFamily: "'Fira Sans', sans-serif",
   },
   countBadge: {
-    fontSize: 9,
-    color: '#64748b',
-    background: 'rgba(255, 255, 255, 0.06)',
-    padding: '0 5px',
-    borderRadius: 3,
-    lineHeight: '14px',
+    fontSize: 10,
+    color: 'var(--ws-text-secondary)',
+    background: 'var(--ws-badge-bg)',
+    padding: '0 6px',
+    borderRadius: 4,
+    lineHeight: '16px',
     fontFamily: "'Fira Code', monospace",
   },
   addBtn: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 18,
-    height: 18,
-    borderRadius: 3,
+    width: 20,
+    height: 20,
+    borderRadius: 4,
     border: 'none',
     background: 'transparent',
-    color: '#64748b',
+    color: 'var(--ws-text-secondary)',
     cursor: 'pointer',
     padding: 0,
-    transition: 'opacity 0.15s',
+    transition: 'all 0.15s',
   },
   sectionBody: {
-    padding: '2px 0',
+    padding: '2px 0 4px',
   },
   item: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    padding: '5px 12px 5px 28px',
+    gap: 9,
+    padding: '6px 14px 6px 24px',
     cursor: 'pointer',
     borderRadius: 0,
-    transition: 'background 0.1s',
+    transition: 'background 0.12s',
+    borderLeft: '2px solid transparent',
   },
   itemActive: {
-    background: 'rgba(255, 255, 255, 0.08)',
+    background: 'var(--ws-active-bg)',
+    borderLeft: '2px solid var(--ws-active-border)',
   },
   statusDot: {
-    width: 6,
-    height: 6,
+    width: 7,
+    height: 7,
     borderRadius: '50%',
     flexShrink: 0,
   },
   itemLabel: {
     fontSize: 12,
-    color: '#cbd5e1',
+    color: 'var(--ws-text)',
     fontFamily: "'Fira Code', monospace",
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    lineHeight: '18px',
   },
   emptyHint: {
     fontSize: 11,
-    color: '#64748b',
-    padding: '4px 12px 4px 28px',
+    color: 'var(--ws-text-tertiary)',
+    padding: '4px 14px 4px 24px',
     fontStyle: 'italic',
   },
   openBadge: {
     fontSize: 9,
     color: '#22c55e',
-    background: 'rgba(34, 197, 94, 0.1)',
-    padding: '0 4px',
-    borderRadius: 3,
-    lineHeight: '14px',
+    background: 'rgba(34, 197, 94, 0.12)',
+    padding: '0 5px',
+    borderRadius: 4,
+    lineHeight: '15px',
     flexShrink: 0,
+    fontWeight: 500,
   },
   errorBadge: {
     fontSize: 9,
-    color: '#ef4444',
+    color: '#f87171',
     background: 'rgba(239, 68, 68, 0.15)',
-    padding: '0 4px',
-    borderRadius: 3,
-    lineHeight: '14px',
+    padding: '0 5px',
+    borderRadius: 4,
+    lineHeight: '15px',
     flexShrink: 0,
+    fontWeight: 500,
   },
   closeBtn: {
     display: 'flex',
@@ -777,39 +938,55 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     width: 16,
     height: 16,
-    borderRadius: 3,
+    borderRadius: 4,
     border: 'none',
     background: 'transparent',
-    color: '#64748b',
+    color: 'var(--ws-text-secondary)',
     cursor: 'pointer',
     padding: 0,
     marginLeft: 'auto',
     flexShrink: 0,
+    transition: 'color 0.12s',
+  },
+  pinBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--ws-text-secondary)',
+    cursor: 'pointer',
+    padding: 0,
+    flexShrink: 0,
+    transition: 'color 0.12s',
   },
   reportCount: {
-    fontSize: 9,
-    color: '#64748b',
+    fontSize: 10,
+    color: 'var(--ws-text-secondary)',
     fontFamily: "'Fira Code', monospace",
     flexShrink: 0,
   },
   reportTime: {
-    fontSize: 9,
-    color: '#64748b',
+    fontSize: 10,
+    color: 'var(--ws-text-tertiary)',
     fontFamily: "'Fira Code', monospace",
     flexShrink: 0,
   },
   reportDetail: {
-    padding: '4px 12px 4px 28px',
-    background: 'rgba(255, 255, 255, 0.02)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+    padding: '6px 14px 6px 24px',
+    background: 'var(--ws-hover)',
+    borderBottom: '1px solid var(--ws-border-subtle)',
   },
   reportStep: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     padding: '2px 0',
     fontSize: 10,
-    color: '#94a3b8',
+    color: 'var(--ws-text-secondary)',
     fontFamily: "'Fira Code', monospace",
   },
   stepLabel: {
@@ -819,26 +996,26 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap',
   },
   stepTime: {
-    color: '#64748b',
+    color: 'var(--ws-text-tertiary)',
     flexShrink: 0,
   },
   reportErrors: {
-    marginTop: 4,
-    padding: '4px 6px',
-    borderRadius: 3,
-    background: 'rgba(239, 68, 68, 0.06)',
-    border: '1px solid rgba(239, 68, 68, 0.12)',
+    marginTop: 5,
+    padding: '5px 7px',
+    borderRadius: 4,
+    background: 'rgba(239, 68, 68, 0.07)',
+    border: '1px solid rgba(239, 68, 68, 0.14)',
   },
   errorLine: {
-    fontSize: 9,
+    fontSize: 10,
     color: '#f87171',
     fontFamily: "'Fira Code', monospace",
-    lineHeight: '14px',
+    lineHeight: '15px',
   },
   reportSummary: {
-    marginTop: 4,
-    fontSize: 9,
-    color: '#64748b',
+    marginTop: 5,
+    fontSize: 10,
+    color: 'var(--ws-text-tertiary)',
     fontFamily: "'Fira Code', monospace",
   },
 };

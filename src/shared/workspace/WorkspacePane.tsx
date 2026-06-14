@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useRef, useState, Fragment } from 'react';
-import type { PaneNode, PaneLeaf } from './types';
+import type { PaneNode, PaneLeaf, PaneTab } from './types';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { terminalApi } from '../../api';
-import { findLeaf, findLeafWithTab } from './treeUtils';
+import { findLeaf, findLeafWithTab, getAllLeaves } from './treeUtils';
 import { createTerminal } from './terminalFactory';
 import PaneDivider from './PaneDivider';
 import PaneTabBar from './PaneTabBar';
@@ -11,6 +11,7 @@ import TerminalLeafContent from './TerminalLeafContent';
 import AgentPane from './AgentPane';
 import BrowserPane from './BrowserPane';
 import PluginPane from './PluginPane';
+import FilePane from './FilePane';
 import { createAgent } from './agentFactory';
 
 // ── Content renderer ──
@@ -20,9 +21,14 @@ function PaneContent({ leafId }: { leafId: string }) {
   const tabs = useWorkspaceStore(s => s.tabs);
   const closeTab = useWorkspaceStore(s => s.closeTab);
   const setActiveTab = useWorkspaceStore(s => s.setActiveTab);
+  const splitPane = useWorkspaceStore(s => s.splitPane);
+  const updateTabLabel = useWorkspaceStore(s => s.updateTabLabel);
+  const setTabNamePinned = useWorkspaceStore(s => s.setTabNamePinned);
+  const sortLeafTabs = useWorkspaceStore(s => s.sortLeafTabs);
   const focusedLeafId = useWorkspaceStore(s => s.focusedLeafId);
   const setFocusedLeaf = useWorkspaceStore(s => s.setFocusedLeaf);
   const isFocused = focusedLeafId === leafId;
+  const hasSiblings = useMemo(() => getAllLeaves(root).length > 1, [root]);
 
   const leaf = useMemo(() => findLeaf(root, leafId), [root, leafId]);
   const activeTabId = leaf?.activeTabId ?? null;
@@ -37,6 +43,7 @@ function PaneContent({ leafId }: { leafId: string }) {
   const isAgent = activeTab?.contentType === 'agent';
   const isBrowser = activeTab?.contentType === 'browser';
   const isPlugin = activeTab?.contentType === 'plugin';
+  const isFile = activeTab?.contentType === 'file';
 
   const handleAddTab = useCallback(() => {
     // Create the same type as the currently active tab
@@ -77,8 +84,9 @@ function PaneContent({ leafId }: { leafId: string }) {
         contentType: 'browser',
       });
     } else {
-      // Create terminal
-      createTerminal().then(result => {
+      // Create terminal — use active terminal's cwd if available, otherwise default
+      const cwd = currentTab?.contentType === 'terminal' ? currentTab.cwd : undefined;
+      createTerminal({ cwd }).then(result => {
         if (!result) return;
         const { terminal } = result;
         wsState.addTab(leafId, {
@@ -104,6 +112,52 @@ function PaneContent({ leafId }: { leafId: string }) {
 
     closeTab(tabId);
   }, [closeTab]);
+
+  const handleClosePane = useCallback(() => {
+    const wsState = useWorkspaceStore.getState();
+    const allLeaves = getAllLeaves(wsState.root);
+    if (allLeaves.length <= 1) return;
+    // Find a sibling leaf (not this one) to receive tabs
+    const target = allLeaves.find(l => l.id !== leafId);
+    if (!target) return;
+    // Move all tabs to sibling, then remove empty pane
+    const leaf = allLeaves.find(l => l.id === leafId);
+    if (!leaf) return;
+    for (const tabId of leaf.tabIds) {
+      const tab = wsState.tabs[tabId];
+      if (tab) wsState.addTab(target.id, tab);
+    }
+    wsState.closePane(leafId);
+  }, [leafId]);
+
+  const handleSort = useCallback((mode: 'name-asc' | 'name-desc' | 'type' | 'status') => {
+    const contentTypeOrder: Record<string, number> = { terminal: 0, agent: 1, browser: 2, plugin: 3, file: 4, build: 5, log: 6 };
+    const statusOrder: Record<string, number> = { running: 0, error: 1, exited: 2 };
+
+    sortLeafTabs(leafId, (a: PaneTab, b: PaneTab) => {
+      switch (mode) {
+        case 'name-asc': return a.label.localeCompare(b.label);
+        case 'name-desc': return b.label.localeCompare(a.label);
+        case 'type': return (contentTypeOrder[a.contentType] ?? 9) - (contentTypeOrder[b.contentType] ?? 9);
+        case 'status': return (statusOrder[a.status ?? ''] ?? 3) - (statusOrder[b.status ?? ''] ?? 3);
+        default: return 0;
+      }
+    });
+  }, [leafId, sortLeafTabs]);
+
+  const handleRename = useCallback((tabId: string, newLabel: string) => {
+    updateTabLabel(tabId, newLabel);
+    const tab = useWorkspaceStore.getState().tabs[tabId];
+    if (tab?.contentType === 'terminal') {
+      useTerminalStore.getState().updateTerminal(tabId, { label: newLabel });
+    }
+  }, [updateTabLabel]);
+
+  const handleTogglePin = useCallback((tabId: string) => {
+    const tab = useWorkspaceStore.getState().tabs[tabId];
+    if (!tab) return;
+    setTabNamePinned(tabId, !tab.namePinned);
+  }, [setTabNamePinned]);
 
   const [isDragOver, setIsDragOver] = useState(false);
   const isDragOverRef = useRef(false);
@@ -150,8 +204,8 @@ function PaneContent({ leafId }: { leafId: string }) {
         flexDirection: 'column',
         width: '100%',
         height: '100%',
-        boxShadow: isFocused ? '0 0 0 2px #6366f1 inset' : 'none',
-        transition: 'box-shadow 0.15s ease',
+        boxShadow: isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.5) inset' : 'none',
+        transition: 'box-shadow 0.2s ease',
         outline: isDragOver ? '2px dashed rgba(99, 102, 241, 0.5)' : 'none',
       }}
     >
@@ -161,6 +215,15 @@ function PaneContent({ leafId }: { leafId: string }) {
         onSelect={(tabId) => setActiveTab(leafId, tabId)}
         onClose={handleClose}
         onAdd={handleAddTab}
+        onSplit={activeTabId ? (dir) => {
+          const isHorizontal = dir === 'left' || dir === 'right';
+          const newFirst = dir === 'left' || dir === 'up';
+          splitPane(leafId, activeTabId, isHorizontal ? 'horizontal' : 'vertical', 0.5, newFirst);
+        } : undefined}
+        onClosePane={hasSiblings ? handleClosePane : undefined}
+        onSort={handleSort}
+        onRename={handleRename}
+        onTogglePin={handleTogglePin}
       />
       <div style={contentStyles.content}>
         {isTerminal ? (
@@ -175,6 +238,8 @@ function PaneContent({ leafId }: { leafId: string }) {
           <BrowserPane tabId={activeTabId} />
         ) : isPlugin && activeTab?.contentType === 'plugin' ? (
           <PluginPane tab={activeTab} />
+        ) : isFile && activeTab?.contentType === 'file' ? (
+          <FilePane tab={activeTab} />
         ) : activeTabId ? (
           <div style={contentStyles.placeholder}>
             <span style={contentStyles.placeholderIcon}>⌘</span>
@@ -196,7 +261,7 @@ const contentStyles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflow: 'hidden',
     display: 'flex',
-    background: '#1a1b26',
+    background: 'var(--ws-content-bg)',
   },
   placeholder: {
     display: 'flex',
@@ -206,7 +271,7 @@ const contentStyles: Record<string, React.CSSProperties> = {
     width: '100%',
     height: '100%',
     gap: 8,
-    color: '#94a3b8',
+    color: 'var(--ws-text-secondary)',
   },
   placeholderIcon: {
     fontSize: 24,
@@ -216,11 +281,11 @@ const contentStyles: Record<string, React.CSSProperties> = {
   placeholderText: {
     fontSize: 13,
     fontFamily: "'Fira Code', monospace",
-    color: '#64748b',
+    color: 'var(--ws-text-secondary)',
   },
   placeholderHint: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: 'var(--ws-text-secondary)',
   },
   empty: {
     display: 'flex',
@@ -231,7 +296,7 @@ const contentStyles: Record<string, React.CSSProperties> = {
   },
   emptyHint: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: 'var(--ws-text-secondary)',
   },
 };
 

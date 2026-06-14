@@ -4,13 +4,13 @@ const themes: Record<TerminalTheme, TerminalThemeConfig> = {
   dark: {
     name: '暗黑经典',
     colors: {
-      background: '#0d1117',
+      background: '#161821',
       foreground: '#c9d1d9',
-      cursor: '#58a6ff',
-      cursorAccent: '#0d1117',
+      cursor: '#7c8db0',
+      cursorAccent: '#161821',
       selectionBackground: '#264f78',
       selectionForeground: '#c9d1d9',
-      black: '#0d1117',
+      black: '#13141c',
       red: '#ff7b72',
       green: '#3fb950',
       yellow: '#d29922',

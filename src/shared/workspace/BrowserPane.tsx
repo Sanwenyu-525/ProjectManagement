@@ -375,7 +375,7 @@ const styles: Record<string, React.CSSProperties> = {
   mainArea: {
     flex: 1,
     overflow: 'hidden',
-    background: '#1a1b26',
+    background: 'var(--ws-content-bg)',
     minHeight: 0,
   },
   adapterContainer: {
@@ -397,7 +397,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyText: {
     fontSize: 12,
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
   },
   devtoolsArea: {
     height: 200,
@@ -438,13 +438,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   inspectSize: {
     fontSize: 10,
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
     fontFamily: "'Fira Code', monospace",
     flexShrink: 0,
   },
   inspectText: {
     fontSize: 10,
-    color: '#94a3b8',
+    color: 'var(--ws-text-secondary)',
     fontFamily: "'Fira Code', monospace",
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -478,7 +478,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 3,
     border: 'none',
     background: 'transparent',
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
     cursor: 'pointer',
     padding: 0,
   },

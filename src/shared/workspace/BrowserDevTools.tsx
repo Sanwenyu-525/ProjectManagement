@@ -36,7 +36,7 @@ function ConsoleLogRow({ entry, onSendError }: { entry: ConsoleLogEntry; onSendE
       <span style={styles.logIcon}>
         {entry.method === 'error' ? <CloseCircleOutlined style={{ color: '#ef4444', fontSize: 11 }} />
           : entry.method === 'warn' ? <WarningOutlined style={{ color: '#eab308', fontSize: 11 }} />
-          : <InfoCircleOutlined style={{ color: '#64748b', fontSize: 11 }} />}
+          : <InfoCircleOutlined style={{ color: 'var(--ws-text-muted)', fontSize: 11 }} />}
       </span>
       <span style={styles.logText}>{errorText}</span>
       {hovered && onSendError && (
@@ -170,8 +170,8 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-    background: '#1a1b26',
+    borderTop: '1px solid var(--ws-border)',
+    background: 'var(--ws-content-bg)',
     flexShrink: 0,
   },
   tabBar: {
@@ -179,7 +179,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     height: 28,
     background: 'rgba(255, 255, 255, 0.03)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+    borderBottom: '1px solid var(--ws-border-subtle)',
     padding: '0 8px',
     gap: 2,
   },
@@ -191,15 +191,15 @@ const styles: Record<string, React.CSSProperties> = {
     height: 22,
     border: 'none',
     background: 'transparent',
-    color: '#94a3b8',
+    color: 'var(--ws-text-secondary)',
     fontSize: 11,
     fontFamily: "'Fira Code', monospace",
     cursor: 'pointer',
     borderRadius: 3,
   },
   tabActive: {
-    background: 'rgba(255, 255, 255, 0.08)',
-    color: '#e2e8f0',
+    background: 'var(--ws-border)',
+    color: 'var(--ws-text)',
   },
   tabRight: {
     marginLeft: 'auto',
@@ -215,7 +215,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 3,
     border: 'none',
     background: 'transparent',
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
     cursor: 'pointer',
     padding: 0,
   },
@@ -237,8 +237,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   countBadge: {
     fontSize: 9,
-    color: '#64748b',
-    background: 'rgba(255, 255, 255, 0.06)',
+    color: 'var(--ws-text-muted)',
+    background: 'var(--ws-border-subtle)',
     padding: '0 4px',
     borderRadius: 3,
     lineHeight: '14px',
@@ -258,7 +258,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     height: '100%',
     fontSize: 11,
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
     fontStyle: 'italic',
   },
   logRow: {
@@ -276,7 +276,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   logText: {
     flex: 1,
-    color: '#cbd5e1',
+    color: 'var(--ws-text)',
     wordBreak: 'break-all',
   },
   fixBtn: {
@@ -309,7 +309,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   netUrl: {
     flex: 1,
-    color: '#cbd5e1',
+    color: 'var(--ws-text)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -322,21 +322,21 @@ const styles: Record<string, React.CSSProperties> = {
   netDuration: {
     width: 44,
     textAlign: 'right',
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
     flexShrink: 0,
   },
   netExpanded: {
     padding: '4px 8px 4px 48px',
     fontSize: 11,
     fontFamily: "'Fira Code', monospace",
-    color: '#94a3b8',
+    color: 'var(--ws-text-secondary)',
     background: 'rgba(255, 255, 255, 0.02)',
   },
   netDetail: {
     padding: '1px 0',
   },
   netDetailLabel: {
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
     marginRight: 6,
   },
 };

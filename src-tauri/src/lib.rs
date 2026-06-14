@@ -117,6 +117,16 @@ pub fn run() {
             commands::terminal::terminal_start_agent,
             commands::terminal::terminal_setup_agent_launcher,
             commands::terminal::terminal_resize,
+            // File operations
+            commands::files::files_list_directory,
+            commands::files::files_read,
+            commands::files::files_write,
+            commands::files::files_write_base64,
+            commands::files::files_get_tree,
+            commands::files::files_open_in_ide,
+            commands::files::files_create,
+            commands::files::files_rename,
+            commands::files::files_delete,
             // Git operations
             commands::git::git_status,
             commands::git::git_log,
@@ -133,6 +143,8 @@ pub fn run() {
             commands::git::git_tag_create,
             commands::git::git_tag_delete,
             commands::git::git_reset_head,
+            commands::git::git_restore,
+            commands::git::git_show_file,
             // Dependency detection
             commands::dependencies::detect_project_dependencies,
             commands::dependencies::get_launch_order,

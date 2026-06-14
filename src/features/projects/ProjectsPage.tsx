@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Table, InputNumber, Tooltip, Checkbox } from 'antd';
 import { PlusOutlined, SearchOutlined, FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, RocketOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
-import { projectsApi, detectApi, terminalApi, healthApi, workspacesApi } from '../../api';
+import { projectsApi, detectApi, healthApi, workspacesApi } from '../../api';
 import type { CreateProjectInput, ProjectWithStats, ProjectStatus, ProjectPriority, Workspace, DetectedProject, ScanGroup, ProjectHealthResult } from '../../types';
 import ProjectIcon from '../../shared/ProjectIcon';
 import QuickLaunchModal from '../../shared/QuickLaunchModal';
@@ -280,9 +280,16 @@ export default function ProjectsPage() {
 
     try {
       for (const req of requests) {
-        await terminalApi.start(project.id, req.command || '', req.cwd || project.localPath || '');
+        useTerminalStore.getState().requestLaunch({
+          cwd: req.cwd || project.localPath || '',
+          command: req.command || undefined,
+          label: req.label,
+          projectId: project.id,
+        });
       }
       message.success(`${project.name} 已启动`);
+      // Navigate to workspace to show the launching terminals
+      navigate('/');
       // Record launch
       launchHistoryStorage.add({
         projects: [{ projectId: project.id, projectName: project.name, status: 'success' }],

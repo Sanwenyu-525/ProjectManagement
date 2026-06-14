@@ -117,7 +117,23 @@ export default function AgentPane({ agentId, runtimeId }: Props) {
   }
 
   return (
-    <div style={styles.container}>
+    <div
+      style={styles.container}
+      onDragOver={e => {
+        if (e.dataTransfer.types.includes('text/plain')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+        }
+      }}
+      onDrop={e => {
+        e.preventDefault();
+        const filePath = e.dataTransfer.getData('text/plain');
+        if (filePath) {
+          const quoted = filePath.includes(' ') ? `"${filePath}"` : filePath;
+          terminalApi.input(agentId, quoted).catch(() => {});
+        }
+      }}
+    >
       {/* Agent status bar */}
       <div style={styles.statusBar}>
         <div style={styles.statusLeft}>
@@ -158,7 +174,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     width: '100%',
     height: '100%',
-    background: '#1a1b26',
+    background: 'var(--ws-content-bg)',
   },
   statusBar: {
     display: 'flex',
@@ -167,7 +183,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 28,
     padding: '0 10px',
     background: 'rgba(255, 255, 255, 0.03)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+    borderBottom: '1px solid var(--ws-border-subtle)',
     flexShrink: 0,
   },
   statusLeft: {
@@ -183,7 +199,7 @@ const styles: Record<string, React.CSSProperties> = {
   agentName: {
     fontSize: 11,
     fontWeight: 600,
-    color: '#e2e8f0',
+    color: 'var(--ws-text)',
     fontFamily: "'Fira Sans', sans-serif",
   },
   statusDot: {
@@ -193,7 +209,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   statusText: {
     fontSize: 10,
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
     fontFamily: "'Fira Code', monospace",
   },
   actionBtn: {
@@ -205,7 +221,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     border: 'none',
     background: 'transparent',
-    color: '#64748b',
+    color: 'var(--ws-text-muted)',
     cursor: 'pointer',
     padding: 0,
   },
@@ -215,7 +231,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     width: '100%',
     height: '100%',
-    background: '#1a1b26',
+    background: 'var(--ws-content-bg)',
     fontSize: 13,
   },
 };
