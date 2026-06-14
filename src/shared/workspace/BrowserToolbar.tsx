@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { LeftOutlined, RightOutlined, ReloadOutlined, ExportOutlined, CodeOutlined, ApiOutlined } from '@ant-design/icons';
+import { LeftOutlined, RightOutlined, ReloadOutlined, ExportOutlined, CodeOutlined, ApiOutlined, CameraOutlined, SearchOutlined } from '@ant-design/icons';
 import { open } from '@tauri-apps/plugin-shell';
 
 interface Props {
@@ -10,6 +10,9 @@ interface Props {
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
+  onScreenshot?: () => void;
+  inspectMode?: boolean;
+  onToggleInspect?: () => void;
   errorCount?: number;
   networkCount?: number;
   activePanel: 'none' | 'console' | 'network';
@@ -18,7 +21,8 @@ interface Props {
 
 export default function BrowserToolbar({
   url, canGoBack, canGoForward,
-  onNavigate, onBack, onForward, onReload,
+  onNavigate, onBack, onForward, onReload, onScreenshot,
+  inspectMode = false, onToggleInspect,
   errorCount = 0, networkCount = 0,
   activePanel, onTogglePanel,
 }: Props) {
@@ -53,9 +57,25 @@ export default function BrowserToolbar({
         <ReloadOutlined style={styles.navIcon} />
       </button>
       {url && (
-        <button onClick={() => open(url)} style={styles.navBtn} title="在外部浏览器中打开">
-          <ExportOutlined style={styles.navIcon} />
-        </button>
+        <>
+          <button onClick={() => open(url)} style={styles.navBtn} title="在外部浏览器中打开">
+            <ExportOutlined style={styles.navIcon} />
+          </button>
+          {onScreenshot && (
+            <button onClick={onScreenshot} style={styles.navBtn} title="截图发送给 Agent">
+              <CameraOutlined style={styles.navIcon} />
+            </button>
+          )}
+          {onToggleInspect && (
+            <button
+              onClick={onToggleInspect}
+              style={{ ...styles.navBtn, ...(inspectMode ? styles.navBtnActive : {}) }}
+              title="检查元素"
+            >
+              <SearchOutlined style={styles.navIcon} />
+            </button>
+          )}
+        </>
       )}
       <input
         type="text"

@@ -1,26 +1,17 @@
-import { useCallback, useMemo, Fragment } from 'react';
-import type { PaneNode, PaneSplit, PaneLeaf } from './types';
+import { useCallback, useMemo, useRef, useState, Fragment } from 'react';
+import type { PaneNode, PaneLeaf } from './types';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { terminalApi } from '../../api';
-import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
+import { findLeaf, findLeafWithTab } from './treeUtils';
+import { createTerminal } from './terminalFactory';
 import PaneDivider from './PaneDivider';
 import PaneTabBar from './PaneTabBar';
 import TerminalLeafContent from './TerminalLeafContent';
 import AgentPane from './AgentPane';
 import BrowserPane from './BrowserPane';
-import { getRuntime } from './agent-runtimes';
-
-// ── Tree utilities (pure functions, no hooks) ──
-
-function findLeaf(node: PaneNode, id: string): PaneLeaf | null {
-  if (node.type === 'leaf') return node.id === id ? node : null;
-  for (const child of node.children) {
-    const found = findLeaf(child, id);
-    if (found) return found;
-  }
-  return null;
-}
+import PluginPane from './PluginPane';
+import { createAgent } from './agentFactory';
 
 // ── Content renderer ──
 
@@ -29,14 +20,13 @@ function PaneContent({ leafId }: { leafId: string }) {
   const tabs = useWorkspaceStore(s => s.tabs);
   const closeTab = useWorkspaceStore(s => s.closeTab);
   const setActiveTab = useWorkspaceStore(s => s.setActiveTab);
-  const closePane = useWorkspaceStore(s => s.closePane);
   const focusedLeafId = useWorkspaceStore(s => s.focusedLeafId);
   const setFocusedLeaf = useWorkspaceStore(s => s.setFocusedLeaf);
   const isFocused = focusedLeafId === leafId;
 
   const leaf = useMemo(() => findLeaf(root, leafId), [root, leafId]);
   const activeTabId = leaf?.activeTabId ?? null;
-  const tabIds = leaf?.tabIds ?? [];
+  const tabIds = useMemo(() => leaf?.tabIds ?? [], [leaf]);
   const paneTabs = useMemo(
     () => tabIds.map(id => tabs[id]).filter(Boolean),
     [tabIds, tabs],
@@ -46,6 +36,7 @@ function PaneContent({ leafId }: { leafId: string }) {
   const isTerminal = activeTab?.contentType === 'terminal';
   const isAgent = activeTab?.contentType === 'agent';
   const isBrowser = activeTab?.contentType === 'browser';
+  const isPlugin = activeTab?.contentType === 'plugin';
 
   const handleAddTab = useCallback(() => {
     // Create the same type as the currently active tab
@@ -67,16 +58,14 @@ function PaneContent({ leafId }: { leafId: string }) {
 
     if (currentTab?.contentType === 'agent') {
       // Create another agent of the same runtime
-      const runtimeId = currentTab.runtimeId || 'claude';
-      const runtime = getRuntime(runtimeId);
-      const runtimeName = runtime?.name || 'Agent';
-      const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const agentCount = Object.values(wsState.tabs).filter(t => t.contentType === 'agent').length;
-      wsState.addTab(leafId, {
-        id,
-        label: `${runtimeName} ${agentCount + 1}`,
-        contentType: 'agent',
-        runtimeId,
+      createAgent(currentTab.runtimeId || 'claude').then(result => {
+        if (!result) return;
+        wsState.addTab(leafId, {
+          id: result.id,
+          label: result.label,
+          contentType: 'agent',
+          runtimeId: result.runtimeId,
+        });
       });
     } else if (currentTab?.contentType === 'browser') {
       // Create another browser tab
@@ -89,67 +78,73 @@ function PaneContent({ leafId }: { leafId: string }) {
       });
     } else {
       // Create terminal
-      const state = useTerminalStore.getState();
-      if (state.terminals.length >= 10) return;
-
-      const id = `global-${Math.random().toString(36).slice(2, 10)}`;
-      const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
-      const cfg = SHELL_MAP[shellPref] || SHELL_MAP[DEFAULT_SHELL];
-      const label = `终端 ${state.terminals.length + 1}`;
-      const cwd = state.defaultCwd;
-
-      const newTerminal = {
-        id,
-        label,
-        createdAt: new Date(),
-        shell: cfg.shell,
-        cwd,
-        status: 'running' as const,
-        projectId: null,
-        groupId: null,
-        pane: 'left' as const,
-      };
-
-      terminalApi.startShell(id, cfg.shell, cwd, cfg.args);
-      state.addTerminal(newTerminal);
-      wsState.addTab(leafId, {
-        id,
-        label,
-        contentType: 'terminal' as const,
-        status: 'running' as const,
-        shell: cfg.shell,
-        cwd,
+      createTerminal().then(result => {
+        if (!result) return;
+        const { terminal } = result;
+        wsState.addTab(leafId, {
+          id: terminal.id,
+          label: terminal.label,
+          contentType: 'terminal',
+          status: 'running',
+          shell: terminal.shell,
+          cwd: terminal.cwd,
+        });
       });
     }
   }, [leafId]);
 
   const handleClose = useCallback((tabId: string) => {
-    // Stop the terminal process if this is a terminal tab
     const tab = useWorkspaceStore.getState().tabs[tabId];
     if (tab?.contentType === 'terminal') {
       terminalApi.stop(tabId).catch(() => {});
       useTerminalStore.getState().removeTerminal(tabId);
+    } else if (tab?.contentType === 'agent') {
+      terminalApi.stop(tabId).catch(() => {});
     }
 
     closeTab(tabId);
-    // If leaf is now empty and there are other leaves, close it
-    const wsState = useWorkspaceStore.getState();
-    const currentLeaf = findLeaf(wsState.root, leafId);
-    const allLeaves = (() => {
-      const walk = (n: PaneNode): PaneNode[] => {
-        if (n.type === 'leaf') return [n];
-        return n.children.flatMap(walk);
-      };
-      return walk(wsState.root);
-    })();
-    if (currentLeaf && currentLeaf.tabIds.length === 0 && allLeaves.length > 1) {
-      closePane(leafId);
+  }, [closeTab]);
+
+  const [isDragOver, setIsDragOver] = useState(false);
+  const isDragOverRef = useRef(false);
+
+  const handlePaneDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!isDragOverRef.current) {
+      isDragOverRef.current = true;
+      setIsDragOver(true);
     }
-  }, [closeTab, closePane, leafId]);
+  }, []);
+
+  const handlePaneDragLeave = useCallback(() => {
+    isDragOverRef.current = false;
+    setIsDragOver(false);
+  }, []);
+
+  const handlePaneDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    isDragOverRef.current = false;
+    setIsDragOver(false);
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (!sourceId) return;
+    const wsState = useWorkspaceStore.getState();
+    const sourceLeaf = findLeafWithTab(wsState.root, sourceId);
+    if (!sourceLeaf || sourceLeaf.id === leafId) return;
+    // Move tab from source leaf to this leaf
+    wsState.closeTab(sourceId);
+    const tab = wsState.tabs[sourceId];
+    if (tab) {
+      wsState.addTab(leafId, tab);
+    }
+  }, [leafId]);
 
   return (
     <div
       onClick={() => setFocusedLeaf(leafId)}
+      onDragOver={handlePaneDragOver}
+      onDragLeave={handlePaneDragLeave}
+      onDrop={handlePaneDrop}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -157,6 +152,7 @@ function PaneContent({ leafId }: { leafId: string }) {
         height: '100%',
         boxShadow: isFocused ? '0 0 0 2px #6366f1 inset' : 'none',
         transition: 'box-shadow 0.15s ease',
+        outline: isDragOver ? '2px dashed rgba(99, 102, 241, 0.5)' : 'none',
       }}
     >
       <PaneTabBar
@@ -177,6 +173,8 @@ function PaneContent({ leafId }: { leafId: string }) {
           <AgentPane agentId={activeTabId} runtimeId={activeTab?.runtimeId || 'claude'} />
         ) : isBrowser && activeTabId ? (
           <BrowserPane tabId={activeTabId} />
+        ) : isPlugin && activeTab?.contentType === 'plugin' ? (
+          <PluginPane tab={activeTab} />
         ) : activeTabId ? (
           <div style={contentStyles.placeholder}>
             <span style={contentStyles.placeholderIcon}>⌘</span>
@@ -246,19 +244,12 @@ interface SplitNodeProps {
 function SplitNode({ node }: SplitNodeProps) {
   const updateSizes = useWorkspaceStore(s => s.updateSizes);
 
-  if (node.type === 'leaf') {
-    return (
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minWidth: 0, minHeight: 0 }}>
-        <PaneContent leafId={node.id} />
-      </div>
-    );
-  }
-
-  const split = node as PaneSplit;
-  const isHorizontal = split.direction === 'horizontal';
-  const totalSize = split.sizes.reduce((a, b) => a + b, 0);
+  const split = node.type === 'split' ? node : null;
+  const isHorizontal = split?.direction === 'horizontal';
+  const totalSize = split?.sizes.reduce((a, b) => a + b, 0) ?? 0;
 
   const handleDrag = useCallback((childIndex: number, delta: number) => {
+    if (!split) return;
     const container = document.querySelector(`[data-split-id="${split.id}"]`);
     if (!container) return;
     const containerSize = isHorizontal ? container.clientWidth : container.clientHeight;
@@ -269,11 +260,22 @@ function SplitNode({ node }: SplitNodeProps) {
     newSizes[prevIndex] = Math.max(0.1, newSizes[prevIndex] + deltaRatio);
     newSizes[childIndex] = Math.max(0.1, newSizes[childIndex] - deltaRatio);
     updateSizes(split.id, newSizes);
-  }, [split.id, split.sizes, isHorizontal, totalSize, updateSizes]);
+  }, [split, isHorizontal, totalSize, updateSizes]);
+
+  if (node.type === 'leaf') {
+    return (
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', minWidth: 0, minHeight: 0 }}>
+        <PaneContent leafId={node.id} />
+      </div>
+    );
+  }
+
+  // After early return for leaf nodes, split is guaranteed non-null
+  const s = split!;
 
   return (
     <div
-      data-split-id={split.id}
+      data-split-id={s.id}
       style={{
         display: 'flex',
         flexDirection: isHorizontal ? 'row' : 'column',
@@ -282,7 +284,7 @@ function SplitNode({ node }: SplitNodeProps) {
         overflow: 'hidden',
       }}
     >
-      {split.children.map((child, i) => (
+      {s.children.map((child, i) => (
         <Fragment key={child.id}>
           {i > 0 && (
             <PaneDivider
@@ -291,7 +293,7 @@ function SplitNode({ node }: SplitNodeProps) {
             />
           )}
           <div style={{
-            flex: split.sizes[i],
+            flex: s.sizes[i],
             overflow: 'hidden',
             display: 'flex',
             minWidth: 0,

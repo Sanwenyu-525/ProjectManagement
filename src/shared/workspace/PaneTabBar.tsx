@@ -55,13 +55,14 @@ export default function PaneTabBar({ tabs, activeTabId, onSelect, onClose, onAdd
                 ...styles.dot,
                 background: tab.contentType === 'browser' ? '#60a5fa'
                   : tab.contentType === 'agent' ? '#a5b4fc'
+                  : tab.contentType === 'plugin' ? '#f59e0b'
                   : statusColor(tab.status),
                 boxShadow: tab.status === 'running'
                   ? '0 0 4px rgba(34, 197, 94, 0.4)'
                   : 'none',
               }} />
               <span style={styles.label}>{tab.label}</span>
-              {(isHovered || isActive) && tabs.length > 1 && (
+              {(isHovered || isActive) && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onClose(tab.id); }}
                   style={styles.closeBtn}

@@ -67,7 +67,7 @@ export default function SearchBox() {
       const searchResults: SearchResult[] = [];
 
       if (data.projects) {
-        data.projects.forEach((p: any) => {
+        data.projects.forEach((p) => {
           searchResults.push({
             type: 'project',
             id: p.id,
@@ -83,7 +83,7 @@ export default function SearchBox() {
       }
 
       if (data.tasks) {
-        data.tasks.forEach((t: any) => {
+        data.tasks.forEach((t) => {
           searchResults.push({
             type: 'task',
             id: t.id,
@@ -96,7 +96,7 @@ export default function SearchBox() {
       }
 
       if (data.documents) {
-        data.documents.forEach((d: any) => {
+        data.documents.forEach((d) => {
           searchResults.push({
             type: 'document',
             id: d.id,

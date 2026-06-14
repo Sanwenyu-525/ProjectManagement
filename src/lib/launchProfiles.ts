@@ -41,10 +41,10 @@ export const launchProfilesStorage = {
       if (!data) return [];
       const profiles = JSON.parse(data);
       // Convert date strings back to Date objects
-      return profiles.map((p: any) => ({
+      return profiles.map((p: Record<string, unknown>) => ({
         ...p,
-        createdAt: new Date(p.createdAt),
-        lastUsed: p.lastUsed ? new Date(p.lastUsed) : undefined,
+        createdAt: new Date(p.createdAt as string),
+        lastUsed: p.lastUsed ? new Date(p.lastUsed as string) : undefined,
       }));
     } catch {
       return [];
@@ -126,9 +126,9 @@ export const launchHistoryStorage = {
       if (!data) return [];
       const history = JSON.parse(data);
       // Convert date strings back to Date objects
-      return history.map((h: any) => ({
+      return history.map((h: Record<string, unknown>) => ({
         ...h,
-        timestamp: new Date(h.timestamp),
+        timestamp: new Date(h.timestamp as string),
       }));
     } catch {
       return [];

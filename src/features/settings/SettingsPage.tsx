@@ -193,7 +193,6 @@ function DataSettings() {
     try {
       // 简单实现：导出 localStorage 中的数据
       const data = {
-        token: localStorage.getItem('devhub_token'),
         preferences: {
           defaultOpenCmd: localStorage.getItem('devhub_default_open_cmd'),
         },

@@ -1,2 +1,2 @@
-export { AGENT_RUNTIMES, getRuntime, getAllRuntimes } from './types';
-export type { AgentRuntime } from './types';
+export { getRuntime, getAllRuntimes, isWindows } from './runtimes';
+export type { AgentRuntime } from './runtimes';

@@ -1,21 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Avatar, Dropdown, notification } from 'antd';
 import {
-  DashboardOutlined,
   ProjectOutlined,
-  BarChartOutlined,
   UserOutlined,
-  FieldTimeOutlined,
   SettingOutlined,
-  ShareAltOutlined,
-  BranchesOutlined,
-  CodeOutlined,
   AppstoreOutlined,
 } from '@ant-design/icons';
-import { useTerminalStore } from '../stores/terminalStore';
-import TerminalManager from './TerminalManager';
-import WorkspacePreview from './workspace/WorkspacePreview';
+import WorkspacePage from './workspace/WorkspacePage';
 import SearchBox from './components/SearchBox';
 import { healthApi } from '../api';
 import { formatHealthIssues, isHealthUrgent } from '../lib/healthUtils';
@@ -23,45 +15,22 @@ import { formatHealthIssues, isHealthUrgent } from '../lib/healthUtils';
 const { Header, Sider, Content } = Layout;
 
 const menuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
+  { key: '/', icon: <AppstoreOutlined />, label: '工作区' },
   { key: '/projects', icon: <ProjectOutlined />, label: '项目管理' },
-  { key: '/git', icon: <BranchesOutlined />, label: 'Git 控制中心' },
-  { key: '/graph', icon: <ShareAltOutlined />, label: '关系图' },
-  { key: '/timeline', icon: <FieldTimeOutlined />, label: '活动时间线' },
-  { key: '/data-screen', icon: <BarChartOutlined />, label: '数据大屏' },
   { key: '/settings', icon: <SettingOutlined />, label: '设置' },
 ];
+
+// Routes that render as full-page overlays (not Workspace)
+const fullPageRoutes = ['/projects', '/settings', '/git', '/graph', '/timeline', '/data-screen'];
 
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const terminalOpen = useTerminalStore(s => s.terminalOpen);
-  const setTerminalOpen = useTerminalStore(s => s.setTerminalOpen);
-  const consumeLaunchRequest = useTerminalStore(s => s.consumeLaunchRequest);
-  const [terminalHeight, setTerminalHeight] = useState(400);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef({ dragging: false, startY: 0, startHeight: 0 });
   const [notifApi, contextHolder] = notification.useNotification();
-  const [workspaceMode, setWorkspaceMode] = useState(false);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
-        e.preventDefault();
-        setTerminalOpen(!terminalOpen);
-        if (!terminalOpen) setWorkspaceMode(false);
-      }
-      // Ctrl+Shift+` to toggle workspace mode
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '~') {
-        e.preventDefault();
-        setWorkspaceMode(prev => !prev);
-        if (!terminalOpen) setTerminalOpen(true);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [terminalOpen, setTerminalOpen]);
+  const isFullPage = fullPageRoutes.some(r => location.pathname.startsWith(r));
+  const showWorkspace = !isFullPage;
 
   // Daily project health check — runs once per day on first app open
   useEffect(() => {
@@ -69,7 +38,7 @@ export default function MainLayout() {
     const lastCheck = localStorage.getItem('lastHealthCheckDate');
     if (lastCheck === today) return;
 
-    healthApi.runAll().then(({ changedProjects }) => {
+    healthApi.runAll().then(({ results, changedProjects }) => {
       localStorage.setItem('lastHealthCheckDate', today);
       if (!changedProjects || changedProjects.length === 0) return;
 
@@ -82,15 +51,17 @@ export default function MainLayout() {
       });
 
       // Per-project notifications
-      changedProjects.forEach((p: any) => {
-        const issues = formatHealthIssues(p);
+      changedProjects.forEach((projectId: string) => {
+        const health = results.find(r => r.projectId === projectId);
+        if (!health) return;
+        const issues = formatHealthIssues(health);
         if (issues.length > 0) {
-          const severity = isHealthUrgent(p) ? 'warning' : 'info';
+          const severity = isHealthUrgent(health) ? 'warning' : 'info';
           notifApi[severity]({
-            message: p.projectName,
+            message: health.projectName,
             description: issues.join('；'),
             duration: 8,
-            onClick: () => navigate(`/projects/${p.projectId}`),
+            onClick: () => navigate(`/projects/${health.projectId}`),
           });
         }
       });
@@ -103,34 +74,6 @@ export default function MainLayout() {
   const userMenuItems = [
     { key: 'settings', icon: <SettingOutlined />, label: '设置', onClick: () => navigate('/settings') },
   ];
-
-  // Terminal drag-to-resize handlers
-  const handleDragStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragRef.current = { dragging: true, startY: e.clientY, startHeight: terminalHeight };
-    setIsDragging(true);
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-
-    const handleDragMove = (ev: MouseEvent) => {
-      if (!dragRef.current.dragging) return;
-      const delta = dragRef.current.startY - ev.clientY;
-      const newHeight = Math.min(Math.max(dragRef.current.startHeight + delta, 150), window.innerHeight * 0.7);
-      setTerminalHeight(newHeight);
-    };
-
-    const handleDragEnd = () => {
-      dragRef.current.dragging = false;
-      setIsDragging(false);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      document.removeEventListener('mousemove', handleDragMove);
-      document.removeEventListener('mouseup', handleDragEnd);
-    };
-
-    document.addEventListener('mousemove', handleDragMove);
-    document.addEventListener('mouseup', handleDragEnd);
-  };
 
   const selectedKey = menuItems.find(item =>
     item.key === '/' ? location.pathname === '/' : location.pathname.startsWith(item.key)
@@ -221,12 +164,10 @@ export default function MainLayout() {
           flexWrap: 'nowrap',
           flexShrink: 0,
         }}>
-          {/* Logo和菜单 - 左侧 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {/* Logo已在Sider中，这里不需要添加 */}
-          </div>
+          {/* Left spacer */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} />
 
-          {/* 搜索框 - 中间 */}
+          {/* Search - center */}
           <div style={{
             flex: 1,
             display: 'flex',
@@ -236,64 +177,8 @@ export default function MainLayout() {
             <SearchBox />
           </div>
 
-          {/* 用户菜单 - 右侧 */}
+          {/* User menu - right */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={() => {
-                setWorkspaceMode(true);
-                if (!terminalOpen) setTerminalOpen(true);
-              }}
-              title="工作区 (Ctrl+Shift+`)"
-              aria-label="工作区"
-              aria-pressed={workspaceMode && terminalOpen}
-              style={{
-                background: workspaceMode && terminalOpen ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                border: workspaceMode && terminalOpen ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid transparent',
-                color: workspaceMode && terminalOpen ? '#6366f1' : '#6b7a99',
-                cursor: 'pointer',
-                padding: '8px 14px',
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 12,
-                fontWeight: 500,
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={e => { if (!workspaceMode || !terminalOpen) { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)'; e.currentTarget.style.color = '#6366f1'; } }}
-              onMouseLeave={e => { if (!workspaceMode || !terminalOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7a99'; } }}
-            >
-              <AppstoreOutlined style={{ fontSize: 14 }} />
-              <span>工作区</span>
-            </button>
-            <button
-              onClick={() => {
-                setWorkspaceMode(false);
-                setTerminalOpen(!terminalOpen);
-              }}
-              title="终端 (Ctrl+`)"
-              aria-label="终端"
-              aria-pressed={terminalOpen}
-              style={{
-                background: terminalOpen ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                border: terminalOpen ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid transparent',
-                color: terminalOpen ? '#16a34a' : '#6b7a99',
-                cursor: 'pointer',
-                padding: '8px 14px',
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 12,
-                fontWeight: 500,
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)'; e.currentTarget.style.color = '#16a34a'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = terminalOpen ? 'rgba(34, 197, 94, 0.15)' : 'transparent'; e.currentTarget.style.color = terminalOpen ? '#16a34a' : '#6b7a99'; }}
-            >
-              <CodeOutlined style={{ fontSize: 14 }} />
-              <span>终端</span>
-            </button>
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
             <div
               style={{
@@ -340,40 +225,12 @@ export default function MainLayout() {
           top: 64,
           left: 0,
           right: 0,
-          bottom: terminalOpen ? terminalHeight : 0,
-          overflow: 'auto',
+          bottom: 0,
+          overflow: 'hidden',
           zIndex: 1,
-          transition: isDragging ? 'none' : 'bottom 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         }}>
-          <Outlet />
+          {showWorkspace ? <WorkspacePage /> : <Outlet />}
         </Content>
-
-        {/* Global terminal panel — absolute bottom, overlays content */}
-        <div
-          onMouseDown={e => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            if (e.clientY - rect.top <= 4) handleDragStart(e);
-          }}
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: terminalOpen ? terminalHeight : 0,
-            transition: isDragging ? 'none' : 'height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-            overflow: 'hidden',
-            zIndex: 10,
-            borderTop: terminalOpen ? '3px solid rgba(255, 255, 255, 0.25)' : 'none',
-            background: '#1a1b26',
-          }}
-        >
-          {/* Hover cursor zone — only for showing row-resize cursor */}
-          {terminalOpen && (
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, cursor: 'row-resize', zIndex: 12 }} />
-          )}
-          <TerminalManager visible={terminalOpen && !workspaceMode} consumeLaunchRequest={consumeLaunchRequest} />
-          {workspaceMode && <WorkspacePreview />}
-        </div>
       </Layout>
     </Layout>
   );

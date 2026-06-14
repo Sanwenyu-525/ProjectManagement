@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Tabs, Descriptions, Tag, Button, Space, Skeleton, Spin, Empty, message, Table, Modal, Form, Input, Select, Timeline } from 'antd';
-import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, TableOutlined, AppstoreOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined, SaveOutlined, SearchOutlined, FolderOpenOutlined } from '@ant-design/icons';
-import { projectsApi, reposApi, tasksApi, documentsApi, milestonesApi, timelineApi } from '../../api';
+import { Tabs, Descriptions, Tag, Button, Space, Skeleton, Spin, Empty, message, Modal, Form, Input, Select, Table, Timeline } from 'antd';
+import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined } from '@ant-design/icons';
+import { projectsApi, reposApi, documentsApi, timelineApi } from '../../api';
+import type { ProjectDetail, RemoteRepo, Document, ActivityLog, CreateDocumentInput, AddRepoInput } from '../../types';
+import ConfigTab from './tabs/ConfigTab';
+import TasksTab from './tabs/TasksTab';
+import MilestonesTab from './tabs/MilestonesTab';
 import ProjectIcon from '../../shared/ProjectIcon';
-import KanbanBoard from '../../shared/KanbanBoard';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { STATUS_COLORS } from '../../lib/constants';
 import { buildLaunchRequests } from '../../lib/launchUtils';
@@ -15,14 +18,21 @@ import './ProjectDetailPage.css';
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [project, setProject] = useState<any>(null);
+  const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { requestLaunch } = useTerminalStore();
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
-    if (id) loadProject(id);
+    if (id) {
+      setLoading(true);
+      projectsApi.getById(id).then(data => {
+        setProject(data);
+      }).catch(() => {
+        message.error('加载项目失败');
+      }).finally(() => setLoading(false));
+    }
   }, [id]);
 
   async function loadProject(pid: string) {
@@ -39,8 +49,7 @@ export default function ProjectDetailPage() {
 
   async function handleLaunch() {
     if (!project?.localPath) return;
-    const requests = buildLaunchRequests(project);
-    console.log('[Launch] built requests:', requests);
+    const requests = buildLaunchRequests({ ...project, localPath: project.localPath });
     if (requests.length === 0) {
       message.warning('请先在"配置"标签页中设置启动命令');
       setActiveTab('config');
@@ -59,7 +68,7 @@ export default function ProjectDetailPage() {
     try {
       const oldProject = { ...project };
       const updated = await projectsApi.refresh(project.id);
-      setProject(updated);
+      setProject({ ...project, ...updated } as ProjectDetail);
 
       // Compare old vs new to generate context-aware message
       const changes: string[] = [];
@@ -109,6 +118,10 @@ export default function ProjectDetailPage() {
     </div>
   );
   if (!project) return <Empty description="项目不存在" />;
+
+  const p = project as ProjectDetail & Record<string, unknown>;
+  const remoteRepos = (p.remoteRepos || []) as RemoteRepo[];
+  const count = (p._count || {}) as Record<string, number>;
 
   return (
     <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
@@ -169,7 +182,7 @@ export default function ProjectDetailPage() {
               <Button
                 type="primary"
                 icon={<CodeOutlined />}
-                onClick={() => requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id })}
+                onClick={() => project.localPath && requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id })}
                 className="action-btn action-btn-green"
               >
                 打开终端
@@ -190,10 +203,10 @@ export default function ProjectDetailPage() {
           onChange={setActiveTab}
           items={[
             { key: 'overview', label: '概览', children: <OverviewTab project={project} /> },
-            { key: 'repos', label: `仓库 (${project.remoteRepos?.length || 0})`, children: <ReposTab projectId={project.id} repos={project.remoteRepos || []} onRefresh={() => loadProject(project.id)} /> },
+            { key: 'repos', label: `仓库 (${remoteRepos.length})`, children: <ReposTab projectId={project.id} repos={remoteRepos} onRefresh={() => loadProject(project.id)} /> },
             { key: 'git', label: 'Git', children: <GitTab project={project} /> },
-            { key: 'tasks', label: `任务 (${project._count?.tasks || 0})`, children: <TasksTab projectId={project.id} repos={project.remoteRepos || []} /> },
-            { key: 'documents', label: `文档 (${project._count?.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
+            { key: 'tasks', label: `任务 (${count.tasks || 0})`, children: <TasksTab projectId={project.id} repos={remoteRepos} /> },
+            { key: 'documents', label: `文档 (${count.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
             { key: 'config', label: '配置', children: <ConfigTab project={project} onSaved={() => loadProject(project.id)} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
@@ -205,151 +218,9 @@ export default function ProjectDetailPage() {
   );
 }
 
-// ==================== 配置 Tab ====================
-
-function CwdInput({ cwd, setCwd, detecting, onDetect, onBrowse }: {
-  cwd: string; setCwd: (v: string) => void; detecting: boolean; onDetect: () => void; onBrowse: () => void;
-}) {
-  return (
-    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-      <Input
-        value={cwd}
-        onChange={e => setCwd(e.target.value)}
-        placeholder="工作目录（默认项目根目录）"
-        style={{ flex: 1 }}
-        addonBefore={<FolderOpenOutlined style={{ cursor: 'pointer' }} onClick={onBrowse} />}
-      />
-      <Button icon={<SearchOutlined />} onClick={onDetect} loading={detecting}>
-        自动检测
-      </Button>
-    </div>
-  );
-}
-
-function ConfigTab({ project, onSaved }: { project: any; onSaved: (p: any) => void }) {
-  const [frontendCmd, setFrontendCmd] = useState(project?.frontendCommand || project?.openCommand || '');
-  const [backendCmd, setBackendCmd] = useState(project?.backendCommand || '');
-  const [frontendCwd, setFrontendCwd] = useState(project?.frontendCwd || '');
-  const [backendCwd, setBackendCwd] = useState(project?.backendCwd || '');
-  const [saving, setSaving] = useState(false);
-  const [detectingFrontend, setDetectingFrontend] = useState(false);
-  const [detectingBackend, setDetectingBackend] = useState(false);
-
-  // Sync when project changes (e.g. after refresh)
-  useEffect(() => {
-    setFrontendCmd(project?.frontendCommand || project?.openCommand || '');
-    setBackendCmd(project?.backendCommand || '');
-    setFrontendCwd(project?.frontendCwd || '');
-    setBackendCwd(project?.backendCwd || '');
-  }, [project?.frontendCommand, project?.backendCommand, project?.openCommand, project?.frontendCwd, project?.backendCwd]);
-
-  const handleDetectCwd = async (command: string, setCwd: (v: string) => void, setDetecting: (v: boolean) => void) => {
-    if (!command.trim() || !project?.localPath) return;
-    setDetecting(true);
-    try {
-      const result = await projectsApi.detectCwd(project.localPath, command);
-      if (result) {
-        setCwd(result);
-        message.success(`检测到命令在 "${result}" 目录`);
-      } else {
-        message.info('未在子目录中找到匹配的命令，将在项目根目录执行');
-      }
-    } catch (e) {
-      message.warning('检测失败');
-    } finally {
-      setDetecting(false);
-    }
-  };
-
-  const handleBrowseCwd = async (setCwd: (v: string) => void) => {
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({ directory: true });
-      if (selected) {
-        // Store relative path from project root
-        const relative = selected.replace(project.localPath, '').replace(/\\/g, '/').replace(/^\//, '');
-        setCwd(relative || '.');
-      }
-    } catch (err) {
-      message.error('无法打开文件夹选择器');
-    }
-  };
-
-  async function handleSave() {
-    if (!frontendCmd.trim() && !backendCmd.trim()) {
-      message.warning('请至少输入一个启动命令');
-      return;
-    }
-    setSaving(true);
-    try {
-      const updated = await projectsApi.update(project.id, {
-        frontendCommand: frontendCmd.trim() || null,
-        backendCommand: backendCmd.trim() || null,
-        openCommand: frontendCmd.trim() || backendCmd.trim() || null,
-        frontendCwd: frontendCwd.trim() || null,
-        backendCwd: backendCwd.trim() || null,
-      });
-      onSaved(updated);
-      message.success('配置已保存');
-    } catch (e: unknown) {
-      message.error(String(e) || '保存失败');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div style={{ maxWidth: 520, padding: '8px 0' }}>
-      <div style={{ marginBottom: 20 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
-          <span style={{ color: '#22c55e', marginRight: 4 }}>●</span> 前端命令
-        </label>
-        <Input
-          value={frontendCmd}
-          onChange={e => setFrontendCmd(e.target.value)}
-          placeholder="如 npm run dev、pnpm dev、yarn start"
-        />
-        <CwdInput
-          cwd={frontendCwd}
-          setCwd={setFrontendCwd}
-          detecting={detectingFrontend}
-          onDetect={() => handleDetectCwd(frontendCmd, setFrontendCwd, setDetectingFrontend)}
-          onBrowse={() => handleBrowseCwd(setFrontendCwd)}
-        />
-      </div>
-      <div style={{ marginBottom: 20 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
-          <span style={{ color: '#3b82f6', marginRight: 4 }}>●</span> 后端命令（可选）
-        </label>
-        <Input
-          value={backendCmd}
-          onChange={e => setBackendCmd(e.target.value)}
-          placeholder="如 cargo run、python manage.py runserver"
-        />
-        <CwdInput
-          cwd={backendCwd}
-          setCwd={setBackendCwd}
-          detecting={detectingBackend}
-          onDetect={() => handleDetectCwd(backendCmd, setBackendCwd, setDetectingBackend)}
-          onBrowse={() => handleBrowseCwd(setBackendCwd)}
-        />
-      </div>
-      <Button
-        type="primary"
-        icon={<SaveOutlined />}
-        onClick={handleSave}
-        loading={saving}
-        style={{ background: '#22c55e', borderColor: '#22c55e' }}
-      >
-        保存配置
-      </Button>
-    </div>
-  );
-}
-
 // ==================== 概览 Tab ====================
 
-function OverviewTab({ project }: { project: any }) {
+function OverviewTab({ project }: { project: ProjectDetail }) {
   return (
     <Descriptions column={{ xs: 1, sm: 2, md: 3 }} bordered size="small">
       <Descriptions.Item label="状态">{project.status}</Descriptions.Item>
@@ -376,12 +247,12 @@ function OverviewTab({ project }: { project: any }) {
 
 // ==================== 仓库 Tab ====================
 
-function ReposTab({ projectId, repos, onRefresh }: { projectId: string; repos: any[]; onRefresh: () => void }) {
+function ReposTab({ projectId, repos, onRefresh }: { projectId: string; repos: RemoteRepo[]; onRefresh: () => void }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [syncing, setSyncing] = useState<string | null>(null);
 
-  const handleAdd = async (values: any) => {
+  const handleAdd = async (values: AddRepoInput) => {
     try {
       await reposApi.add(projectId, values);
       message.success('仓库关联成功');
@@ -424,9 +295,10 @@ function ReposTab({ projectId, repos, onRefresh }: { projectId: string; repos: a
     { title: '分支', dataIndex: 'defaultBranch', render: (v: string) => v || '-' },
     { title: '状态', dataIndex: 'repoStatus', render: (v: string) => <Tag color={v === 'Synced' ? 'green' : v === 'Error' ? 'red' : 'orange'}>{v}</Tag> },
     { title: '最后同步', dataIndex: 'lastSyncAt', render: (v: string) => v ? new Date(v).toLocaleString('zh-CN') : '从未' },
-    { title: '任务数', render: (_: any, r: any) => r._count?.tasks || 0 },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { title: '任务数', render: (_: unknown, r: any) => r._count?.tasks || 0 },
     {
-      title: '操作', render: (_: any, record: any) => (
+      title: '操作', render: (_: unknown, record: RemoteRepo) => (
         <Space>
           <Button size="small" icon={<SyncOutlined />} loading={syncing === record.id} onClick={() => handleSync(record.id)}>同步</Button>
           <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleRemove(record.id)} />
@@ -462,115 +334,15 @@ function ReposTab({ projectId, repos, onRefresh }: { projectId: string; repos: a
   );
 }
 
-// ==================== 任务 Tab ====================
-
-function TasksTab({ projectId, repos }: { projectId: string; repos: any[] }) {
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [scopeFilter, setScopeFilter] = useState<string | undefined>();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('kanban');
-  const [form] = Form.useForm();
-
-  useEffect(() => {
-    loadTasks();
-  }, [scopeFilter]);
-
-  async function loadTasks() {
-    setLoading(true);
-    try {
-      const params: Record<string, string> = {};
-      if (scopeFilter !== undefined) params.repoScope = scopeFilter;
-      const data = await tasksApi.list(projectId, params);
-      setTasks(data);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const handleCreate = async (values: any) => {
-    await tasksApi.create(projectId, { ...values, repoScope: values.repoScope || null });
-    message.success('任务创建成功');
-    setModalOpen(false);
-    form.resetFields();
-    loadTasks();
-  };
-
-  const handleStatusChange = async (taskId: string, status: string) => {
-    await tasksApi.updateStatus(taskId, status);
-    loadTasks();
-  };
-
-  const columns = [
-    { title: '标题', dataIndex: 'title', ellipsis: true },
-    { title: '状态', dataIndex: 'status', render: (v: string, record: any) => (
-      <Select value={v} size="small" style={{ width: 110 }} onChange={(s) => handleStatusChange(record.id, s)}
-        options={['Todo', 'InProgress', 'Done', 'Cancelled'].map(s => ({ value: s, label: s }))} />
-    )},
-    { title: '优先级', dataIndex: 'priority', render: (v: string) => <Tag>{v}</Tag> },
-    { title: '仓库范围', render: (_: any, r: any) => r.scopedRepo ? <Tag>{r.scopedRepo.platform}: {r.scopedRepo.repoFullName}</Tag> : <Tag color="blue">全部</Tag> },
-    { title: '截止日期', dataIndex: 'dueDate', render: (v: string) => v ? new Date(v).toLocaleDateString('zh-CN') : '-' },
-  ];
-
-  return (
-    <>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Space>
-          <Select placeholder="按仓库筛选" allowClear value={scopeFilter} onChange={setScopeFilter} style={{ width: 200 }}
-            options={[
-              { value: 'null', label: '所有仓库共享' },
-              ...repos.map(r => ({ value: r.id, label: `${r.platform}: ${r.repoFullName}` })),
-            ]}
-          />
-          <Button.Group>
-            <Button icon={<AppstoreOutlined />} type={viewMode === 'kanban' ? 'primary' : 'default'} onClick={() => setViewMode('kanban')}>看板</Button>
-            <Button icon={<TableOutlined />} type={viewMode === 'table' ? 'primary' : 'default'} onClick={() => setViewMode('table')}>列表</Button>
-          </Button.Group>
-        </Space>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => setModalOpen(true)}>新建任务</Button>
-      </div>
-
-      {loading ? (
-        <Spin />
-      ) : viewMode === 'kanban' ? (
-        <KanbanBoard tasks={tasks} onTaskUpdated={loadTasks} />
-      ) : (
-        <Table columns={columns} dataSource={tasks} rowKey="id" pagination={false} />
-      )}
-
-      <Modal title="新建任务" open={modalOpen} onCancel={() => { setModalOpen(false); form.resetFields(); }} onOk={() => form.submit()} okText="创建">
-        <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="title" label="标题" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-          <Form.Item name="priority" label="优先级" initialValue="Medium">
-            <Select options={['Low', 'Medium', 'High', 'Critical'].map(p => ({ value: p, label: p }))} />
-          </Form.Item>
-          <Form.Item name="repoScope" label="仓库范围">
-            <Select allowClear placeholder="全部仓库共享"
-              options={[
-                { value: null, label: '全部仓库共享' },
-                ...repos.map(r => ({ value: r.id, label: `${r.platform}: ${r.repoFullName}` })),
-              ]}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </>
-  );
-}
-
 // ==================== 文档 Tab ====================
 
 function DocumentsTab({ projectId }: { projectId: string }) {
-  const [docs, setDocs] = useState<any[]>([]);
+  const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadDocs(); }, []);
 
   async function loadDocs() {
@@ -582,7 +354,7 @@ function DocumentsTab({ projectId }: { projectId: string }) {
     }
   }
 
-  const handleCreate = async (values: any) => {
+  const handleCreate = async (values: CreateDocumentInput) => {
     await documentsApi.create(projectId, values);
     message.success('文档创建成功');
     setModalOpen(false);
@@ -628,116 +400,6 @@ function DocumentsTab({ projectId }: { projectId: string }) {
   );
 }
 
-// ==================== 里程碑 Tab ====================
-
-function MilestonesTab({ projectId }: { projectId: string }) {
-  const [milestones, setMilestones] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form] = Form.useForm();
-
-  useEffect(() => { loadMilestones(); }, []);
-
-  async function loadMilestones() {
-    try {
-      const data = await milestonesApi.list(projectId);
-      setMilestones(data);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const handleCreate = async (values: any) => {
-    await milestonesApi.create(projectId, values);
-    message.success('里程碑创建成功');
-    setModalOpen(false);
-    form.resetFields();
-    loadMilestones();
-  };
-
-  const handleDelete = async (id: string) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '删除里程碑不会删除关联的任务。',
-      okType: 'danger',
-      onOk: async () => {
-        await milestonesApi.delete(id);
-        message.success('已删除');
-        loadMilestones();
-      },
-    });
-  };
-
-  const STATUS_MAP: Record<string, { color: string; label: string }> = {
-    Pending: { color: 'default', label: '待开始' },
-    InProgress: { color: 'processing', label: '进行中' },
-    Completed: { color: 'success', label: '已完成' },
-    Overdue: { color: 'error', label: '已逾期' },
-  };
-
-  return (
-    <>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => setModalOpen(true)}>新建里程碑</Button>
-      </div>
-      {milestones.length === 0 && !loading ? (
-        <Empty description="暂无里程碑" />
-      ) : (
-        <Table
-          dataSource={milestones}
-          rowKey="id"
-          loading={loading}
-          pagination={false}
-          columns={[
-            { title: '名称', dataIndex: 'name' },
-            { title: '描述', dataIndex: 'description', ellipsis: true, render: (v: string) => v || '-' },
-            {
-              title: '状态', dataIndex: 'status',
-              render: (v: string) => {
-                const s = STATUS_MAP[v] || { color: 'default', label: v };
-                return <Tag color={s.color}>{s.label}</Tag>;
-              },
-            },
-            { title: '截止日期', dataIndex: 'dueDate', render: (v: string) => v ? new Date(v).toLocaleDateString('zh-CN') : '-' },
-            { title: '任务数', render: (_: any, r: any) => r._count?.tasks || 0 },
-            {
-              title: '操作', render: (_: any, record: any) => (
-                <Space>
-                  <Select
-                    value={record.status}
-                    size="small"
-                    style={{ width: 100 }}
-                    onChange={async (status) => {
-                      await milestonesApi.update(record.id, { status });
-                      loadMilestones();
-                    }}
-                    options={Object.entries(STATUS_MAP).map(([k, v]) => ({ value: k, label: v.label }))}
-                  />
-                  <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.id)} />
-                </Space>
-              ),
-            },
-          ]}
-        />
-      )}
-
-      <Modal title="新建里程碑" open={modalOpen} onCancel={() => { setModalOpen(false); form.resetFields(); }} onOk={() => form.submit()} okText="创建">
-        <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input placeholder="v1.0 发布" />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-          <Form.Item name="dueDate" label="截止日期">
-            <Input type="date" />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </>
-  );
-}
-
 // ==================== 项目活动 Tab ====================
 
 const ACTION_MAP: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
@@ -747,7 +409,7 @@ const ACTION_MAP: Record<string, { icon: React.ReactNode; color: string; label: 
   repo_synced: { icon: <SyncOutlined />, color: 'cyan', label: '仓库同步' },
 };
 
-function formatLogDetails(action: string, details: string | null): string {
+function formatLogDetails(action: string, details: string | null | undefined): string {
   if (!details) return '';
   try {
     const d = JSON.parse(details);
@@ -759,12 +421,14 @@ function formatLogDetails(action: string, details: string | null): string {
 }
 
 function ProjectTimelineTab({ projectId }: { projectId: string }) {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
 
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     loadTimeline();
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   async function loadTimeline() {
     try {

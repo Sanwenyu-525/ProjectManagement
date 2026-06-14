@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ReloadOutlined, PlusOutlined, CheckOutlined } from '@ant-design/icons';
+import { ReloadOutlined, PlusOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { workspacesApi } from '../../api';
 
@@ -9,6 +9,46 @@ interface Workspace {
   description?: string;
   color?: string;
   projectCount?: number;
+}
+
+// ── Workspace tag with hover delete ──
+
+function WorkspaceTag({ workspace, isActive, color, onSelect, onDelete }: {
+  workspace: Workspace;
+  isActive: boolean;
+  color: string;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <button
+      onClick={onSelect}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        ...styles.tag,
+        ...(isActive ? styles.tagActive : {}),
+        borderColor: isActive ? color : 'rgba(255, 255, 255, 0.1)',
+        background: isActive ? `${color}22` : 'transparent',
+        color: isActive ? `${color}cc` : '#94a3b8',
+      }}
+    >
+      <span style={{ ...styles.tagDot, background: color }} />
+      {workspace.name}
+      {isActive && <CheckOutlined style={styles.tagCheck} />}
+      {hovered && (
+        <span
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          style={styles.tagDelete}
+          title="删除工作区"
+        >
+          <CloseOutlined style={{ fontSize: 7 }} />
+        </span>
+      )}
+    </button>
+  );
 }
 
 export default function WorkspaceToolbar() {
@@ -23,7 +63,7 @@ export default function WorkspaceToolbar() {
 
   // Load workspaces
   useEffect(() => {
-    workspacesApi.list().then((data: any) => {
+    workspacesApi.list().then((data: unknown) => {
       const list = Array.isArray(data) ? data : [];
       setWorkspaces(list);
       const lastId = localStorage.getItem('devhub_active_workspace');
@@ -63,6 +103,40 @@ export default function WorkspaceToolbar() {
     }
   };
 
+  const handleDelete = async (ws: Workspace) => {
+    // Check if workspace has active items
+    try {
+      const layoutJson = await workspacesApi.loadLayout(ws.id);
+      if (layoutJson) {
+        const layout = JSON.parse(layoutJson) as { tabs: Record<string, { contentType?: string }> };
+        const tabs = Object.values(layout.tabs || {});
+        const terminals = tabs.filter(t => t.contentType === 'terminal').length;
+        const agents = tabs.filter(t => t.contentType === 'agent').length;
+        const browsers = tabs.filter(t => t.contentType === 'browser').length;
+        const parts: string[] = [];
+        if (terminals) parts.push(`${terminals} 个终端`);
+        if (agents) parts.push(`${agents} 个智能体`);
+        if (browsers) parts.push(`${browsers} 个浏览器`);
+        if (parts.length > 0) {
+          if (!confirm(`工作区「${ws.name}」有 ${parts.join('、')}，确定删除？`)) return;
+        }
+      }
+    } catch {
+      // If we can't check, still allow delete with generic confirm
+      if (!confirm(`确定删除工作区「${ws.name}」？`)) return;
+    }
+
+    try {
+      await workspacesApi.delete(ws.id);
+      setWorkspaces(prev => prev.filter(w => w.id !== ws.id));
+      if (activeWs?.id === ws.id) {
+        handleSelect(null);
+      }
+    } catch (e) {
+      console.error('Failed to delete workspace:', e);
+    }
+  };
+
   return (
     <div style={styles.toolbar}>
       {/* Workspace tags */}
@@ -88,21 +162,14 @@ export default function WorkspaceToolbar() {
           const isActive = activeWs?.id === ws.id;
           const color = ws.color || '#6366f1';
           return (
-            <button
+            <WorkspaceTag
               key={ws.id}
-              onClick={() => handleSelect(ws)}
-              style={{
-                ...styles.tag,
-                ...(isActive ? styles.tagActive : {}),
-                borderColor: isActive ? color : 'rgba(255, 255, 255, 0.1)',
-                background: isActive ? `${color}22` : 'transparent',
-                color: isActive ? `${color}cc` : '#94a3b8',
-              }}
-            >
-              <span style={{ ...styles.tagDot, background: color }} />
-              {ws.name}
-              {isActive && <CheckOutlined style={styles.tagCheck} />}
-            </button>
+              workspace={ws}
+              isActive={isActive}
+              color={color}
+              onSelect={() => handleSelect(ws)}
+              onDelete={() => handleDelete(ws)}
+            />
           );
         })}
 
@@ -195,6 +262,19 @@ const styles: Record<string, React.CSSProperties> = {
   tagCheck: {
     fontSize: 8,
     marginLeft: 2,
+  },
+  tagDelete: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    background: 'rgba(239, 68, 68, 0.2)',
+    color: '#ef4444',
+    marginLeft: 2,
+    cursor: 'pointer',
+    flexShrink: 0,
   },
   addTag: {
     display: 'flex',

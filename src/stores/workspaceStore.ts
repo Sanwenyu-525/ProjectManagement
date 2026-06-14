@@ -1,24 +1,106 @@
 import { create } from 'zustand';
 import type { PaneNode, PaneLeaf, PaneSplit, PaneTab, WorkspaceLayout } from '../shared/workspace/types';
+import { findLeaf, getAllLeaves } from '../shared/workspace/treeUtils';
 import { workspacesApi } from '../api';
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+// ── Browser log types (ephemeral, not persisted) ──
 
-// ── Tree utilities ──
+export interface ConsoleLogEntry {
+  id: number;
+  method: 'error' | 'warn' | 'log';
+  args: string[];
+  timestamp: number;
+}
+
+export interface NetworkRequestEntry {
+  id: number;
+  method: string;
+  url: string;
+  status: number;
+  duration: number;
+  timestamp: number;
+}
+
+interface BrowserLogs {
+  consoleLogs: ConsoleLogEntry[];
+  networkRequests: NetworkRequestEntry[];
+}
+
+// ── Test report types (ephemeral, localStorage-backed) ──
+
+export interface TestReportStep {
+  index: number;
+  action: string;
+  label: string;
+  pass: boolean;
+  detail?: string;
+  duration: number;
+}
+
+export interface TestReport {
+  id: string;
+  name: string;
+  browserTabId: string;
+  timestamp: number;
+  steps: TestReportStep[];
+  summary: {
+    passed: number;
+    failed: number;
+    total: number;
+    duration: number;
+  };
+}
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+const MAX_LOG_SIZE = 500;
+const LOG_FLUSH_INTERVAL = 100; // ms
+
+// ── Batched log buffer ──
+
+let pendingConsole: Record<string, ConsoleLogEntry[]> = {};
+let pendingNetwork: Record<string, NetworkRequestEntry[]> = {};
+let logFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let logFlushSet: ((partial: WorkspaceStore | ((state: WorkspaceStore) => Partial<WorkspaceStore>)) => void) | null = null;
+let logFlushGet: (() => WorkspaceStore) | null = null;
+
+function flushLogs() {
+  logFlushTimer = null;
+  if (!logFlushSet || !logFlushGet) return;
+  const consoleEntries = pendingConsole;
+  const networkEntries = pendingNetwork;
+  if (Object.keys(consoleEntries).length === 0 && Object.keys(networkEntries).length === 0) return;
+  pendingConsole = {};
+  pendingNetwork = {};
+
+  logFlushSet(state => {
+    let browserLogs = state.browserLogs;
+    for (const [tabId, entries] of Object.entries(consoleEntries)) {
+      const existing = browserLogs[tabId] || { consoleLogs: [], networkRequests: [] };
+      const newLogs = [...existing.consoleLogs, ...entries];
+      if (newLogs.length > MAX_LOG_SIZE) newLogs.splice(0, newLogs.length - MAX_LOG_SIZE);
+      browserLogs = { ...browserLogs, [tabId]: { ...existing, consoleLogs: newLogs } };
+    }
+    for (const [tabId, entries] of Object.entries(networkEntries)) {
+      const existing = browserLogs[tabId] || { consoleLogs: [], networkRequests: [] };
+      const newReqs = [...existing.networkRequests, ...entries];
+      if (newReqs.length > MAX_LOG_SIZE) newReqs.splice(0, newReqs.length - MAX_LOG_SIZE);
+      browserLogs = { ...browserLogs, [tabId]: { ...existing, networkRequests: newReqs } };
+    }
+    return { browserLogs };
+  });
+}
+
+function scheduleFlush() {
+  if (logFlushTimer) return;
+  logFlushTimer = setTimeout(flushLogs, LOG_FLUSH_INTERVAL);
+}
+
+// ── Tree utilities (store-private) ──
 
 function mapNode(node: PaneNode, fn: (n: PaneNode) => PaneNode): PaneNode {
   const mapped = fn(node);
   if (mapped.type === 'leaf') return mapped;
   return { ...mapped, children: mapped.children.map(c => mapNode(c, fn)) };
-}
-
-function findLeaf(node: PaneNode, id: string): PaneLeaf | null {
-  if (node.type === 'leaf') return node.id === id ? node : null;
-  for (const child of node.children) {
-    const found = findLeaf(child, id);
-    if (found) return found;
-  }
-  return null;
 }
 
 function removeNode(root: PaneNode, id: string): PaneNode | null {
@@ -31,11 +113,6 @@ function removeNode(root: PaneNode, id: string): PaneNode | null {
   const totalOld = root.sizes.reduce((a, b) => a + b, 0);
   const totalNew = children.length;
   return { ...root, children, sizes: children.map(() => totalOld / totalNew) };
-}
-
-function getAllLeaves(node: PaneNode): PaneLeaf[] {
-  if (node.type === 'leaf') return [node];
-  return node.children.flatMap(getAllLeaves);
 }
 
 // ── Default layout ──
@@ -55,12 +132,16 @@ function createDefaultLayout(): WorkspaceLayout {
 
 // ── Persistence ──
 
-const LS_KEY = 'devhub_workspace_layout';
+const LS_PREFIX = 'devhub_workspace_';
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-function loadLocal(): WorkspaceLayout | null {
+function lsKey(workspaceId: string | null) {
+  return workspaceId ? `${LS_PREFIX}${workspaceId}` : `${LS_PREFIX}default`;
+}
+
+function loadLocal(workspaceId: string | null): WorkspaceLayout | null {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem(lsKey(workspaceId));
     if (!raw) return null;
     return JSON.parse(raw) as WorkspaceLayout;
   } catch {
@@ -68,16 +149,16 @@ function loadLocal(): WorkspaceLayout | null {
   }
 }
 
-function saveLocal(root: PaneNode, tabs: Record<string, PaneTab>) {
+function saveLocal(root: PaneNode, tabs: Record<string, PaneTab>, workspaceId: string | null) {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify({ root, tabs }));
+    localStorage.setItem(lsKey(workspaceId), JSON.stringify({ root, tabs }));
   } catch { /* quota exceeded, ignore */ }
 }
 
 function scheduleBackendSave(workspaceId: string | null, root: PaneNode, tabs: Record<string, PaneTab>) {
   if (saveTimer) clearTimeout(saveTimer);
   // Always save to localStorage as fast backup
-  saveLocal(root, tabs);
+  saveLocal(root, tabs, workspaceId);
   // Debounce backend save
   if (!workspaceId) return;
   saveTimer = setTimeout(() => {
@@ -110,6 +191,9 @@ interface WorkspaceStore extends WorkspaceLayout {
   // Focus
   setFocusedLeaf: (leafId: string | null) => void;
 
+  // Tab reordering (used by drag-and-drop)
+  reorderTabs: (leafId: string, tabIds: string[]) => void;
+
   // Workspace switching
   setActiveWorkspace: (id: string | null) => void;
   loadWorkspaceLayout: (id: string) => Promise<void>;
@@ -118,15 +202,42 @@ interface WorkspaceStore extends WorkspaceLayout {
   updateBrowserUrl: (tabId: string, url: string) => void;
   goBack: (tabId: string) => void;
   goForward: (tabId: string) => void;
+
+  // Browser devtools (ephemeral, keyed by tabId)
+  browserLogs: Record<string, BrowserLogs>;
+  pushConsoleLog: (tabId: string, entry: ConsoleLogEntry) => void;
+  pushNetworkRequest: (tabId: string, entry: NetworkRequestEntry) => void;
+  clearBrowserLogs: (tabId: string) => void;
+  browserPanelState: Record<string, 'none' | 'console' | 'network'>;
+  setBrowserActivePanel: (tabId: string, panel: 'none' | 'console' | 'network') => void;
+
+  // Browser automation (ephemeral)
+  browserAutomation: Record<string, { status: 'idle' | 'running'; lastResult: string }>;
+  setBrowserAutomation: (tabId: string, patch: { status?: 'idle' | 'running'; lastResult?: string }) => void;
+
+  // Test reports (ephemeral, localStorage-backed)
+  testReports: TestReport[];
+  addTestReport: (report: TestReport) => void;
+  clearTestReports: () => void;
 }
 
-const initial = loadLocal() || createDefaultLayout();
+const initialWsId = localStorage.getItem('devhub_active_workspace');
+const initial = (initialWsId ? loadLocal(initialWsId) : null) || createDefaultLayout();
 
-export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
+export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
+  // Wire up batched log flush
+  logFlushSet = set;
+  logFlushGet = get as () => WorkspaceStore;
+
+  return {
   root: initial.root,
   tabs: initial.tabs,
   activeWorkspaceId: localStorage.getItem('devhub_active_workspace'),
   focusedLeafId: null,
+  browserLogs: {},
+  browserPanelState: {},
+  browserAutomation: {},
+  testReports: JSON.parse(localStorage.getItem('devhub_test_reports') || '[]'),
 
   splitPane: (leafId, tabId, direction = 'horizontal', ratio = 0.5) => {
     set(state => {
@@ -249,9 +360,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   getAllLeaves: () => getAllLeaves(get().root),
 
   resetLayout: () => {
-    const fresh = createDefaultLayout();
-    scheduleBackendSave(get().activeWorkspaceId, fresh.root, fresh.tabs);
-    set(fresh);
+    // Try to restore from localStorage, fallback to fresh layout
+    const wsId = get().activeWorkspaceId;
+    const local = loadLocal(wsId);
+    if (local && Object.keys(local.tabs).length > 0) {
+      set({ root: local.root, tabs: local.tabs });
+      scheduleBackendSave(get().activeWorkspaceId, local.root, local.tabs);
+    } else {
+      const fresh = createDefaultLayout();
+      scheduleBackendSave(get().activeWorkspaceId, fresh.root, fresh.tabs);
+      set(fresh);
+    }
   },
 
   setActiveWorkspace: (id) => {
@@ -261,23 +380,37 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setFocusedLeaf: (leafId) => set({ focusedLeafId: leafId }),
 
+  reorderTabs: (leafId, tabIds) => {
+    set(state => {
+      const root = mapNode(state.root, n =>
+        n.type === 'leaf' && n.id === leafId ? { ...n, tabIds } : n
+      );
+      scheduleBackendSave(state.activeWorkspaceId, root, state.tabs);
+      return { root };
+    });
+  },
+
   loadWorkspaceLayout: async (id) => {
     try {
+      // Save current layout to its own localStorage key before switching
+      const current = get();
+      saveLocal(current.root, current.tabs, current.activeWorkspaceId);
+
       const layoutJson = await workspacesApi.loadLayout(id);
       if (layoutJson) {
         const layout = JSON.parse(layoutJson) as WorkspaceLayout;
-        // Clear terminal refs from tabs (terminals don't survive workspace switch)
         set({ root: layout.root, tabs: layout.tabs, activeWorkspaceId: id });
+        saveLocal(layout.root, layout.tabs, id);
       } else {
         // No saved layout — use default
         const fresh = createDefaultLayout();
         set({ root: fresh.root, tabs: fresh.tabs, activeWorkspaceId: id });
-        saveLocal(fresh.root, fresh.tabs);
+        saveLocal(fresh.root, fresh.tabs, id);
       }
       localStorage.setItem('devhub_active_workspace', id);
     } catch {
       // Fallback to localStorage
-      const local = loadLocal();
+      const local = loadLocal(id);
       if (local) {
         set({ root: local.root, tabs: local.tabs, activeWorkspaceId: id });
       }
@@ -330,4 +463,57 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return { tabs };
     });
   },
-}));
+
+  // ── Browser devtools (ephemeral, batched) ──
+
+  pushConsoleLog: (tabId, entry) => {
+    (pendingConsole[tabId] ||= []).push(entry);
+    scheduleFlush();
+  },
+
+  pushNetworkRequest: (tabId, entry) => {
+    (pendingNetwork[tabId] ||= []).push(entry);
+    scheduleFlush();
+  },
+
+  clearBrowserLogs: (tabId) => {
+    // Clear pending buffer for this tab before flushing
+    delete pendingConsole[tabId];
+    delete pendingNetwork[tabId];
+    set(state => ({
+      browserLogs: {
+        ...state.browserLogs,
+        [tabId]: { consoleLogs: [], networkRequests: [] },
+      },
+    }));
+  },
+
+  setBrowserActivePanel: (tabId, panel) => {
+    set(state => ({
+      browserPanelState: { ...state.browserPanelState, [tabId]: panel },
+    }));
+  },
+
+  setBrowserAutomation: (tabId, patch) => {
+    set(state => ({
+      browserAutomation: {
+        ...state.browserAutomation,
+        [tabId]: { ...(state.browserAutomation[tabId] || { status: 'idle', lastResult: '' }), ...patch },
+      },
+    }));
+  },
+
+  addTestReport: (report) => {
+    set(state => {
+      const reports = [report, ...state.testReports].slice(0, 50);
+      localStorage.setItem('devhub_test_reports', JSON.stringify(reports));
+      return { testReports: reports };
+    });
+  },
+
+  clearTestReports: () => {
+    localStorage.removeItem('devhub_test_reports');
+    set({ testReports: [] });
+  },
+};
+});

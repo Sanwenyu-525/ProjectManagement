@@ -61,7 +61,6 @@ pub async fn projects_list(
             } else {
                 sql.push_str(&format!(" AND p.workspaceId = ?{}", param_idx));
                 param_values.push(Box::new(workspace_id.clone()));
-                param_idx += 1;
             }
         }
     }
@@ -311,7 +310,6 @@ pub async fn projects_update(
             let id_idx = idx;
             sets.push(format!("id = ?{}", idx));
             param_values.push(Box::new(id.clone()));
-            idx += 1;
 
             let sql = format!("UPDATE projects SET {} WHERE id = ?{}", sets.join(", "), id_idx);
             let refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
@@ -556,9 +554,9 @@ fn detect_project_cwd_inner(project_path: &str, command: &str) -> Result<Option<
         .collect();
 
     let script_name = if filtered.len() >= 2 && (filtered[0] == "run" || filtered[0] == "start") {
-        filtered.last().unwrap().to_string()
+        filtered.last().map_or(String::new(), |s| s.to_string())
     } else {
-        filtered.last().unwrap_or(&parts.first().unwrap_or(&"")).to_string()
+        filtered.last().or(parts.first()).map_or(String::new(), |s| s.to_string())
     };
 
     if script_name.is_empty() {

@@ -1,32 +1,58 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { ClearOutlined, WarningOutlined, CloseCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { ClearOutlined, WarningOutlined, CloseCircleOutlined, InfoCircleOutlined, ToolOutlined } from '@ant-design/icons';
+import type { ConsoleLogEntry, NetworkRequestEntry } from '../../stores/workspaceStore';
 
-export interface ConsoleEntry {
-  id: number;
-  method: 'error' | 'warn' | 'log';
-  args: string[];
-  timestamp: number;
-}
-
-export interface NetworkEntry {
-  id: number;
-  method: string;
-  url: string;
-  status: number;
-  duration: number;
-  timestamp: number;
-}
+// Re-export for backward compatibility
+export type ConsoleEntry = ConsoleLogEntry;
+export type NetworkEntry = NetworkRequestEntry;
 
 interface Props {
-  consoleLogs: ConsoleEntry[];
-  networkRequests: NetworkEntry[];
+  consoleLogs: ConsoleLogEntry[];
+  networkRequests: NetworkRequestEntry[];
   onClearConsole: () => void;
   onClearNetwork: () => void;
+  onSendError?: (error: string) => void;
 }
 
 type DevToolsTab = 'console' | 'network';
 
-export default function BrowserDevTools({ consoleLogs, networkRequests, onClearConsole, onClearNetwork }: Props) {
+function ConsoleLogRow({ entry, onSendError }: { entry: ConsoleLogEntry; onSendError?: (error: string) => void }) {
+  const [hovered, setHovered] = useState(false);
+  const errorText = entry.args.join(' ');
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        ...styles.logRow,
+        background: entry.method === 'error'
+          ? 'rgba(239, 68, 68, 0.08)'
+          : entry.method === 'warn'
+          ? 'rgba(234, 179, 8, 0.06)'
+          : 'transparent',
+      }}
+    >
+      <span style={styles.logIcon}>
+        {entry.method === 'error' ? <CloseCircleOutlined style={{ color: '#ef4444', fontSize: 11 }} />
+          : entry.method === 'warn' ? <WarningOutlined style={{ color: '#eab308', fontSize: 11 }} />
+          : <InfoCircleOutlined style={{ color: '#64748b', fontSize: 11 }} />}
+      </span>
+      <span style={styles.logText}>{errorText}</span>
+      {hovered && onSendError && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onSendError(errorText); }}
+          style={styles.fixBtn}
+          title="发送给 Agent 修复"
+        >
+          <ToolOutlined style={{ fontSize: 9 }} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function BrowserDevTools({ consoleLogs, networkRequests, onClearConsole, onClearNetwork, onSendError }: Props) {
   const [activeTab, setActiveTab] = useState<DevToolsTab>('console');
   const [expandedRequest, setExpandedRequest] = useState<number | null>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
@@ -85,24 +111,11 @@ export default function BrowserDevTools({ consoleLogs, networkRequests, onClearC
           ) : (
             <div style={styles.scrollArea}>
               {consoleLogs.map(entry => (
-                <div
+                <ConsoleLogRow
                   key={entry.id}
-                  style={{
-                    ...styles.logRow,
-                    background: entry.method === 'error'
-                      ? 'rgba(239, 68, 68, 0.08)'
-                      : entry.method === 'warn'
-                      ? 'rgba(234, 179, 8, 0.06)'
-                      : 'transparent',
-                  }}
-                >
-                  <span style={styles.logIcon}>
-                    {entry.method === 'error' ? <CloseCircleOutlined style={{ color: '#ef4444', fontSize: 11 }} />
-                      : entry.method === 'warn' ? <WarningOutlined style={{ color: '#eab308', fontSize: 11 }} />
-                      : <InfoCircleOutlined style={{ color: '#64748b', fontSize: 11 }} />}
-                  </span>
-                  <span style={styles.logText}>{entry.args.join(' ')}</span>
-                </div>
+                  entry={entry}
+                  onSendError={entry.method === 'error' ? onSendError : undefined}
+                />
               ))}
               <div ref={consoleEndRef} />
             </div>
@@ -265,6 +278,20 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     color: '#cbd5e1',
     wordBreak: 'break-all',
+  },
+  fixBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    border: 'none',
+    background: 'rgba(99, 102, 241, 0.15)',
+    color: '#818cf8',
+    cursor: 'pointer',
+    padding: 0,
+    flexShrink: 0,
   },
   netRow: {
     display: 'flex',

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Typography, Table, Tag, Space, Button, Tooltip, Spin, message, Empty } from 'antd';
 import {
   ReloadOutlined, BranchesOutlined, CloudUploadOutlined, CloudDownloadOutlined,
@@ -6,6 +6,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { projectsApi, gitApi, healthApi } from '../../api';
+import type { ProjectWithStats, ProjectHealthResult } from '../../types';
 
 const { Title } = Typography;
 
@@ -22,88 +23,97 @@ interface ProjectGitInfo {
   loading: boolean;
 }
 
+// --- Cache ---
+const CACHE_TTL = 30_000;
+let cache: { projects: ProjectGitInfo[]; ts: number } | null = null;
+
+// --- Concurrency limiter ---
+async function asyncPool<T>(concurrency: number, items: T[], fn: (item: T) => Promise<ProjectGitInfo>): Promise<ProjectGitInfo[]> {
+  const results: ProjectGitInfo[] = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 export default function GitDashboardPage() {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectGitInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
-  const loadAll = useCallback(async () => {
+  // Progressive load: show projects immediately, fill git data as it arrives
+  const loadAll = useCallback(async (forceRefresh = false) => {
+    // Check cache
+    if (!forceRefresh && cache && Date.now() - cache.ts < CACHE_TTL) {
+      setProjects(cache.projects);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      const list = await projectsApi.list() as any[];
-      const withPaths = list.filter((p: any) => p.localPath);
+      const list = await projectsApi.list();
+      const withPaths = list.filter((p: ProjectWithStats) => p.localPath);
 
-      // Initialize with loading state
-      const initial: ProjectGitInfo[] = withPaths.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        localPath: p.localPath,
-        currentBranch: null,
-        dirtyCount: 0,
-        aheadCount: 0,
-        behindCount: 0,
-        lastCommitMsg: null,
-        lastCommitTime: null,
-        loading: true,
+      // Build initial skeleton immediately
+      const initial: ProjectGitInfo[] = withPaths.map((p: ProjectWithStats) => ({
+        id: p.id, name: p.name, localPath: p.localPath || '',
+        currentBranch: null, dirtyCount: 0, aheadCount: 0, behindCount: 0,
+        lastCommitMsg: null, lastCommitTime: null, loading: true,
       }));
       setProjects(initial);
+      setLoading(false); // show skeleton rows immediately
 
-      // Fetch shared data once
-      const allHealth = await healthApi.getAllLatest().catch(() => []) as any[];
+      // Fetch health data once
+      const allHealth = await healthApi.getAllLatest().catch(() => []) as ProjectHealthResult[];
 
-      // Fetch git info for each project in parallel
-      const promises = withPaths.map(async (p: any) => {
-        try {
-          const [status, log, branches] = await Promise.all([
-            gitApi.status(p.localPath).catch(() => []),
-            gitApi.log(p.localPath, 1).catch(() => []),
-            gitApi.branches(p.localPath).catch(() => ({ current: null })),
-          ]);
+      // Fill rows one-by-one as each project resolves (max 5 concurrent git calls)
+      const updated = [...initial];
+      const mapIdx = new Map(initial.map((p, i) => [p.id, i]));
 
-          const currentBranch = (branches as any)?.current || null;
-          const dirtyCount = Array.isArray(status) ? status.length : 0;
-          const lastCommit = Array.isArray(log) && log.length > 0 ? log[0] : null;
+      await asyncPool(5, withPaths, async (p: ProjectWithStats) => {
+        const cwd = p.localPath || '';
+        const [status, log, branches] = await Promise.all([
+          gitApi.status(cwd).catch(() => []),
+          gitApi.log(cwd, 1).catch(() => []),
+          gitApi.branches(cwd).catch(() => ({ current: null })),
+        ]);
 
-          // Get ahead/behind from pre-fetched health data
-          const health = allHealth?.find((h: any) => h.projectId === p.id);
-          const aheadCount = health?.aheadCount || 0;
-          const behindCount = health?.behindCount || 0;
+        const health = allHealth?.find((h: ProjectHealthResult) => h.projectId === p.id);
+        const info: ProjectGitInfo = {
+          id: p.id, name: p.name, localPath: cwd,
+          currentBranch: (branches as { current?: string | null })?.current || null,
+          dirtyCount: Array.isArray(status) ? status.length : 0,
+          aheadCount: health?.aheadCount || 0,
+          behindCount: health?.behindCount || 0,
+          lastCommitMsg: (Array.isArray(log) && log.length > 0 ? log[0] : null)?.message?.trim() || null,
+          lastCommitTime: (Array.isArray(log) && log.length > 0 ? log[0] : null)?.date || null,
+          loading: false,
+        };
 
-          return {
-            id: p.id,
-            name: p.name,
-            localPath: p.localPath,
-            currentBranch,
-            dirtyCount,
-            aheadCount,
-            behindCount,
-            lastCommitMsg: lastCommit?.message?.trim() || null,
-            lastCommitTime: lastCommit?.date || null,
-            loading: false,
-          } as ProjectGitInfo;
-        } catch {
-          return {
-            id: p.id,
-            name: p.name,
-            localPath: p.localPath,
-            currentBranch: null,
-            dirtyCount: 0,
-            aheadCount: 0,
-            behindCount: 0,
-            lastCommitMsg: null,
-            lastCommitTime: null,
-            loading: false,
-          } as ProjectGitInfo;
+        if (mountedRef.current) {
+          updated[mapIdx.get(p.id)!] = info;
+          setProjects([...updated]);
         }
+        return info;
       });
 
-      const results = await Promise.all(promises);
-      setProjects(results);
+      // Cache the final result
+      if (mountedRef.current) {
+        const finalProjects = updated.map(p => ({ ...p, loading: false }));
+        cache = { projects: finalProjects, ts: Date.now() };
+        setProjects(finalProjects);
+      }
     } catch {
       // ignore
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -114,7 +124,8 @@ export default function GitDashboardPage() {
     try {
       await gitApi.push(localPath);
       message.success('推送成功');
-      await loadAll();
+      cache = null; // invalidate cache after push
+      await loadAll(true);
     } catch (err) {
       message.error(`推送失败: ${String(err)}`);
     } finally {
@@ -148,7 +159,7 @@ export default function GitDashboardPage() {
       title: '状态',
       key: 'status',
       width: 200,
-      render: (_: any, record: ProjectGitInfo) => (
+      render: (_: unknown, record: ProjectGitInfo) => (
         <Space size={4}>
           {record.dirtyCount > 0 && (
             <Tooltip title={`${record.dirtyCount} 个未提交文件`}>
@@ -188,7 +199,7 @@ export default function GitDashboardPage() {
       title: '操作',
       key: 'actions',
       width: 100,
-      render: (_: any, record: ProjectGitInfo) => (
+      render: (_: unknown, record: ProjectGitInfo) => (
         <Space>
           {record.aheadCount > 0 && (
             <Button
@@ -218,7 +229,7 @@ export default function GitDashboardPage() {
   const totalBehind = projects.reduce((s, p) => s + p.behindCount, 0);
   const cleanCount = projects.filter(p => p.dirtyCount === 0 && p.aheadCount === 0 && p.behindCount === 0 && !p.loading).length;
 
-  if (loading) {
+  if (loading && projects.length === 0) {
     return <div style={{ padding: 40, textAlign: 'center' }}><Spin size="large" /></div>;
   }
 
@@ -226,7 +237,7 @@ export default function GitDashboardPage() {
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <Title level={4} style={{ margin: 0 }}>Git 控制中心</Title>
-        <Button icon={<ReloadOutlined />} onClick={loadAll}>刷新全部</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => loadAll(true)}>刷新全部</Button>
       </div>
 
       <div style={{
@@ -261,7 +272,7 @@ export default function GitDashboardPage() {
           rowKey="id"
           pagination={false}
           size="middle"
-          style={{ background: 'var(--color-bg-card)', borderRadius: 12, backdropFilter: 'blur(12px)' }}
+          style={{ background: 'var(--color-bg-card)', borderRadius: 12 }}
           rowClassName={(record) => record.loading ? 'ant-table-row-loading' : ''}
         />
       )}

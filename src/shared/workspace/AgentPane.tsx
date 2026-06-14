@@ -1,15 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { listen } from '@tauri-apps/api/event';
 import { terminalApi } from '../../api';
 import { useTerminalStore } from '../../stores/terminalStore';
-import { TerminalOutputEvent, TerminalExitEvent } from '../terminalTypes';
-import { getThemeColors } from '../terminalThemes';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { getRuntime } from './agent-runtimes';
-import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
+import { useXtermTerminal } from './useXtermTerminal';
+import { generateWorkspaceContext, formatContextForAgent } from '../../lib/aiContext';
 import { RobotOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons';
-import '@xterm/xterm/css/xterm.css';
 
 interface Props {
   agentId: string;
@@ -18,30 +14,34 @@ interface Props {
 
 export default function AgentPane({ agentId, runtimeId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
   const [status, setStatus] = useState<'starting' | 'running' | 'exited'>('starting');
-  const theme = useTerminalStore(s => s.theme);
+  const [restartKey, setRestartKey] = useState(0);
   const runtime = getRuntime(runtimeId);
+  const theme = useTerminalStore(s => s.theme);
 
   const spawnAgent = useCallback(async () => {
     if (!runtime) return;
 
-    const id = agentId;
-    const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
-    const cfg = SHELL_MAP[shellPref] || SHELL_MAP[DEFAULT_SHELL];
     const defaultCwd = useTerminalStore.getState().defaultCwd;
 
-    try {
-      // Start a shell, then send the agent command
-      await terminalApi.startShell(id, cfg.shell, defaultCwd, cfg.args);
+    // On Windows, ensure launcher is ready before spawning.
+    // setupAgentLauncher() internally checks if file exists and creates if needed.
+    if (navigator.userAgent.toLowerCase().includes('win')) {
+      try {
+        const path = await terminalApi.setupAgentLauncher();
+        localStorage.setItem('devhub_claude_launcher', path);
+      } catch { /* ignore — will use fallback */ }
+    }
 
-      // Register in terminal store so exit events are tracked
+    // Re-resolve runtime after launcher is guaranteed to be set
+    const resolvedRuntime = getRuntime(runtimeId) || runtime;
+
+    try {
       useTerminalStore.getState().addTerminal({
-        id,
-        label: runtime.name,
+        id: agentId,
+        label: resolvedRuntime.name,
         createdAt: new Date(),
-        shell: cfg.shell,
+        shell: resolvedRuntime.command,
         cwd: defaultCwd,
         status: 'running',
         projectId: null,
@@ -49,92 +49,50 @@ export default function AgentPane({ agentId, runtimeId }: Props) {
         pane: 'left',
       });
 
-      // Send the agent command after a short delay for shell initialization
-      setTimeout(() => {
-        terminalApi.input(id, `${runtime.command} ${runtime.args.join(' ')}\r`).catch(() => {});
-      }, 300);
-
+      await terminalApi.startAgent(agentId, resolvedRuntime.command, resolvedRuntime.args, defaultCwd);
       setStatus('running');
     } catch (e) {
       console.error('Failed to start agent:', e);
+      useTerminalStore.getState().removeTerminal(agentId);
       setStatus('exited');
     }
-  }, [agentId, runtime]);
+  }, [agentId, runtime, runtimeId]);
 
-  // Initialize xterm.js
+  const { refit } = useXtermTerminal(containerRef, {
+    terminalId: agentId,
+    theme,
+    onData: (data) => terminalApi.input(agentId, data).catch(() => {}),
+  });
+
+  // Spawn on mount and on restartKey change
   useEffect(() => {
-    if (!containerRef.current || !runtime) return;
-
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace",
-      theme: getThemeColors(theme).colors,
-      allowProposedApi: true,
-      scrollback: 10000,
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(containerRef.current);
-    termRef.current = term;
-    fitAddonRef.current = fitAddon;
-
-    const fitTimer = setTimeout(() => fitAddon.fit(), 350);
-
-    // ResizeObserver
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    const observer = new ResizeObserver(() => {
-      if (fitAddonRef.current && termRef.current) {
-        fitAddonRef.current.fit();
-        if (resizeTimer) clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-          const dims = fitAddonRef.current?.proposeDimensions();
-          if (dims) terminalApi.resize(agentId, dims.cols, dims.rows).catch(() => {});
-        }, 100);
-      }
-    });
-    observer.observe(containerRef.current);
-
-    // Listen for output
-    const unlistenOutput = listen<TerminalOutputEvent>('terminal-output', (event) => {
-      if (event.payload.terminalId === agentId) {
-        term.write(event.payload.data);
-      }
-    });
-
-    // Listen for exit
-    const unlistenExit = listen<TerminalExitEvent>('terminal-exit', (event) => {
-      if (event.payload.terminalId === agentId) {
-        setStatus('exited');
-      }
-    });
-
-    // Spawn the agent process
     spawnAgent();
-
-    return () => {
-      clearTimeout(fitTimer);
-      if (resizeTimer) clearTimeout(resizeTimer);
-      observer.disconnect();
-      unlistenOutput.then(fn => fn());
-      unlistenExit.then(fn => fn());
-      term.dispose();
-      termRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, [agentId, runtime, theme, spawnAgent]);
+  }, [spawnAgent, restartKey]);
 
   // Re-fit on status change
   useEffect(() => {
-    if (status === 'running' && fitAddonRef.current && termRef.current) {
-      const timer = setTimeout(() => {
-        fitAddonRef.current?.fit();
-        const dims = fitAddonRef.current?.proposeDimensions();
-        if (dims) terminalApi.resize(agentId, dims.cols, dims.rows).catch(() => {});
-      }, 100);
+    if (status === 'running') {
+      const timer = setTimeout(refit, 100);
       return () => clearTimeout(timer);
     }
+  }, [status, refit]);
+
+  // Inject workspace context when agent starts running
+  useEffect(() => {
+    if (status !== 'running') return;
+    const timeout = setTimeout(async () => {
+      try {
+        const tabs = useWorkspaceStore.getState().tabs;
+        const openTabs = Object.values(tabs).map(t => ({
+          id: t.id, label: t.label, type: t.contentType,
+        }));
+        const ctx = await generateWorkspaceContext(openTabs);
+        const prompt = formatContextForAgent(ctx);
+        // Send context as a paste to the agent terminal
+        await terminalApi.input(agentId, `\n${prompt}\n`);
+      } catch { /* context injection is best-effort */ }
+    }, 2000); // 2s delay to let agent initialize
+    return () => clearTimeout(timeout);
   }, [status, agentId]);
 
   const handleStop = useCallback(async () => {
@@ -143,16 +101,12 @@ export default function AgentPane({ agentId, runtimeId }: Props) {
     setStatus('exited');
   }, [agentId]);
 
-  const handleRestart = useCallback(() => {
+  const handleRestart = useCallback(async () => {
     setStatus('starting');
-    // Dispose old terminal
-    if (termRef.current) {
-      termRef.current.dispose();
-      termRef.current = null;
-    }
-    // Re-spawn
-    setTimeout(() => spawnAgent(), 100);
-  }, [spawnAgent]);
+    await terminalApi.stop(agentId).catch(() => {});
+    useTerminalStore.getState().removeTerminal(agentId);
+    setRestartKey(k => k + 1);
+  }, [agentId]);
 
   if (!runtime) {
     return (

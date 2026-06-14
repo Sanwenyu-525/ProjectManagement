@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTerminalStore } from '../../stores/terminalStore';
+import type { PaneNode, PaneLeaf } from './types';
 import { usePreviewStore } from '../../stores/previewStore';
 import { terminalApi } from '../../api';
 import { TerminalExitEvent, TerminalOutputEvent } from '../terminalTypes';
@@ -9,6 +10,8 @@ import WorkspaceNavigator from './WorkspaceNavigator';
 import WorkspacePane from './WorkspacePane';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { useWorkspaceShortcuts } from './WorkspaceShortcuts';
+import AutomationRouter from './AutomationRouter';
+import AgentSessionRecorder from './AgentSessionRecorder';
 
 // Regex patterns for detecting dev server URLs in terminal output
 const URL_PATTERNS = [
@@ -18,7 +21,7 @@ const URL_PATTERNS = [
   /(https?:\/\/localhost:\d+[^\s]*)/,       // Generic: any localhost URL
 ];
 
-export default function WorkspacePreview() {
+export default function WorkspacePage() {
   const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
 
   useWorkspaceShortcuts();
@@ -60,7 +63,7 @@ export default function WorkspacePreview() {
           const { useWorkspaceStore } = await import('../../stores/workspaceStore');
           const wsState = useWorkspaceStore.getState();
           const leaves = (() => {
-            const walk = (n: any): any[] => {
+            const walk = (n: PaneNode): PaneLeaf[] => {
               if (n.type === 'leaf') return [n];
               return n.children?.flatMap(walk) ?? [];
             };
@@ -118,14 +121,55 @@ export default function WorkspacePreview() {
     return () => { unlisten.then(fn => fn()); };
   }, []);
 
+  // Sidebar resize
+  const [sidebarWidth, setSidebarWidth] = useState(200);
+  const sidebarWidthRef = useRef(200);
+  const isDraggingRef = useRef(false);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidthRef.current;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const delta = ev.clientX - startX;
+      const newWidth = Math.max(120, Math.min(400, startWidth + delta));
+      sidebarWidthRef.current = newWidth;
+      setSidebarWidth(newWidth);
+    };
+
+    const onUp = () => {
+      isDraggingRef.current = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
   return (
     <div style={styles.container}>
+      <AutomationRouter />
+      <AgentSessionRecorder />
       {/* Top: workspace toolbar */}
       <WorkspaceToolbar />
 
       {/* Middle: navigator + pane tree */}
       <div style={styles.body}>
-        <WorkspaceNavigator />
+        <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden' }}>
+          <WorkspaceNavigator />
+        </div>
+        <div
+          onMouseDown={handleResizeStart}
+          style={styles.resizeHandle}
+        />
         <div style={styles.paneArea}>
           <WorkspacePane />
         </div>
@@ -152,5 +196,12 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflow: 'hidden',
     display: 'flex',
+  },
+  resizeHandle: {
+    width: 4,
+    cursor: 'col-resize',
+    background: 'transparent',
+    flexShrink: 0,
+    transition: 'background 0.15s',
   },
 };

@@ -1,3 +1,4 @@
+pub mod brain;
 pub mod dependencies;
 pub mod detect;
 pub mod documents;
@@ -7,6 +8,7 @@ pub mod milestones;
 pub mod projects;
 pub mod repos;
 pub mod search;
+pub mod sessions;
 pub mod tags;
 pub mod tasks;
 pub mod terminal;

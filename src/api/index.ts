@@ -24,9 +24,18 @@ import type {
   AddRepoInput,
   UpdateRepoInput,
   DetectedProject,
+  ScanResult,
+  ProjectHealthResult,
+  HealthCheckResult,
+  OutdatedDep,
+  ProjectBrain,
+  AgentSession,
+  AgentMessage,
+  BrowserVisit,
 } from '../types';
 
 // Type-safe wrapper — components already use `any` for API data
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const cmd = <T = any>(name: string, args?: Record<string, unknown>): Promise<T> =>
   tauriInvoke(name, args) as Promise<T>;
 
@@ -59,13 +68,14 @@ export const projectsApi = {
       .then((data) => normalizeProject(data) as Project),
   detectCwd: (projectPath: string, command: string): Promise<string | null> =>
     cmd('detect_project_cwd', { projectPath, command }),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   debugRaw: (id: string): Promise<Record<string, any>> =>
     cmd('debug_project_raw', { id }),
   launch: (id: string, components?: string[]): Promise<{ projectId: string; launched: string[] }> =>
     cmd('projects_launch', { id, components: components ?? null }),
   stop: (id: string, components?: string[]): Promise<{ projectId: string; stopped: string[] }> =>
     cmd('projects_stop', { id, components: components ?? null }),
-  checkEnvironment: (id: string): Promise<{ projectId: string; checks: any[]; overallStatus: string }> =>
+  checkEnvironment: (id: string): Promise<{ projectId: string; checks: OutdatedDep[]; overallStatus: string }> =>
     cmd('projects_check_environment', { id }),
   batchImport: (projects: Record<string, unknown>[]): Promise<{ imported: number; skipped: number; errors: string[] }> =>
     cmd('projects_batch_import', { projects }),
@@ -154,8 +164,10 @@ export const detectApi = {
     cmd('detect_local_project', { path }),
   gitRepo: (repoUrl: string): Promise<DetectedProject> =>
     cmd('detect_git_repo', { repoUrl }),
-  scanDirectory: (path: string, maxDepth?: number): Promise<DetectedProject[]> =>
+  scanDirectory: (path: string, maxDepth?: number): Promise<ScanResult> =>
     cmd('detect_scan_directory', { path, maxDepth: maxDepth ?? null }),
+  installedAgents: (commands: string[]): Promise<Record<string, boolean>> =>
+    cmd('detect_installed_agents', { commands }),
 };
 
 // ==================== Git ====================
@@ -213,9 +225,11 @@ export const documentsApi = {
 interface TerminalApi {
   start: (projectId: string, commandStr: string, cwd: string) => Promise<string>;
   startShell: (terminalId: string, shell: string, cwd: string, args?: string[]) => Promise<string>;
-  stop: (terminalId: string) => Promise<any>;
-  input: (terminalId: string, data: string) => Promise<any>;
-  resize: (terminalId: string, cols: number, rows: number) => Promise<any>;
+  startAgent: (terminalId: string, command: string, args: string[], cwd: string) => Promise<string>;
+  setupAgentLauncher: () => Promise<string>;
+  stop: (terminalId: string) => Promise<void>;
+  input: (terminalId: string, data: string) => Promise<void>;
+  resize: (terminalId: string, cols: number, rows: number) => Promise<void>;
 }
 
 export const terminalApi: TerminalApi = {
@@ -223,6 +237,10 @@ export const terminalApi: TerminalApi = {
     cmd<string>('terminal_start', { projectId, commandStr, cwd }),
   startShell: (terminalId: string, shell: string, cwd: string, args?: string[]) =>
     cmd<string>('terminal_start_shell', { terminalId, shell, args: args ?? null, cwd }),
+  startAgent: (terminalId: string, command: string, args: string[], cwd: string) =>
+    cmd<string>('terminal_start_agent', { terminalId, command, args, cwd }),
+  setupAgentLauncher: () =>
+    cmd<string>('terminal_setup_agent_launcher'),
   stop: (terminalId: string) =>
     cmd('terminal_stop', { terminalId }),
   input: (terminalId: string, data: string) =>
@@ -248,13 +266,13 @@ export const dependenciesApi = {
 
 export const healthApi = {
   runAll: () =>
-    cmd<{ results: any[]; changedProjects: any[] }>('run_all_health_checks'),
+    cmd<{ results: ProjectHealthResult[]; changedProjects: string[] }>('run_all_health_checks'),
   runForProject: (projectId: string) =>
-    cmd<any>('run_health_check_for_project', { projectId }),
+    cmd<ProjectHealthResult>('run_health_check_for_project', { projectId }),
   getProjectHistory: (projectId: string, limit?: number) =>
-    cmd<any[]>('get_project_health_history', { projectId, limit: limit ?? null }),
+    cmd<HealthCheckResult[]>('get_project_health_history', { projectId, limit: limit ?? null }),
   getAllLatest: () =>
-    cmd<any[]>('get_all_latest_health'),
+    cmd<ProjectHealthResult[]>('get_all_latest_health'),
 };
 
 // ==================== Workspaces ====================
@@ -274,4 +292,68 @@ export const workspacesApi = {
     cmd('workspaces_save_layout', { id, layout }),
   loadLayout: (id: string): Promise<string | null> =>
     cmd('workspaces_load_layout', { id }),
+};
+
+// ==================== Screenshots ====================
+
+export interface ScreenshotableWindow {
+  id: number;
+  name: string;
+  title: string;
+  appName: string;
+}
+
+export const screenshotApi = {
+  /** List all screenshotable windows */
+  listWindows: (): Promise<ScreenshotableWindow[]> =>
+    cmd('plugin:screenshots|get_screenshotable_windows'),
+
+  /** Capture a window by ID, returns path to saved PNG */
+  captureWindow: (windowId: number): Promise<string> =>
+    cmd('plugin:screenshots|get_window_screenshot', { id: windowId }),
+
+  /** Find the main DevHub window and capture it */
+  captureMain: async (): Promise<{ path: string; windowName: string } | null> => {
+    const windows = await screenshotApi.listWindows();
+    const main = windows.find(w =>
+      w.appName.toLowerCase().includes('devhub') ||
+      w.title.toLowerCase().includes('devhub')
+    );
+    if (!main) return null;
+    const path = await screenshotApi.captureWindow(main.id);
+    return { path, windowName: main.name };
+  },
+};
+
+// ==================== Project Brain ====================
+
+export const brainApi = {
+  analyze: (projectId: string) =>
+    cmd<ProjectBrain>('brain_analyze_project', { projectId }),
+};
+
+// ==================== Agent Sessions ====================
+
+export const sessionsApi = {
+  start: (agentTabId: string, runtimeId: string, projectId?: string, cwd?: string) =>
+    cmd<string>('sessions_start', { agentTabId, runtimeId, projectId: projectId ?? null, cwd: cwd ?? null }),
+  appendMessage: (sessionId: string, role: string, content: string) =>
+    cmd('sessions_append_message', { sessionId, role, content }),
+  end: (sessionId: string) =>
+    cmd('sessions_end', { sessionId }),
+  list: (limit?: number) =>
+    cmd<AgentSession[]>('sessions_list', { limit: limit ?? null }),
+  messages: (sessionId: string) =>
+    cmd<AgentMessage[]>('sessions_messages', { sessionId }),
+};
+
+// ==================== Browser Memory ====================
+
+export const browserMemoryApi = {
+  recordVisit: (data: { tabId: string; url: string; title?: string; domAnalysis?: string; projectId?: string }) =>
+    cmd('browser_record_visit', data),
+  listVisits: (tabId?: string, limit?: number) =>
+    cmd<BrowserVisit[]>('browser_list_visits', { tabId: tabId ?? null, limit: limit ?? null }),
+  findByUrl: (url: string) =>
+    cmd<BrowserVisit[]>('browser_find_visits_by_url', { url }),
 };

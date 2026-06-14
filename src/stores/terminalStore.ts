@@ -22,10 +22,6 @@ interface PaneState {
 }
 
 interface TerminalStore {
-  // Visibility
-  terminalOpen: boolean;
-  setTerminalOpen: (v: boolean) => void;
-
   // Launch queue
   launchQueue: LaunchRequest[];
   requestLaunch: (req: LaunchRequest) => void;
@@ -78,15 +74,10 @@ interface TerminalStore {
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
-  // Visibility
-  terminalOpen: false,
-  setTerminalOpen: (v) => set({ terminalOpen: v }),
-
   // Launch queue
   launchQueue: [],
   requestLaunch: (req) => set(state => ({
     launchQueue: [...state.launchQueue, req],
-    terminalOpen: true,
   })),
   consumeLaunchRequest: () => {
     const queue = get().launchQueue;

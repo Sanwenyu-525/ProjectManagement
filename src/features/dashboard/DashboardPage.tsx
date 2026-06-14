@@ -15,6 +15,8 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { projectsApi } from '../../api';
+import type { ProjectWithStats } from '../../types';
+import type { FC } from 'react';
 import ProjectIcon from '../../shared/ProjectIcon';
 
 // 统计卡片配置
@@ -35,7 +37,7 @@ const STATUS_MONITOR_CONFIG = [
 
 // 统计卡片
 function StatCard({ title, value, icon: Icon, iconColor, delay }: {
-  title: string; value: number; icon: any; iconColor: string; delay: number;
+  title: string; value: number; icon: FC<{ style?: React.CSSProperties }>; iconColor: string; delay: number;
 }) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -73,7 +75,7 @@ function StatCard({ title, value, icon: Icon, iconColor, delay }: {
 
 // 状态监控卡片
 function StatusMonitorCard({ title, value, icon: Icon, color, delay }: {
-  title: string; value: number; icon: any; color: string; delay: number;
+  title: string; value: number; icon: FC<{ style?: React.CSSProperties }>; color: string; delay: number;
 }) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -105,9 +107,9 @@ function StatusMonitorCard({ title, value, icon: Icon, color, delay }: {
 }
 
 // 项目状态卡片
-function ProjectStatusCard({ project }: { project: any }) {
+function ProjectStatusCard({ project }: { project: ProjectWithStats }) {
   const navigate = useNavigate();
-  const isRunning = project.status === 'Running';
+  const isRunning = project.frontendStatus === 'running' || project.backendStatus === 'running';
   const statusColor = isRunning ? '#52c41a' : '#8b95a5';
   const healthScore = calculateHealthScore(project);
 
@@ -193,11 +195,11 @@ function extractPortFromCommand(command?: string): number | undefined {
   return 3000;
 }
 
-function calculateHealthScore(project: any): number {
+function calculateHealthScore(project: ProjectWithStats): number {
   // 活跃度 (40分): 按最后更新时间衰减
   const updated = new Date(project.updatedAt).getTime();
   const daysSinceUpdate = (Date.now() - updated) / (1000 * 60 * 60 * 24);
-  let activity = 0;
+  let activity: number;
   if (daysSinceUpdate <= 1) activity = 40;
   else if (daysSinceUpdate <= 7) activity = 40 - (daysSinceUpdate - 1) * (20 / 6);
   else if (daysSinceUpdate <= 30) activity = 20 - (daysSinceUpdate - 7) * (15 / 23);
@@ -229,7 +231,7 @@ function getHealthColor(score: number): string {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<ProjectWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -252,14 +254,14 @@ export default function DashboardPage() {
   const stats = {
     total: projects.length,
     active: projects.filter(p => !['Archived', 'Idea'].includes(p.status)).length,
-    deployed: projects.filter(p => p.status === 'Deployed' || p.status === 'Maintained').length,
+    deployed: projects.filter(p => p.status === 'Completed').length,
     archived: projects.filter(p => p.status === 'Archived').length,
   };
 
   const statusStats = {
-    running: projects.filter(p => p.status === 'Running').length,
-    stopped: projects.filter(p => p.status !== 'Running').length,
-    error: 0, // Will be calculated based on actual errors
+    running: projects.filter(p => p.frontendStatus === 'running' || p.backendStatus === 'running').length,
+    stopped: projects.filter(p => p.frontendStatus !== 'running' && p.backendStatus !== 'running').length,
+    error: 0,
     total: projects.length,
   };
 

@@ -1,7 +1,6 @@
 use std::path::Path;
 use thiserror::Error;
 use r2d2::Pool;
-use std::sync::Mutex;
 use rusqlite::Connection;
 
 /// Generate a new UUID string.
@@ -173,6 +172,12 @@ impl Database {
         // Workspace layout persistence
         run_migration_sql(&conn, include_str!("../migrations/006_workspace_layout.sql"));
 
+        // Agent session recording
+        run_migration_sql(&conn, include_str!("../migrations/007_agent_sessions.sql"));
+
+        // Browser memory
+        run_migration_sql(&conn, include_str!("../migrations/008_browser_memory.sql"));
+
         Ok(())
     }
 
@@ -266,6 +271,12 @@ impl Database {
     }
 
     pub fn delete_by_id(&self, table: &str, id: &str) -> Result<(), DbError> {
+        const VALID_TABLES: &[&str] = &[
+            "milestones", "documents", "remote_repos", "tags", "tasks", "workspaces",
+        ];
+        if !VALID_TABLES.contains(&table) {
+            return Err(DbError::Lock(format!("Invalid table name: {}", table)));
+        }
         let sql = format!("DELETE FROM \"{}\" WHERE id = ?1", table);
         self.execute_returning_changes(&sql, &[&id])?;
         Ok(())

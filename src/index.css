@@ -173,3 +173,60 @@ body {
   background: rgba(255, 255, 255, 0.35) !important;
   color: var(--color-accent) !important;
 }
+
+/* ==================== Git Dashboard Loading Rows ==================== */
+
+.ant-table-row-loading td {
+  position: relative;
+  opacity: 0.45;
+  transition: opacity 0.3s ease;
+}
+
+.ant-table-row-loading td::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.08) 50%, transparent 75%);
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+/* Agent dropdown menu */
+.ant-dropdown {
+  min-width: auto !important;
+}
+
+.ant-dropdown-menu {
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4) !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+  padding: 4px !important;
+  min-width: auto !important;
+  width: fit-content !important;
+}
+
+.ant-dropdown-menu-item {
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  transition: background 0.15s !important;
+  color: #1a1f36 !important;
+}
+
+.ant-dropdown-menu-item:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+.ant-dropdown-menu-item-disabled {
+  opacity: 0.5 !important;
+}
+
+.ant-dropdown-menu-item-disabled:hover {
+  background: transparent !important;
+}

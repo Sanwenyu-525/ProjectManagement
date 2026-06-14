@@ -34,6 +34,7 @@ export default function GlobalSearch() {
   const [loading, setLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const inputRef = useRef<any>(null);
 
   useEffect(() => {
@@ -83,19 +84,18 @@ export default function GlobalSearch() {
 
       // 将搜索结果转换为统一格式
       if (data.projects) {
-        data.projects.forEach((p: any) => {
+        data.projects.forEach((p) => {
           searchResults.push({
             type: 'project',
-            id: p.id,
-            title: p.name,
-            description: p.description,
-            projectName: p.name,
+            id: p.id as string,
+            title: p.name as string,
+            description: p.description as string,
           });
         });
       }
 
       if (data.tasks) {
-        data.tasks.forEach((t: any) => {
+        data.tasks.forEach((t) => {
           searchResults.push({
             type: 'task',
             id: t.id,
@@ -108,7 +108,7 @@ export default function GlobalSearch() {
       }
 
       if (data.documents) {
-        data.documents.forEach((d: any) => {
+        data.documents.forEach((d) => {
           searchResults.push({
             type: 'document',
             id: d.id,

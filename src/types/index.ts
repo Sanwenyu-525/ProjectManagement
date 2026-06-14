@@ -390,5 +390,111 @@ export interface DetectedProject {
 
 export interface ScanResult {
   projects: DetectedProject[];
+  groups: ScanGroup[];
   monorepoRoot?: string;
+}
+
+// ==================== Workspaces ====================
+
+export interface Workspace {
+  id: UUID;
+  name: string;
+  description?: string;
+  color?: string;
+  sortOrder: number;
+  projectCount?: number;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+// ==================== Scan Groups ====================
+
+export interface ScanGroup {
+  id: string;
+  label: string;
+  groupType: 'git' | 'folder';
+}
+
+// ==================== Project Brain ====================
+
+export interface ProjectBrain {
+  structure: DirectoryNode;
+  entryPoints: EntryPoints;
+  directories: DirectoryInfo[];
+  environment: EnvironmentInfo;
+  stats: ProjectStats;
+}
+
+export interface DirectoryNode {
+  name: string;
+  nodeType: 'dir' | 'file';
+  children: DirectoryNode[];
+  fileCount: number;
+}
+
+export interface EntryPoints {
+  main?: string;
+  config?: string;
+  test?: string;
+  lint?: string;
+}
+
+export interface DirectoryInfo {
+  path: string;
+  purpose: 'source' | 'test' | 'config' | 'build' | 'docs' | 'assets' | 'scripts';
+  fileCount: number;
+  description?: string;
+}
+
+export interface EnvironmentInfo {
+  nodeVersion?: string;
+  pythonVersion?: string;
+  requiredTools: string[];
+}
+
+export interface ProjectStats {
+  totalFiles: number;
+  sourceFiles: number;
+  testFiles: number;
+  linesOfCode?: number;
+  languages: LanguageStats[];
+}
+
+export interface LanguageStats {
+  name: string;
+  fileCount: number;
+  lines?: number;
+}
+
+// ==================== Agent Sessions ====================
+
+export interface AgentSession {
+  id: string;
+  agentTabId: string;
+  runtimeId: string;
+  startedAt: string;
+  endedAt?: string;
+  status: 'running' | 'ended';
+  projectId?: string;
+  cwd?: string;
+}
+
+export interface AgentMessage {
+  id: number;
+  sessionId: string;
+  role: 'input' | 'output';
+  content: string;
+  timestamp: string;
+}
+
+// ==================== Browser Memory ====================
+
+export interface BrowserVisit {
+  id: string;
+  tabId: string;
+  url: string;
+  title?: string;
+  visitedAt: string;
+  domAnalysis?: string;
+  projectId?: string;
 }

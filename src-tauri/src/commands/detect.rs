@@ -280,7 +280,7 @@ pub async fn detect_git_repo(repo_url: String) -> Result<DetectedProject, String
 
     // Clone (shallow, single branch)
     let output = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", "--single-branch", &repo_url, temp_dir.to_str().unwrap()])
+        .args(["clone", "--depth", "1", "--single-branch", &repo_url, temp_dir.to_str().unwrap_or_default()])
         .output()
         .map_err(|e| format!("Failed to run git: {}", e))?;
 
@@ -1759,4 +1759,23 @@ fn detect_icon_from_exe(dir: &Path) -> Option<ProjectIconInfo> {
 #[cfg(not(target_os = "windows"))]
 fn detect_icon_from_exe(_dir: &Path) -> Option<ProjectIconInfo> {
     None
+}
+
+/// Check which CLI commands are available on the system.
+/// Returns a map of command name → whether it exists.
+#[command]
+pub async fn detect_installed_agents(commands: Vec<String>) -> Result<std::collections::HashMap<String, bool>, String> {
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    let mut result = std::collections::HashMap::new();
+
+    for cmd_name in &commands {
+        let output = std::process::Command::new(which_cmd)
+            .arg(cmd_name)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        result.insert(cmd_name.clone(), output.map(|s| s.success()).unwrap_or(false));
+    }
+
+    Ok(result)
 }

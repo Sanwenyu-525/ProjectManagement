@@ -1,6 +1,6 @@
 # V3 工作区架构设计
 
-> 状态：Phase 1-5 已完成，Phase 6（Project Browser V3.0-V5 路线图）待实现
+> 状态：Phase 1-5 已完成，V3.0-V4 已完成，V5 自动验证已实现
 > 日期：2026-06-13
 
 ## 战略方向
@@ -396,7 +396,99 @@ Browser 自动刷新
 
 ---
 
-#### V5 — 自动验证
+#### V4 — 已实现
+
+**元素检查 ✅**
+- `INSPECT_SCRIPT` 注入 iframe，hover 高亮 + click 上报
+- inspect 面板显示 tag/id/class/size/text
+- "交给 Agent" 按钮自动构造结构化 prompt
+
+**浏览器自动化 ✅**
+- `browserAutomationScript.ts` — 注入 iframe 的自动化脚本
+- 支持命令：`navigate` / `click` / `fill` / `wait` / `scroll` / `screenshot`（DOM 分析）
+- Agent 命令格式：`[devhub-browser:<tabId>] <action> <args>`
+- BrowserPane 监听 `terminal-output` 事件，拦截并执行命令
+- 结果通过 `terminalApi.input()` 注入回 Agent 终端
+
+**截图 ✅（双模式）**
+- DOM 分析：`screenshot` → 返回页面结构（title/headings/buttons/inputs/forms/text）
+- 像素截图：`pixel-screenshot` → `tauri-plugin-screenshots` 捕获窗口 → 保存 PNG 到 `{app_data}/tauri-plugin-screenshots/`
+
+**命令协议：**
+
+```
+Agent 终端输出：[devhub-browser:browser-xxx] navigate http://localhost:5173/login
+                [devhub-browser:browser-xxx] fill input[name="username"] testuser
+                [devhub-browser:browser-xxx] click #login-button
+                [devhub-browser:browser-xxx] wait .dashboard
+                [devhub-browser:browser-xxx] screenshot
+```
+
+BrowserPane 拦截 → postMessage 到 iframe → 执行 → 结果注入回 Agent 终端。
+
+**V5 验证命令 ✅：**
+- `verify` 命令支持 8 种检查：`exists` / `not-exists` / `text` / `value` / `visible` / `count` / `url` / `title`
+- Agent 命令格式：`[devhub-browser:<tabId>] verify <check> <selector> [expectedValue]`
+- 结果返回 `[verify] ✅` 或 `[verify] ❌` + 详情
+
+**V5 测试报告协议：**
+
+Agent 使用 V4 命令 + V5 verify 自主执行测试，输出标准化报告：
+
+```
+# 测试: 登录功能
+1. ✅ navigate → http://localhost:5173/login
+2. ✅ fill input[name="user"] → testuser
+3. ✅ fill input[name="pass"] → 123456
+4. ✅ click #login-btn
+5. ✅ wait .dashboard
+6. ✅ verify url dashboard → ✅ URL matches
+7. ✅ verify text h1 Welcome → ✅ Text matches
+结果: 7/7 通过
+```
+
+**V5 Scenario 批量命令：**
+
+Agent 可一次执行多步测试场景，无需逐条等待：
+
+```
+[devhub-browser:<tabId>] scenario <label> <base64-JSON-steps>
+```
+
+步骤格式（JSON + base64 编码）：
+```json
+[
+  {"action":"navigate","url":"http://localhost:5173/login"},
+  {"action":"fill","selector":"#username","value":"testuser"},
+  {"action":"fill","selector":"#password","value":"123456"},
+  {"action":"click","selector":"#login-btn"},
+  {"action":"wait","selector":".dashboard","timeout":10000},
+  {"action":"verify","check":"text","selector":"h1","value":"Welcome"}
+]
+```
+
+返回结构化报告：
+```
+[scenario] 测试: 登录功能 (6/6 通过)
+  ✅ 1. navigate → http://localhost:5173/login
+  ✅ 2. fill #username → testuser
+  ✅ 3. fill #password → 123456
+  ✅ 4. click #login-btn
+  ✅ 5. wait .dashboard [3200ms]
+  ✅ 6. verify text h1 Welcome → Welcome
+  耗时: 8.2s
+```
+
+**实现细节：**
+- 场景执行完全在 iframe 注入脚本内，一次 postMessage → 一次 result 返回
+- 每步有 try/catch，失败不中断后续步骤
+- `navigate` 作为中间步骤时，通过 localStorage 传递剩余步骤到新页面继续执行
+- 测试报告自动存储到 workspaceStore（localStorage，上限 50 条）
+- Navigator 侧边栏显示"测试报告"区域，可展开查看步骤详情
+
+---
+
+#### V5 — 自动验证 ✅
 
 **目标：** Agent 自动测试、自动验收、自动回归。
 
@@ -458,12 +550,12 @@ Browser 遍历关键页面
 
 #### Project Browser 能力总览
 
-| 版本 | 能力 | 核心价值 |
-|------|------|----------|
-| V3.0 | iframe + 多预览 + 持久化 | 能看 |
-| V3.5 | Console + Network + 截图→Agent | 能诊断 |
-| V4 | 元素检查 + 浏览器自动化 | 能操作 |
-| V5 | 自动测试 + 自动验收 + 回归测试 | 能验证 |
+| 版本 | 能力 | 核心价值 | 状态 |
+|------|------|----------|------|
+| V3.0 | iframe + 多预览 + 持久化 | 能看 | ✅ |
+| V3.5 | Console + Network + 截图→Agent | 能诊断 | ✅ |
+| V4 | 元素检查 + 浏览器自动化 + DOM 分析 | 能操作 | ✅ |
+| V5 | 自动测试 + 自动验收 + 回归测试（verify + scenario 命令） | 能验证 | ✅ |
 
 最终形态：
 
@@ -505,10 +597,10 @@ src/shared/workspace/
 ├── PaneTabBar.tsx              # 标签栏
 ├── TerminalLeafContent.tsx     # 终端面板（含自动重建）
 ├── AgentPane.tsx               # Agent 面板
-├── BrowserPane.tsx            # Project Browser（iframe）
-├── BrowserToolbar.tsx         # URL 栏 + 后退/前进/刷新
-├── BrowserConsole.tsx         # [V3.5] Console 面板
-├── BrowserNetwork.tsx         # [V3.5] Network 面板
+├── BrowserPane.tsx            # Project Browser（iframe + 自动化拦截）
+├── BrowserToolbar.tsx         # URL 栏 + 后退/前进/刷新 + 截图 + 元素检查
+├── BrowserDevTools.tsx        # Console + Network 面板（合并实现）
+├── browserAutomationScript.ts # [V4] 自动化注入脚本（navigate/click/fill/wait/screenshot）
 └── agent-runtimes/
     └── types.ts                # Agent 运行时注册表
 

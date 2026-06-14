@@ -16,9 +16,13 @@ function cardStyle(extend?: React.CSSProperties): React.CSSProperties {
 }
 
 export default function DataScreenPage() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [projects, setProjects] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [healthData, setHealthData] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [workspaceData, setWorkspaceData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -68,10 +72,10 @@ export default function DataScreenPage() {
   // 健康评分分布
   const healthScoreDist = useMemo(() => {
     if (healthData.length === 0) return null;
-    const buckets = { healthy: 0, needs_attention: 0, critical: 0, unknown: 0 };
-    healthData.forEach((h: any) => {
-      const status = h.healthStatus || 'unknown';
-      if (status in buckets) (buckets as any)[status]++;
+    const buckets: Record<string, number> = { healthy: 0, needs_attention: 0, critical: 0, unknown: 0 };
+    healthData.forEach((h) => {
+      const status = (h.healthStatus || 'unknown') as string;
+      if (status in buckets) buckets[status as keyof typeof buckets]++;
       else buckets.unknown++;
     });
     return [
@@ -84,7 +88,7 @@ export default function DataScreenPage() {
 
   // 平均健康评分
   const avgHealthScore = useMemo(() => {
-    const scores = healthData.filter((h: any) => h.healthScore != null).map((h: any) => h.healthScore);
+    const scores = healthData.filter((h) => h.healthScore != null).map((h) => h.healthScore as number);
     if (scores.length === 0) return null;
     return Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length);
   }, [healthData]);
@@ -103,9 +107,9 @@ export default function DataScreenPage() {
   const workspaceDist = useMemo(() => {
     if (workspaceData.length === 0) return null;
     const items = workspaceData
-      .map((w: any) => ({ name: w.name, value: w.projectCount || 0, itemStyle: { color: w.color || '#6366F1' } }))
-      .filter((d: any) => d.value > 0);
-    const assignedCount = workspaceData.reduce((s: number, w: any) => s + (w.projectCount || 0), 0);
+      .map((w) => ({ name: w.name as string, value: (w.projectCount as number) || 0, itemStyle: { color: (w.color as string) || '#6366F1' } }))
+      .filter((d) => d.value > 0);
+    const assignedCount = workspaceData.reduce((s: number, w) => s + ((w.projectCount as number) || 0), 0);
     const unassigned = projects.length - assignedCount;
     if (unassigned > 0) {
       items.push({ name: '未分组', value: unassigned, itemStyle: { color: '#d9d9d9' } });
@@ -239,7 +243,7 @@ export default function DataScreenPage() {
         <Card style={cardStyle()}>
           <Title level={4} style={{ color: '#1a1f36' }}>30天活动热力图</Title>
           <ReactECharts style={{ height: 300 }} option={{
-            tooltip: { formatter: (p: any) => `${p.data[0]}: ${p.data[1]} 次活动` },
+            tooltip: { formatter: (p: { data: [string, number] }) => `${p.data[0]}: ${p.data[1]} 次活动` },
             xAxis: {
               type: 'category',
               data: heatmapData.map(d => (d[0] as string).slice(5)),
@@ -250,8 +254,8 @@ export default function DataScreenPage() {
               type: 'bar',
               data: heatmapData.map(d => d[1]),
               itemStyle: {
-                color: (params: any) => {
-                  const v = params.value as number;
+                color: (params: { value: number }) => {
+                  const v = params.value;
                   if (v === 0) return 'rgba(99,102,241,0.08)';
                   if (v <= 2) return 'rgba(99,102,241,0.25)';
                   if (v <= 5) return 'rgba(99,102,241,0.5)';
@@ -269,12 +273,12 @@ export default function DataScreenPage() {
           <List
             size="small"
             dataSource={activityLogs.slice(0, 15)}
-            renderItem={(log: any) => (
+            renderItem={(log) => (
               <List.Item style={{ borderBottom: '1px solid rgba(0, 0, 0, 0.04)', padding: '8px 0' }}>
                 <div style={{ width: '100%' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Tag color="blue" style={{ fontSize: 11 }}>{ACTION_LABELS[log.action] || log.action}</Tag>
-                    <Text style={{ color: '#6b7a99', fontSize: 11 }}>{new Date(log.createdAt).toLocaleString('zh-CN')}</Text>
+                    <Tag color="blue" style={{ fontSize: 11 }}>{ACTION_LABELS[log.action as string] || log.action}</Tag>
+                    <Text style={{ color: '#6b7a99', fontSize: 11 }}>{new Date(log.createdAt as string).toLocaleString('zh-CN')}</Text>
                   </div>
                   <div style={{ color: '#1a1f36', fontSize: 13, marginTop: 4 }}>{log.project?.name}</div>
                 </div>

@@ -10,6 +10,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_screenshots::init())
         .setup(|app| {
             // 设置窗口图标
             let icon_path = app
@@ -98,10 +99,23 @@ pub fn run() {
             commands::detect::detect_local_project,
             commands::detect::detect_git_repo,
             commands::detect::detect_scan_directory,
+            commands::detect::detect_installed_agents,
+            commands::brain::brain_analyze_project,
+            // Agent sessions & browser memory
+            commands::sessions::sessions_start,
+            commands::sessions::sessions_append_message,
+            commands::sessions::sessions_end,
+            commands::sessions::sessions_list,
+            commands::sessions::sessions_messages,
+            commands::sessions::browser_record_visit,
+            commands::sessions::browser_list_visits,
+            commands::sessions::browser_find_visits_by_url,
             commands::terminal::terminal_start,
             commands::terminal::terminal_stop,
             commands::terminal::terminal_input,
             commands::terminal::terminal_start_shell,
+            commands::terminal::terminal_start_agent,
+            commands::terminal::terminal_setup_agent_launcher,
             commands::terminal::terminal_resize,
             // Git operations
             commands::git::git_status,

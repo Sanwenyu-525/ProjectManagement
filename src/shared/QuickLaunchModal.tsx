@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { Modal, Button, Space, Tag, Empty, message, Tooltip, Popconfirm, Input, Form, Select, List } from 'antd';
 import { PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined, HistoryOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, CopyOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { launchProfilesStorage, launchHistoryStorage, LaunchProfile, LaunchHistoryEntry } from '../lib/launchProfiles';
+import type { ProjectWithStats } from '../types';
 import ProjectIcon from './ProjectIcon';
 
 interface QuickLaunchModalProps {
   visible: boolean;
   onClose: () => void;
-  projects: any[];
+  projects: ProjectWithStats[];
   onLaunch: (projectIds: string[], profile?: LaunchProfile) => void;
 }
 
@@ -34,7 +35,7 @@ export default function QuickLaunchModal({ visible, onClose, projects, onLaunch 
     setHistory(launchHistoryStorage.getRecent(20));
   };
 
-  const handleCreateProfile = async (values: any) => {
+  const handleCreateProfile = async (values: { name: string; description?: string; projectIds: string[]; launchOrder?: 'selected' | 'manual' | 'smart' }) => {
     try {
       const profile = launchProfilesStorage.save({
         name: values.name,
@@ -47,7 +48,7 @@ export default function QuickLaunchModal({ visible, onClose, projects, onLaunch 
       setCreateModalVisible(false);
       form.resetFields();
       loadProfiles();
-    } catch (error) {
+    } catch {
       message.error('创建失败');
     }
   };
@@ -134,7 +135,7 @@ export default function QuickLaunchModal({ visible, onClose, projects, onLaunch 
 
         message.success(`成功导入 ${importedCount} 个配置`);
         loadProfiles();
-      } catch (error) {
+      } catch {
         message.error('导入失败：文件格式错误');
       }
     };
@@ -216,7 +217,7 @@ export default function QuickLaunchModal({ visible, onClose, projects, onLaunch 
                       <div style={{ marginBottom: 4, color: '#6b7a99' }}>{profile.description}</div>
                     )}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {profileProjects.slice(0, 5).map((p: any) => (
+                      {profileProjects.filter((p): p is ProjectWithStats => !!p).slice(0, 5).map((p) => (
                         <Tag key={p.id} style={{ fontSize: 11 }}>
                           <ProjectIcon name={p.name} techStack={p.techStack} iconType={p.iconType} iconUrl={p.iconUrl} iconColor={p.iconColor} size={12} style={{ marginRight: 4 }} />
                           {p.name}

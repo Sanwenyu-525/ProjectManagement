@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Typography, Spin, Empty, Button, Space } from 'antd';
 import { ReloadOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
 import { projectsApi, dependenciesApi } from '../../api';
-import type { ProjectWithStats } from '../../types';
 
 const { Title } = Typography;
 
@@ -51,7 +50,7 @@ export default function DependencyGraphPage() {
   const loadGraph = useCallback(async () => {
     setLoading(true);
     try {
-      const projects = await projectsApi.list() as any as ProjectWithStats[];
+      const projects = await projectsApi.list();
       if (projects.length === 0) {
         setNodes([]);
         setEdges([]);
@@ -61,9 +60,9 @@ export default function DependencyGraphPage() {
       // Try to detect dependencies
       let detectedEdges: GraphEdge[] = [];
       try {
-        const depGraph = await dependenciesApi.detect(projects.map(p => p.id)) as any;
+        const depGraph = await dependenciesApi.detect(projects.map(p => p.id)) as { edges?: Array<{ from: string; to: string }> } | null;
         if (depGraph?.edges) {
-          detectedEdges = depGraph.edges.map((e: any) => ({ from: e.from, to: e.to }));
+          detectedEdges = depGraph.edges.map((e) => ({ from: e.from, to: e.to }));
         }
       } catch {
         // Dependencies detection not available — use tech stack similarity
@@ -94,8 +93,8 @@ export default function DependencyGraphPage() {
         name: p.name,
         x: (i % lyt.cols) * (lyt.nodeWidth + lyt.gapX) + 60,
         y: Math.floor(i / lyt.cols) * (lyt.nodeHeight + lyt.gapY) + 60,
-        techStack: (p as any).techStack || [],
-        status: (p as any).status || 'Idea',
+        techStack: p.techStack || [],
+        status: p.status || 'Idea',
         dependsOn: detectedEdges.filter(e => e.from === p.id).map(e => e.to),
       }));
 

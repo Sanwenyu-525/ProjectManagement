@@ -3,6 +3,9 @@ import { Spin, message, Button, Tooltip, Tabs } from 'antd';
 import { ReloadOutlined, CloudUploadOutlined, InboxOutlined } from '@ant-design/icons';
 import { gitApi } from '../../../api';
 import BranchSelector from './BranchSelector';
+
+interface Branch { name: string; current: boolean; isRemote: boolean; upstream?: string; ahead: number; behind: number; }
+interface GitCommit { hash: string; shortHash: string; message: string; author: string; date: string; branches?: string[]; parents: string[]; branchIdx: number; }
 import CommitGraph from './CommitGraph';
 import DiffViewer from './DiffViewer';
 import StagingArea from './StagingArea';
@@ -20,10 +23,10 @@ export default function GitTab({ project }: GitTabProps) {
   const repoPath = project.localPath;
 
   const [loading, setLoading] = useState(true);
-  const [files, setFiles] = useState<any[]>([]);
-  const [logResult, setLogResult] = useState<any>(null);
+  const [files, setFiles] = useState<Array<{ path: string; status: string; staged: boolean }>>([]);
+  const [logResult, setLogResult] = useState<{ commits: GitCommit[]; branches: Branch[] } | null>(null);
 
-  const [selectedCommit, setSelectedCommit] = useState<any>(null);
+  const [selectedGitCommit, setSelectedGitCommit] = useState<GitCommit | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | undefined>();
   const [diffContent, setDiffContent] = useState('');
   const [diffLoading, setDiffLoading] = useState(false);
@@ -84,7 +87,7 @@ export default function GitTab({ project }: GitTabProps) {
   const handleFileClick = useCallback(async (file: string, staged: boolean) => {
     if (!repoPath) return;
     setSelectedFile(file);
-    setSelectedCommit(null);
+    setSelectedGitCommit(null);
     setDiffLoading(true);
     try {
       const content = await gitApi.diff(repoPath, file, staged);
@@ -97,9 +100,9 @@ export default function GitTab({ project }: GitTabProps) {
     }
   }, [repoPath]);
 
-  const handleCommitSelect = useCallback(async (commit: any) => {
+  const handleGitCommitSelect = useCallback(async (commit: GitCommit) => {
     if (!repoPath) return;
-    setSelectedCommit(commit);
+    setSelectedGitCommit(commit);
     setSelectedFile(undefined);
     setDiffLoading(true);
     try {
@@ -141,8 +144,8 @@ export default function GitTab({ project }: GitTabProps) {
   // Branches come from logResult (already fetched, avoids double git branch call)
   const branches = logResult?.branches || [];
 
-  const diffTitle = selectedCommit
-    ? `${selectedCommit.shortHash} - ${selectedCommit.message}`
+  const diffTitle = selectedGitCommit
+    ? `${selectedGitCommit.shortHash} - ${selectedGitCommit.message}`
     : selectedFile;
 
   if (!repoPath) {
@@ -180,7 +183,7 @@ export default function GitTab({ project }: GitTabProps) {
           loading={loading}
         />
         <div style={{ flex: 1 }} />
-        {branches.some((b: any) => b.current && b.upstream) && (
+        {branches.some((b) => b.current && b.upstream) && (
           <Tooltip title="推送到远程">
             <Button
               size="small"
@@ -256,7 +259,7 @@ export default function GitTab({ project }: GitTabProps) {
         {/* Left drag handle */}
         <DragHandle isDragging={isDragging.current === 'left'} onMouseDown={handleDragStart('left')} />
 
-        {/* Center: Commit graph */}
+        {/* Center: GitCommit graph */}
         <div style={{
           flex: 1, overflow: 'hidden',
           background: 'var(--color-bg-card)',
@@ -270,8 +273,8 @@ export default function GitTab({ project }: GitTabProps) {
           <CommitGraph
             commits={logResult?.commits || []}
             branches={branches}
-            selectedHash={selectedCommit?.hash}
-            onSelect={handleCommitSelect}
+            selectedHash={selectedGitCommit?.hash}
+            onSelect={handleGitCommitSelect}
           />
         </div>
 

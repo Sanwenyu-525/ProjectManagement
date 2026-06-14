@@ -1,11 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { listen } from '@tauri-apps/api/event';
-import { terminalApi } from '../api';
-import { Terminal as TerminalType, TerminalTheme, TerminalOutputEvent, TerminalExitEvent } from './terminalTypes';
+import { useXtermTerminal } from './workspace/useXtermTerminal';
 import { getThemeColors } from './terminalThemes';
-import '@xterm/xterm/css/xterm.css';
+import type { Terminal as TerminalType, TerminalTheme } from './terminalTypes';
 
 interface TerminalInstanceProps {
   terminal: TerminalType;
@@ -17,112 +13,38 @@ interface TerminalInstanceProps {
 
 export default function TerminalInstance({ terminal, theme, isActive, onInput, onExit }: TerminalInstanceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const onInputRef = useRef(onInput);
   const onExitRef = useRef(onExit);
-  onInputRef.current = onInput;
   onExitRef.current = onExit;
 
-  // Initialize xterm.js terminal
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace",
-      theme: getThemeColors(theme).colors,
-      allowProposedApi: true,
-      scrollback: 10000,
-      disableStdin: false,
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-
-    term.open(containerRef.current);
-    termRef.current = term;
-    fitAddonRef.current = fitAddon;
-
-    // Delay initial fit to ensure container has proper dimensions after animation
-    const fitTimer = setTimeout(() => {
-      fitAddon.fit();
-    }, 350);
-
-    // ResizeObserver to re-fit and notify backend PTY (debounced)
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    const observer = new ResizeObserver(() => {
-      if (fitAddonRef.current && termRef.current) {
-        fitAddonRef.current.fit();
-        if (resizeTimer) clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-          const dims = fitAddonRef.current?.proposeDimensions();
-          if (dims) {
-            terminalApi.resize(terminal.id, dims.cols, dims.rows).catch(() => {});
-          }
-        }, 100);
-      }
-    });
-    observer.observe(containerRef.current);
-
-    // Handle user input
-    const inputDisposable = term.onData((data) => {
-      onInputRef.current(terminal.id, data);
-    });
-
-    // Listen for terminal output events
-    const unlistenOutput = listen<TerminalOutputEvent>('terminal-output', (event) => {
-      if (event.payload.terminalId === terminal.id) {
-        term.write(event.payload.data);
-      }
-    });
-
-    // Listen for terminal exit events
-    const unlistenExit = listen<TerminalExitEvent>('terminal-exit', (event) => {
-      if (event.payload.terminalId === terminal.id) {
-        const code = event.payload.code;
+  const { termRef, refit } = useXtermTerminal(containerRef, {
+    terminalId: terminal.id,
+    theme,
+    onData: (data: string) => onInput(terminal.id, data),
+    onExit: (code: number | null) => {
+      if (termRef.current) {
         const exitMsg = code === 0
           ? '\r\n\x1b[32m✓ 进程正常退出\x1b[0m'
           : `\r\n\x1b[31m✗ 进程异常退出 (code: ${code})\x1b[0m`;
-        term.write(exitMsg);
-        onExitRef.current?.(terminal.id, code);
+        termRef.current.write(exitMsg);
       }
-    });
-
-    return () => {
-      clearTimeout(fitTimer);
-      if (resizeTimer) clearTimeout(resizeTimer);
-      observer.disconnect();
-      inputDisposable.dispose();
-      unlistenOutput.then((fn) => fn());
-      unlistenExit.then((fn) => fn());
-      term.dispose();
-      termRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, [terminal.id]);
+      onExitRef.current?.(terminal.id, code);
+    },
+  });
 
   // Update theme when it changes
   useEffect(() => {
     if (termRef.current) {
       termRef.current.options.theme = getThemeColors(theme).colors;
     }
-  }, [theme]);
+  }, [theme, termRef]);
 
   // Re-fit when becoming active (handles tab switching)
   useEffect(() => {
-    if (isActive && fitAddonRef.current && termRef.current) {
-      const timer = setTimeout(() => {
-        fitAddonRef.current?.fit();
-        const dims = fitAddonRef.current?.proposeDimensions();
-        if (dims) {
-          terminalApi.resize(terminal.id, dims.cols, dims.rows).catch(() => {});
-        }
-      }, 50);
+    if (isActive) {
+      const timer = setTimeout(refit, 50);
       return () => clearTimeout(timer);
     }
-  }, [isActive]);
+  }, [isActive, refit]);
 
   return (
     <div

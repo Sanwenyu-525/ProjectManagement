@@ -44,7 +44,7 @@ fn calculate_health_score(result: &ProjectHealthResult, local_path: &str) -> (i3
     let mut score: i32 = 0;
 
     // 1. Git cleanliness (25 points)
-    if result.error.is_some() && result.error.as_ref().unwrap().contains("不是 Git 仓库") {
+    if result.error.as_ref().map_or(false, |e| e.contains("不是 Git 仓库")) {
         score += 10; // Partial credit for non-git
     } else {
         score += match result.dirty_file_count {

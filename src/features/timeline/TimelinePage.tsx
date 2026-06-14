@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { timelineApi, projectsApi } from '../../api';
+import type { ActivityLog } from '../../types';
 
 const { Text } = Typography;
 
@@ -41,7 +42,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   '系统': '#6b7280',
 };
 
-function formatDetails(action: string, details: string | null): string {
+function formatDetails(action: string, details: string | null | undefined): string {
   if (!details) return '';
   try {
     const d = JSON.parse(details);
@@ -75,15 +76,15 @@ function formatTime(dateString: string): string {
 
 export default function TimelinePage() {
   const navigate = useNavigate();
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [projectFilter, setProjectFilter] = useState<string>('all');
-  const [projectList, setProjectList] = useState<any[]>([]);
+  const [projectList, setProjectList] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     loadTimeline();
-    projectsApi.list().then(d => setProjectList(d as any[])).catch(() => {});
+    projectsApi.list().then(d => setProjectList(d)).catch(() => {});
   }, []);
 
   async function loadTimeline() {
@@ -200,7 +201,7 @@ export default function TimelinePage() {
             optionFilterProp="label"
             options={[
               { value: 'all', label: '全部项目' },
-              ...projectList.map((p: any) => ({ value: p.id, label: p.name })),
+              ...projectList.map((p) => ({ value: p.id, label: p.name })),
             ]}
           />
         )}
@@ -250,14 +251,14 @@ export default function TimelinePage() {
                         {details && <div style={{ marginTop: 4, color: '#6b7a99', fontSize: 13 }}>{details}</div>}
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <Tooltip title={log.project?.name}>
+                        <Tooltip title={log.projectName || log.projectId}>
                           <Tag
                             color="blue"
                             style={{ cursor: 'pointer' }}
                             onClick={() => navigate(`/projects/${log.projectId}`)}
                           >
                             <ProjectOutlined style={{ marginRight: 4 }} />
-                            {log.project?.name || '未知项目'}
+                            {log.projectName || '未知项目'}
                           </Tag>
                         </Tooltip>
                         <div style={{ fontSize: 12, color: '#9eadc0', marginTop: 8 }}>

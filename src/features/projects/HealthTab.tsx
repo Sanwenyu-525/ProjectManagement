@@ -15,12 +15,12 @@ interface HealthRecord {
   projectId: string;
   checkDate: string;
   dirtyFileCount: number;
-  currentBranch: string | null;
+  currentBranch?: string;
   aheadCount: number;
   behindCount: number;
   outdatedDeps: string; // JSON string from DB
   outdatedDepCount: number;
-  hasChanges: number; // 0 or 1
+  hasChanges: boolean;
   error?: string | null;
 }
 
@@ -41,6 +41,7 @@ export default function HealthTab({ projectId }: { projectId: string }) {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadHistory(); }, [projectId]);
 
   const handleRecheck = async () => {
@@ -170,7 +171,7 @@ export default function HealthTab({ projectId }: { projectId: string }) {
               {
                 title: '状态',
                 key: 'status',
-                render: (_: any, r: HealthRecord) => {
+                render: (_: unknown, r: HealthRecord) => {
                   const ok = r.dirtyFileCount === 0 && r.aheadCount === 0 && r.behindCount === 0 && r.outdatedDepCount === 0;
                   return ok
                     ? <Tag color="success">正常</Tag>

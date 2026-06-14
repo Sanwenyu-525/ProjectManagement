@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::{command, AppHandle, Emitter};
+use tauri::{command, AppHandle, Emitter, Manager};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
@@ -27,6 +27,10 @@ struct PtyTerminal {
 
 static PTY_TERMINALS: std::sync::LazyLock<Mutex<HashMap<String, PtyTerminal>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+// Cached launcher path (written once, reused on every call)
+static LAUNCHER_PATH: std::sync::LazyLock<Mutex<Option<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
 
 // ── Event payloads ───────────────────────────────────────────────────────
 
@@ -304,6 +308,143 @@ pub async fn terminal_start_shell(
     Ok(terminal_id)
 }
 
+// ── Start agent directly in PTY (no shell wrapper) ───────────────────────
+
+#[command]
+pub async fn terminal_start_agent(
+    app: AppHandle,
+    terminal_id: String,
+    command: String,
+    args: Vec<String>,
+    cwd: String,
+) -> Result<String, String> {
+    let pty_system = native_pty_system();
+
+    let size = PtySize {
+        rows: 24,
+        cols: 120,
+        pixel_width: 0,
+        pixel_height: 0,
+    };
+
+    let pair = pty_system
+        .openpty(size)
+        .map_err(|e| format!("创建 PTY 失败: {}", e))?;
+
+    // Spawn the agent command. On Windows, npm-installed CLIs (like `claude`)
+    // are `.cmd` scripts that portable_pty can't exec directly — always route
+    // through cmd.exe /C which handles both .cmd/.bat scripts and .exe files.
+    #[cfg(target_os = "windows")]
+    let mut cmd_builder = {
+        let mut c = CommandBuilder::new("cmd.exe");
+        c.arg("/C");
+        c.arg(&command);
+        for arg in &args {
+            c.arg(arg);
+        }
+        c
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd_builder = {
+        let mut c = CommandBuilder::new(&command);
+        for arg in &args {
+            c.arg(arg);
+        }
+        c
+    };
+
+    cmd_builder.cwd(&cwd);
+    cmd_builder.env("TERM", "xterm-256color");
+    cmd_builder.env("FORCE_COLOR", "1");
+    cmd_builder.env("COLORTERM", "truecolor");
+
+    let child = pair
+        .slave
+        .spawn_command(cmd_builder)
+        .map_err(|e| format!("启动智能体失败: {} (命令: {})", e, command))?;
+
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("获取 PTY writer 失败: {}", e))?;
+
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("获取 PTY reader 失败: {}", e))?;
+
+    {
+        let mut terminals = recover_lock(&PTY_TERMINALS);
+        terminals.insert(
+            terminal_id.clone(),
+            PtyTerminal {
+                child,
+                writer,
+                master: pair.master,
+            },
+        );
+    }
+
+    let app_out = app.clone();
+    let tid_out = terminal_id.clone();
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = app_out.emit(
+                        "terminal-output",
+                        TerminalOutput {
+                            terminal_id: tid_out.clone(),
+                            data,
+                            stream: "stdout".into(),
+                        },
+                    );
+                }
+            }
+        }
+    });
+
+    let app_exit = app.clone();
+    let tid_exit = terminal_id.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut terminals = match PTY_TERMINALS.lock() {
+            Ok(t) => t,
+            Err(e) => e.into_inner(),
+        };
+        if let Some(terminal) = terminals.get_mut(&tid_exit) {
+            match terminal.child.try_wait() {
+                Ok(Some(status)) => {
+                    let code = status.exit_code();
+                    let _ = app_exit.emit(
+                        "terminal-exit",
+                        TerminalExit {
+                            terminal_id: tid_exit.clone(),
+                            code: if code == 0 { Some(0) } else { Some(code as i32) },
+                        },
+                    );
+                    terminals.remove(&tid_exit);
+                    break;
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    terminals.remove(&tid_exit);
+                    break;
+                }
+            }
+        } else {
+            break;
+        }
+    });
+
+    Ok(terminal_id)
+}
+
 // ── Input (works for both piped and PTY) ─────────────────────────────────
 
 #[command]
@@ -419,7 +560,54 @@ pub fn get_terminal_ids_for_project(project_id: &str) -> Vec<String> {
     ids
 }
 
-// ── Cleanup on app shutdown ──────────────────────────────────────────────
+// ── Setup agent launcher (writes a Node.js wrapper to prevent window popups on Windows) ─
+
+#[command]
+pub async fn terminal_setup_agent_launcher(app: AppHandle) -> Result<String, String> {
+    // Return cached path if already set up AND file still exists
+    {
+        let cache = LAUNCHER_PATH.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(ref path) = *cache {
+            if std::path::Path::new(path).exists() {
+                return Ok(path.clone());
+            }
+            // File was deleted — clear cache and re-create
+        }
+    }
+
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用目录失败: {}", e))?;
+    std::fs::create_dir_all(&dir).ok();
+
+    let launcher_path = dir.join("claude-launcher.cjs");
+
+    // Only write if missing or stale
+    let needs_write = !launcher_path.exists()
+        || std::fs::metadata(&launcher_path)
+            .map(|m| m.len() < 200)
+            .unwrap_or(true);
+
+    if needs_write {
+        std::fs::write(
+            &launcher_path,
+            r#"const{spawn:e}=require("child_process"),n=process.platform==="win32"?"claude.cmd":"claude",r=e(n,process.argv.slice(2),{stdio:"inherit",windowsHide:!0,shell:!0});r.on("exit",e=>process.exit(e??1)),r.on("error",e=>{console.error(e.message),process.exit(1)});
+"#,
+        )
+        .map_err(|e| format!("写入 launcher 失败: {}", e))?;
+    }
+
+    let path_str = launcher_path.to_string_lossy().into_owned();
+
+    // Cache for subsequent calls
+    {
+        let mut cache = LAUNCHER_PATH.lock().unwrap_or_else(|e| e.into_inner());
+        *cache = Some(path_str.clone());
+    }
+
+    Ok(path_str)
+}
 
 pub fn cleanup_all() {
     if let Ok(mut procs) = PROCESSES.lock() {

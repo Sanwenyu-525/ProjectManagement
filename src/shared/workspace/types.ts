@@ -15,23 +15,66 @@ export interface PaneSplit {
 
 export type PaneNode = PaneLeaf | PaneSplit;
 
-export interface PaneTab {
+// ── Discriminated union for PaneTab ──
+
+interface PaneTabBase {
   id: string;
   label: string;
-  contentType: 'terminal' | 'agent' | 'browser' | 'build' | 'log';
   status?: 'running' | 'exited' | 'error';
-  /** Agent runtime ID (e.g., 'claude', 'gemini') — only for contentType === 'agent' */
-  runtimeId?: string;
-  /** Terminal shell path — only for contentType === 'terminal' */
+}
+
+export interface TerminalTab extends PaneTabBase {
+  contentType: 'terminal';
   shell?: string;
-  /** Terminal working directory — only for contentType === 'terminal' */
   cwd?: string;
-  /** Browser URL — only for contentType === 'browser' */
+}
+
+export interface AgentTab extends PaneTabBase {
+  contentType: 'agent';
+  runtimeId?: string;
+}
+
+export interface BrowserTab extends PaneTabBase {
+  contentType: 'browser';
   url?: string;
-  /** Browser navigation history (max 50) — only for contentType === 'browser' */
   urlHistory?: string[];
-  /** Current position in urlHistory — only for contentType === 'browser' */
   urlHistoryIndex?: number;
+}
+
+export interface BuildTab extends PaneTabBase {
+  contentType: 'build';
+}
+
+export interface LogTab extends PaneTabBase {
+  contentType: 'log';
+}
+
+export interface PluginTab extends PaneTabBase {
+  contentType: 'plugin';
+  /** Plugin ID (e.g., 'markdown-editor', 'json-viewer', 'database-browser') */
+  pluginId: string;
+  /** Plugin-specific state (arbitrary data the plugin manages) */
+  pluginState?: Record<string, unknown>;
+}
+
+export type PaneTab = TerminalTab | AgentTab | BrowserTab | BuildTab | LogTab | PluginTab;
+
+// ── Type guards ──
+
+export function isTerminalTab(tab: PaneTab): tab is TerminalTab {
+  return tab.contentType === 'terminal';
+}
+
+export function isAgentTab(tab: PaneTab): tab is AgentTab {
+  return tab.contentType === 'agent';
+}
+
+export function isBrowserTab(tab: PaneTab): tab is BrowserTab {
+  return tab.contentType === 'browser';
+}
+
+export function isPluginTab(tab: PaneTab): tab is PluginTab {
+  return tab.contentType === 'plugin';
 }
 
 export interface WorkspaceLayout {

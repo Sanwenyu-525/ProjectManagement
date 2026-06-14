@@ -1,15 +1,10 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import type { PaneNode, PaneLeaf } from './types';
+import { getAllLeaves } from './treeUtils';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { terminalApi } from '../../api';
-import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
-
-// Pure function (not in store — avoids re-render issues)
-function getAllLeaves(node: PaneNode): PaneLeaf[] {
-  if (node.type === 'leaf') return [node];
-  return node.children.flatMap(getAllLeaves);
-}
+import { createTerminal } from './terminalFactory';
+import { createAgent } from './agentFactory';
 
 /**
  * Workspace keyboard shortcuts:
@@ -17,6 +12,7 @@ function getAllLeaves(node: PaneNode): PaneLeaf[] {
  * - Ctrl+Shift+C: New terminal in focused pane
  * - Ctrl+Shift+A: New agent (Claude) in focused pane
  * - Ctrl+Shift+B: New browser tab in focused pane
+ * - Ctrl+Shift+P: New plugin tab in focused pane
  * - Ctrl+Shift+W: Close focused pane
  */
 export function useWorkspaceShortcuts() {
@@ -47,46 +43,29 @@ export function useWorkspaceShortcuts() {
       if (e.key === 'C' || e.key === 'c') {
         // Ctrl+Shift+C: New terminal
         e.preventDefault();
-        const state = useTerminalStore.getState();
-        if (state.terminals.length >= 10) return;
-
-        const uid = Math.random().toString(36).slice(2, 10);
-        const id = `global-${uid}`;
-        const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
-        const cfg = SHELL_MAP[shellPref] || SHELL_MAP[DEFAULT_SHELL];
-        const label = `终端 ${state.terminals.length + 1}`;
-        const cwd = state.defaultCwd;
-
-        terminalApi.startShell(id, cfg.shell, cwd, cfg.args);
-        state.addTerminal({
-          id,
-          label,
-          createdAt: new Date(),
-          shell: cfg.shell,
-          cwd,
-          status: 'running',
-          projectId: null,
-          groupId: null,
-          pane: 'left',
-        });
-        useWorkspaceStore.getState().addTab(targetId, {
-          id,
-          label,
-          contentType: 'terminal',
-          status: 'running',
-          shell: cfg.shell,
-          cwd,
+        createTerminal().then(result => {
+          if (!result) return;
+          const { terminal } = result;
+          useWorkspaceStore.getState().addTab(targetId, {
+            id: terminal.id,
+            label: terminal.label,
+            contentType: 'terminal',
+            status: 'running',
+            shell: terminal.shell,
+            cwd: terminal.cwd,
+          });
         });
       } else if (e.key === 'A' || e.key === 'a') {
         // Ctrl+Shift+A: New Claude agent
         e.preventDefault();
-        const uid = Math.random().toString(36).slice(2, 10);
-        useWorkspaceStore.getState().addTab(targetId, {
-          id: `tab-${uid}`,
-          label: 'Claude',
-          contentType: 'agent',
-          status: 'running',
-          runtimeId: 'claude',
+        createAgent('claude').then(result => {
+          if (!result) return;
+          useWorkspaceStore.getState().addTab(targetId, {
+            id: result.id,
+            label: result.label,
+            contentType: 'agent',
+            runtimeId: result.runtimeId,
+          });
         });
       } else if (e.key === 'W' || e.key === 'w') {
         // Ctrl+Shift+W: Close focused pane
@@ -101,6 +80,8 @@ export function useWorkspaceShortcuts() {
             if (tab?.contentType === 'terminal') {
               terminalApi.stop(tabId).catch(() => {});
               removeTerminal(tabId);
+            } else if (tab?.contentType === 'agent') {
+              terminalApi.stop(tabId).catch(() => {});
             }
           }
           closePane(targetId);
@@ -113,6 +94,16 @@ export function useWorkspaceShortcuts() {
           id: `browser-${uid}`,
           label: '预览',
           contentType: 'browser',
+        });
+      } else if (e.key === 'P' || e.key === 'p') {
+        // Ctrl+Shift+P: New plugin tab
+        e.preventDefault();
+        const uid = Math.random().toString(36).slice(2, 10);
+        useWorkspaceStore.getState().addTab(targetId, {
+          id: `plugin-${uid}`,
+          label: '插件',
+          contentType: 'plugin',
+          pluginId: 'markdown-viewer',
         });
       }
     };
