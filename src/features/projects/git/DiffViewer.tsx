@@ -41,7 +41,7 @@ export default function DiffViewer({ content, loading, title }: DiffViewerProps)
   }
 
   return (
-    <div style={{ height: '100%', overflow: 'auto', padding: '0 0 16px', background: 'rgba(255,255,255,0.95)' }}>
+    <div style={{ height: '100%', overflow: 'auto', padding: '0 0 16px', background: 'var(--color-bg-card)' }}>
       {title && (
         <div style={{
           padding: '6px 12px', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)',
@@ -79,7 +79,7 @@ export default function DiffViewer({ content, loading, title }: DiffViewerProps)
           {section.hunkHeader && (
             <div style={{
               padding: '3px 16px', fontSize: 11,
-              color: '#6366f1', background: 'rgba(99,102,241,0.06)',
+              color: 'var(--color-purple)', background: 'var(--color-purple-light)',
               fontFamily: "'Fira Code', monospace",
               borderBottom: '1px solid var(--color-border-subtle)',
             }}>
@@ -98,20 +98,20 @@ export default function DiffViewer({ content, loading, title }: DiffViewerProps)
 
 function DiffLine({ line }: { line: DiffLineInfo }) {
   let bg = 'transparent';
-  let color = '#1a1f36';
+  let color = 'var(--color-text-primary)';
   let gutterBg = 'transparent';
-  let gutterColor = '#c4d0de';
+  let gutterColor = 'var(--color-text-muted)';
 
   if (line.type === 'add') {
-    bg = 'rgba(34, 197, 94, 0.08)';
-    color = '#166534';
-    gutterBg = 'rgba(34, 197, 94, 0.12)';
-    gutterColor = '#22c55e';
+    bg = 'var(--color-diff-add-bg)';
+    color = 'var(--color-diff-add-text)';
+    gutterBg = 'var(--color-status-done)';
+    gutterColor = 'var(--color-status-done)';
   } else if (line.type === 'del') {
-    bg = 'rgba(239, 68, 68, 0.06)';
-    color = '#991b1b';
-    gutterBg = 'rgba(239, 68, 68, 0.1)';
-    gutterColor = '#ef4444';
+    bg = 'var(--color-diff-del-bg)';
+    color = 'var(--color-diff-del-text)';
+    gutterBg = 'var(--color-status-cancel)';
+    gutterColor = 'var(--color-status-cancel)';
   }
 
   return (

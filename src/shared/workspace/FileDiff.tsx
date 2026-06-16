@@ -1,98 +1,18 @@
 import { useEffect, useRef } from 'react';
 import { MergeView } from '@codemirror/merge';
 import { EditorState } from '@codemirror/state';
-import { javascript } from '@codemirror/lang-javascript';
-import { json } from '@codemirror/lang-json';
-import { markdown } from '@codemirror/lang-markdown';
-import { rust } from '@codemirror/lang-rust';
-import { css } from '@codemirror/lang-css';
-import { html } from '@codemirror/lang-html';
-import { yaml } from '@codemirror/lang-yaml';
-import { sql } from '@codemirror/lang-sql';
-import { python } from '@codemirror/lang-python';
-
-// Reuse the same theme from FileEditor
 import { EditorView } from '@codemirror/view';
+import { useThemeStore } from '../../stores/themeStore';
+import { makeDevhubTheme, getLanguageExtension } from './cmTheme';
 
-const devhubTheme = EditorView.theme({
-  '&': {
-    backgroundColor: 'transparent',
-    color: 'var(--ws-text)',
-    fontFamily: "'Fira Code', monospace",
-    fontSize: '13px',
-    height: '100%',
-  },
-  '.cm-content': {
-    caretColor: '#818cf8',
-    padding: '8px 0',
-  },
-  '.cm-cursor': {
-    borderLeftColor: '#818cf8',
-    borderLeftWidth: '2px',
-  },
-  '.cm-gutters': {
-    backgroundColor: 'transparent',
-    color: 'var(--ws-text-muted)',
-    border: 'none',
-    paddingRight: '4px',
-    fontFamily: "'Fira Code', monospace",
-    fontSize: '12px',
-  },
-  '.cm-activeLineGutter': {
-    backgroundColor: 'var(--ws-border-subtle)',
-    color: 'var(--ws-text-secondary)',
-  },
-  '.cm-activeLine': {
-    backgroundColor: 'var(--ws-hover)',
-  },
-  '.cm-selectionBackground': {
-    backgroundColor: 'rgba(99, 102, 241, 0.2) !important',
-  },
-  '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'rgba(99, 102, 241, 0.25) !important',
-  },
-  '.cm-matchingBracket': {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    outline: '1px solid rgba(99, 102, 241, 0.4)',
-  },
-  '.cm-foldPlaceholder': {
-    backgroundColor: 'var(--ws-border-subtle)',
-    color: 'var(--ws-text-muted)',
-    border: 'none',
-  },
-  // Diff-specific styling
-  '.cm-mergeView': {
-    height: '100%',
-  },
-  '.cm-mergeViewEditor': {
-    height: '100%',
-  },
-  '.cm-mergeViewPanel': {
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-  },
-  '&.cm-focused': {
-    outline: 'none',
-  },
-  '.cm-focused': {
-    outline: 'none',
-  },
-}, { dark: true });
-
-function getLanguageExtension(language: string) {
-  switch (language) {
-    case 'typescript': return javascript({ jsx: true, typescript: true });
-    case 'javascript': return javascript({ jsx: true });
-    case 'json': return json();
-    case 'markdown': return markdown();
-    case 'rust': return rust();
-    case 'css': return css();
-    case 'html': return html();
-    case 'yaml': return yaml();
-    case 'sql': return sql();
-    case 'python': return python();
-    default: return javascript();
-  }
-}
+// Diff-specific CM overrides (beyond the shared DevHub theme)
+const diffOverrides = EditorView.theme({
+  '.cm-mergeView': { height: '100%' },
+  '.cm-mergeViewEditor': { height: '100%' },
+  '.cm-mergeViewPanel': { backgroundColor: 'var(--ws-panel-bg)' },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-focused': { outline: 'none' },
+});
 
 interface Props {
   original: string;
@@ -103,12 +23,18 @@ interface Props {
 export default function FileDiff({ original, modified, language = 'typescript' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mergeViewRef = useRef<MergeView | null>(null);
+  const isDark = useThemeStore(s => s.mode === 'dark');
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const langExt = getLanguageExtension(language);
-    const extensions = [devhubTheme, langExt, EditorState.readOnly.of(true)];
+    const extensions = [
+      makeDevhubTheme(isDark),
+      diffOverrides,
+      ...(langExt ? [langExt] : []),
+      EditorState.readOnly.of(true),
+    ];
 
     const mv = new MergeView({
       parent: containerRef.current,
@@ -132,7 +58,7 @@ export default function FileDiff({ original, modified, language = 'typescript' }
       mv.destroy();
       mergeViewRef.current = null;
     };
-  }, [original, modified, language]);
+  }, [original, modified, language, isDark]);
 
   return (
     <div style={containerStyle}>

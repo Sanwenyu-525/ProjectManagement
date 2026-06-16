@@ -45,7 +45,7 @@ export function useXtermTerminal(
     if (!containerRef.current) return;
 
     const term = new Terminal({
-      cursorBlink: true,
+      cursorBlink: false,
       fontSize: 13,
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace",
       theme: getThemeColors(theme).colors,
@@ -59,7 +59,58 @@ export function useXtermTerminal(
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    const fitTimer = setTimeout(() => fitAddon.fit(), 350);
+    // IME composition guard — suppress onData during IME candidate selection
+    let composing = false;
+    let compositionData = '';
+    // On Windows, keydown may fire before IME sets isComposing, causing xterm to
+    // process the key via onData. compositionend then also sends the character.
+    // This flag blocks the onData that fires right after compositionend.
+    let justComposed = false;
+    const onCompositionStart = () => { composing = true; compositionData = ''; justComposed = false; };
+    const onCompositionEnd = (e: CompositionEvent) => {
+      composing = false;
+      const text = e.data || compositionData;
+      compositionData = '';
+      if (text && onDataRef.current) onDataRef.current(text);
+      // Block the next onData call (from xterm processing the same character)
+      justComposed = true;
+      setTimeout(() => { justComposed = false; }, 0);
+    };
+    const onCompositionUpdate = (e: CompositionEvent) => {
+      compositionData = e.data || '';
+    };
+    if (term.textarea) {
+      term.textarea.addEventListener('compositionstart', onCompositionStart);
+      term.textarea.addEventListener('compositionend', onCompositionEnd);
+      term.textarea.addEventListener('compositionupdate', onCompositionUpdate);
+    }
+    // Block key events during composition so xterm doesn't insert raw keycodes
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.type === 'keydown' && e.isComposing) return false;
+      return true;
+    });
+
+    // Right-click paste (only when no text is selected)
+    const onContextMenu = (e: MouseEvent) => {
+      const selection = termRef.current?.getSelection();
+      if (!selection) {
+        e.preventDefault();
+        navigator.clipboard.readText()
+          .then(text => { if (text && termRef.current) termRef.current.write(text); })
+          .catch(() => {});
+      }
+    };
+
+    if (term.textarea) {
+      term.textarea.addEventListener('contextmenu', onContextMenu);
+    }
+
+    const fitTimer = setTimeout(() => {
+      fitAddon.fit();
+      // Immediately sync PTY dimensions so child process sees correct size from the start
+      const dims = fitAddon.proposeDimensions();
+      if (dims) terminalApi.resize(terminalId, dims.cols, dims.rows).catch(() => {});
+    }, 350);
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const observer = new ResizeObserver(() => {
@@ -76,7 +127,7 @@ export function useXtermTerminal(
 
     // Stdin handler (only for interactive terminals, not agents)
     const inputDisposable = onDataRef.current
-      ? term.onData((data) => onDataRef.current!(data))
+      ? term.onData((data) => { if (!composing && !justComposed) onDataRef.current!(data); })
       : null;
 
     let cwdDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -143,6 +194,12 @@ export function useXtermTerminal(
       inputDisposable?.dispose();
       unlistenOutput.then(fn => fn());
       unlistenExit.then(fn => fn());
+      if (term.textarea) {
+        term.textarea.removeEventListener('compositionstart', onCompositionStart);
+        term.textarea.removeEventListener('compositionend', onCompositionEnd);
+        term.textarea.removeEventListener('compositionupdate', onCompositionUpdate);
+        term.textarea.removeEventListener('contextmenu', onContextMenu);
+      }
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;

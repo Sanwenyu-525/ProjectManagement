@@ -149,15 +149,15 @@ export default function ProjectDetailPage() {
             style={{ borderRadius: 14 }}
           />
           <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', color: '#1a1f36' }}>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', color: 'var(--color-text-primary)' }}>
               {project.name}
             </h2>
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
               <Tag color={STATUS_COLORS[project.status]}>{project.status}</Tag>
-              <Tag style={{ background: 'rgba(0, 0, 0, 0.05)', color: '#6b7a99' }}>{project.priority}</Tag>
-              <Tag style={{ background: 'rgba(0, 0, 0, 0.05)', color: '#6b7a99' }}>{project.source}</Tag>
+              <Tag style={{ background: 'var(--color-border-subtle)', color: 'var(--color-text-description)' }}>{project.priority}</Tag>
+              <Tag style={{ background: 'var(--color-border-subtle)', color: 'var(--color-text-description)' }}>{project.source}</Tag>
               {project.techStack?.slice(0, 3).map((t: string) => (
-                <Tag key={t} style={{ background: 'rgba(245, 158, 11, 0.10)', color: '#b45309' }}>{t}</Tag>
+                <Tag key={t} style={{ background: 'var(--color-amber-light)', color: '#b45309' }}>{t}</Tag>
               ))}
             </div>
           </div>
@@ -192,7 +192,7 @@ export default function ProjectDetailPage() {
           )}
         </div>
         {project.description && (
-          <p style={{ color: '#6b7a99', marginTop: 16, fontSize: 14, lineHeight: 1.6 }}>{project.description}</p>
+          <p style={{ color: 'var(--color-text-description)', marginTop: 16, fontSize: 14, lineHeight: 1.6 }}>{project.description}</p>
         )}
       </div>
 
@@ -456,9 +456,9 @@ function ProjectTimelineTab({ projectId }: { projectId: string }) {
               <Space>
                 <Tag color={action.color}>{action.label}</Tag>
                 <span>{log.entityType}</span>
-                {details && <span style={{ color: '#6b7a99' }}>- {details}</span>}
+                {details && <span style={{ color: 'var(--color-text-description)' }}>- {details}</span>}
               </Space>
-              <div style={{ fontSize: 12, color: '#9eadc0', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--color-text-light)', marginTop: 2 }}>
                 {new Date(log.createdAt).toLocaleString('zh-CN')}
               </div>
             </div>

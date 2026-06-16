@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { ConfigProvider, theme as antTheme } from 'antd';
@@ -10,102 +10,151 @@ import './index.css';
 
 function Root() {
   const mode = useThemeStore(s => s.mode);
+  const isDark = mode === 'dark';
 
   // Sync data-theme attribute on <html>
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', mode);
   }, [mode]);
 
+  const themeConfig = useMemo(() => {
+    const palette = isDark
+      ? {
+          primary: '#2dd4bf',
+          primaryHover: '#5eead4',
+          success: '#22c55e',
+          warning: '#f59e0b',
+          error: '#f87171',
+          info: '#38bdf8',
+          bgBase: '#090d14',
+          bgContainer: 'rgba(14, 22, 31, 0.82)',
+          bgInput: 'rgba(16, 25, 36, 0.88)',
+          bgElevated: 'rgba(18, 28, 39, 0.96)',
+          border: 'rgba(148, 163, 184, 0.14)',
+          borderSecondary: 'rgba(148, 163, 184, 0.08)',
+          text: '#e5edf5',
+          textSecondary: '#9fb1c5',
+          textTertiary: '#718196',
+          tableHeader: 'rgba(148, 163, 184, 0.06)',
+          hover: 'rgba(45, 212, 191, 0.08)',
+          selected: 'rgba(45, 212, 191, 0.14)',
+          shadow: '0 2px 12px rgba(0, 0, 0, 0.28)',
+          shadowSecondary: '0 10px 32px rgba(0, 0, 0, 0.38)',
+        }
+      : {
+          primary: '#14b8a6',
+          primaryHover: '#0f766e',
+          success: '#16a34a',
+          warning: '#d97706',
+          error: '#dc2626',
+          info: '#0ea5e9',
+          bgBase: '#f5fbff',
+          bgContainer: 'rgba(255, 255, 255, 0.62)',
+          bgInput: 'rgba(255, 255, 255, 0.66)',
+          bgElevated: 'rgba(255, 255, 255, 0.92)',
+          border: 'rgba(87, 114, 145, 0.16)',
+          borderSecondary: 'rgba(87, 114, 145, 0.10)',
+          text: '#172033',
+          textSecondary: '#526174',
+          textTertiary: '#748198',
+          tableHeader: 'rgba(255, 255, 255, 0.40)',
+          hover: 'rgba(20, 184, 166, 0.08)',
+          selected: 'rgba(20, 184, 166, 0.13)',
+          shadow: '0 2px 12px rgba(39, 67, 92, 0.06)',
+          shadowSecondary: '0 10px 32px rgba(39, 67, 92, 0.10)',
+        };
+
+    return {
+      algorithm: isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+      token: {
+        colorPrimary: palette.primary,
+        colorSuccess: palette.success,
+        colorWarning: palette.warning,
+        colorError: palette.error,
+        colorInfo: palette.info,
+        colorBgBase: palette.bgBase,
+        colorBgContainer: palette.bgContainer,
+        colorBgElevated: palette.bgElevated,
+        colorBgLayout: 'transparent',
+        colorBorder: palette.border,
+        colorBorderSecondary: palette.borderSecondary,
+        colorText: palette.text,
+        colorTextSecondary: palette.textSecondary,
+        colorTextTertiary: palette.textTertiary,
+        borderRadius: 10,
+        fontFamily: "'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+        fontSize: 14,
+        lineHeight: 1.5,
+        controlHeight: 38,
+        boxShadow: palette.shadow,
+        boxShadowSecondary: palette.shadowSecondary,
+      },
+      components: {
+        Button: {
+          controlHeight: 38,
+          borderRadius: 10,
+          fontWeight: 500,
+          primaryShadow: isDark
+            ? '0 2px 10px rgba(45, 212, 191, 0.26)'
+            : '0 2px 10px rgba(20, 184, 166, 0.22)',
+        },
+        Card: {
+          borderRadiusLG: 12,
+          paddingLG: 20,
+          colorBgContainer: palette.bgContainer,
+        },
+        Input: {
+          controlHeight: 38,
+          borderRadius: 10,
+          colorBgContainer: palette.bgInput,
+          activeBorderColor: palette.primary,
+        },
+        Select: {
+          controlHeight: 38,
+          borderRadius: 10,
+          colorBgContainer: palette.bgInput,
+          colorBgElevated: palette.bgElevated,
+        },
+        Table: {
+          borderRadius: 12,
+          colorBgContainer: 'transparent',
+          headerBg: palette.tableHeader,
+          headerColor: palette.textSecondary,
+          rowHoverBg: palette.hover,
+          colorBorderSecondary: palette.borderSecondary,
+        },
+        Menu: {
+          itemBorderRadius: 8,
+          itemMarginInline: 8,
+          itemHeight: 40,
+          itemBg: 'transparent',
+          itemSelectedBg: palette.selected,
+          itemSelectedColor: palette.primary,
+          itemColor: palette.textSecondary,
+          itemHoverColor: palette.text,
+          itemHoverBg: palette.hover,
+        },
+        Tabs: {
+          borderRadius: 10,
+        },
+        Modal: {
+          contentBg: palette.bgElevated,
+          headerBg: 'transparent',
+        },
+        Dropdown: {
+          colorBgElevated: palette.bgElevated,
+        },
+        Descriptions: {
+          colorBgContainer: palette.bgContainer,
+        },
+      },
+    };
+  }, [isDark]);
+
   return (
     <ConfigProvider
       locale={zhCN}
-      theme={{
-        algorithm: mode === 'dark' ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
-        token: {
-          colorPrimary: '#22c55e',
-          colorSuccess: '#22c55e',
-          colorWarning: '#f59e0b',
-          colorError: '#ef4444',
-          colorInfo: '#22c55e',
-          colorBgBase: mode === 'dark' ? '#0f1019' : '#ffffff',
-          colorBgContainer: mode === 'dark' ? 'rgba(22, 24, 33, 0.7)' : 'rgba(255, 255, 255, 0.55)',
-          colorBgElevated: mode === 'dark' ? 'rgba(30, 32, 44, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-          colorBgLayout: 'transparent',
-          colorBorder: mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-          colorBorderSecondary: mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-          colorText: mode === 'dark' ? '#e2e8f0' : '#1a1f36',
-          colorTextSecondary: mode === 'dark' ? '#94a3b8' : '#6b7a99',
-          colorTextTertiary: mode === 'dark' ? '#64748b' : '#7b8fa3',
-          borderRadius: 10,
-          fontFamily: "'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif",
-          fontSize: 14,
-          lineHeight: 1.5,
-          controlHeight: 38,
-          boxShadow: mode === 'dark'
-            ? '0 2px 12px rgba(0, 0, 0, 0.25)'
-            : '0 2px 12px rgba(0, 0, 0, 0.04)',
-          boxShadowSecondary: mode === 'dark'
-            ? '0 6px 24px rgba(0, 0, 0, 0.3)'
-            : '0 6px 24px rgba(0, 0, 0, 0.06)',
-        },
-        components: {
-          Button: {
-            controlHeight: 38,
-            borderRadius: 10,
-            fontWeight: 500,
-            primaryShadow: '0 2px 8px rgba(34, 197, 94, 0.25)',
-          },
-          Card: {
-            borderRadiusLG: 12,
-            paddingLG: 20,
-            colorBgContainer: mode === 'dark' ? 'rgba(22, 24, 33, 0.7)' : 'rgba(255, 255, 255, 0.55)',
-          },
-          Input: {
-            controlHeight: 38,
-            borderRadius: 10,
-            colorBgContainer: mode === 'dark' ? 'rgba(30, 32, 44, 0.8)' : 'rgba(255, 255, 255, 0.65)',
-            activeBorderColor: '#22c55e',
-          },
-          Select: {
-            controlHeight: 38,
-            borderRadius: 10,
-            colorBgContainer: mode === 'dark' ? 'rgba(30, 32, 44, 0.8)' : 'rgba(255, 255, 255, 0.65)',
-            colorBgElevated: mode === 'dark' ? 'rgba(30, 32, 44, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-          },
-          Table: {
-            borderRadius: 12,
-            colorBgContainer: 'transparent',
-            headerBg: mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
-            headerColor: mode === 'dark' ? '#94a3b8' : '#9eadc0',
-            rowHoverBg: mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-            colorBorderSecondary: mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-          },
-          Menu: {
-            itemBorderRadius: 8,
-            itemMarginInline: 8,
-            itemHeight: 40,
-            itemBg: 'transparent',
-            itemSelectedBg: mode === 'dark' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.10)',
-            itemSelectedColor: '#22c55e',
-            itemColor: mode === 'dark' ? '#94a3b8' : '#6b7a99',
-            itemHoverColor: mode === 'dark' ? '#e2e8f0' : '#1a1f36',
-            itemHoverBg: mode === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
-          },
-          Tabs: {
-            borderRadius: 10,
-          },
-          Modal: {
-            contentBg: mode === 'dark' ? 'rgba(22, 24, 33, 0.95)' : 'rgba(255, 255, 255, 0.85)',
-            headerBg: 'transparent',
-          },
-          Dropdown: {
-            colorBgElevated: mode === 'dark' ? 'rgba(30, 32, 44, 0.95)' : 'rgba(255, 255, 255, 0.88)',
-          },
-          Descriptions: {
-            colorBgContainer: mode === 'dark' ? 'rgba(22, 24, 33, 0.5)' : 'rgba(255, 255, 255, 0.45)',
-          },
-        },
-      }}
+      theme={themeConfig}
     >
       <BrowserRouter>
         <App />

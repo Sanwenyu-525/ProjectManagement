@@ -1,4 +1,6 @@
 import { useMemo, useState, useRef, useCallback } from 'react';
+import { getThemeColors } from '../../../lib/themeColors';
+import { useThemeStore } from '../../../stores/themeStore';
 
 interface Commit {
   hash: string;
@@ -26,10 +28,16 @@ interface CommitGraphProps {
   onSelect: (commit: Commit) => void;
 }
 
-const LANE_COLORS = [
-  '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#f97316', '#6366f1',
+const laneColors_STATIC = [
+  '#ec4899', '#06b6d4', '#f97316',
 ];
+
+function getLaneColors(tc: ReturnType<typeof getThemeColors>) {
+  return [
+    tc.statusDone, tc.info, tc.statusProgress, tc.purple,
+    ...laneColors_STATIC,
+  ];
+}
 
 const LANE_HEIGHT = 40;
 const COMMIT_RADIUS = 7;
@@ -40,6 +48,9 @@ const LANE_Y_START = 44;
 
 export default function CommitGraph({ commits, branches, selectedHash, onSelect }: CommitGraphProps) {
   const [hoveredHash, setHoveredHash] = useState<string | null>(null);
+  const mode = useThemeStore(s => s.mode);
+  const tc = useMemo(() => getThemeColors(), [mode]);
+  const laneColors = useMemo(() => getLaneColors(tc), [tc]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollOffset, setScrollOffset] = useState({ top: 0, left: 0 });
 
@@ -133,7 +144,7 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
       }}>
         <svg width={LEFT_MARGIN} height={height} style={{ display: 'block' }}>
           {displayBranches.map((branch, i) => {
-            const color = LANE_COLORS[i % LANE_COLORS.length];
+            const color = laneColors[i % laneColors.length];
             const isCurrent = branch.current;
             return (
               <g key={`label-${i}`}>
@@ -184,7 +195,7 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
           {/* Connection lines */}
           {displayCommits.map((commit, i) => {
             const cp = positions[i];
-            const color = LANE_COLORS[commit.branchIdx % LANE_COLORS.length];
+            const color = laneColors[commit.branchIdx % laneColors.length];
 
             return commit.parents.map(ph => {
               const pi = hashIdx.get(ph);
@@ -205,7 +216,7 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
               return (
                 <path key={`${i}-${ph}`}
                   d={`M ${cp.x} ${cp.y} C ${midX} ${cp.y}, ${midX} ${pp.y}, ${pp.x} ${pp.y}`}
-                  stroke={LANE_COLORS[pc.branchIdx % LANE_COLORS.length]}
+                  stroke={laneColors[pc.branchIdx % laneColors.length]}
                   strokeWidth={2} fill="none" strokeLinecap="round" opacity={0.4}
                   strokeDasharray="4 2"
                 />
@@ -216,7 +227,7 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
           {/* Commit dots */}
           {displayCommits.map((commit, i) => {
             const pos = positions[i];
-            const color = LANE_COLORS[commit.branchIdx % LANE_COLORS.length];
+            const color = laneColors[commit.branchIdx % laneColors.length];
             const isSelected = commit.hash === selectedHash;
             const isHovered = commit.hash === hoveredHash;
             const isMerge = commit.parents.length > 1;
@@ -273,7 +284,7 @@ export default function CommitGraph({ commits, branches, selectedHash, onSelect 
         if (commit.hash !== hoveredHash && commit.hash !== selectedHash) return null;
         const pos = positions[i];
         const branch = displayBranches[commit.branchIdx];
-        const branchColor = LANE_COLORS[commit.branchIdx % LANE_COLORS.length];
+        const branchColor = laneColors[commit.branchIdx % laneColors.length];
 
         // Position relative to visible area (account for scroll), always above node
         const visibleY = pos.y - scrollOffset.top;

@@ -31,11 +31,14 @@ export function isHealthUrgent(r: HealthData): boolean {
   return r.aheadCount > 5 || r.behindCount > 10;
 }
 
+import { getThemeColors } from './themeColors';
+
 /** Get health score color. */
 export function getScoreColor(score: number): string {
-  if (score >= 80) return '#52c41a'; // green
-  if (score >= 50) return '#faad14'; // yellow
-  return '#ff4d4f'; // red
+  const c = getThemeColors();
+  if (score >= 80) return c.statusDone;
+  if (score >= 50) return c.statusProgress;
+  return c.statusCancel;
 }
 
 /** Get health status label. */

@@ -103,6 +103,23 @@ export interface GitChange {
   staged: boolean;
 }
 
+function createFilePanelState() {
+  return {
+    expandedDirs: new Set<string>(),
+    selectedFile: null as string | null,
+    fileContent: null as string | null,
+    originalContent: null as string | null,
+    language: 'text',
+    isBinary: false,
+    isWritable: true,
+    loading: false,
+    gitChanges: [] as GitChange[],
+    diffTarget: null as string | null,
+    diffOriginal: null as string | null,
+    diffLoading: false,
+  };
+}
+
 // ── Tree utilities (store-private) ──
 
 function mapNode(node: PaneNode, fn: (n: PaneNode) => PaneNode, depth = 0): PaneNode {
@@ -259,6 +276,7 @@ interface WorkspaceStore extends WorkspaceLayout {
   setGitChanges: (tabId: string, changes: GitChange[]) => void;
   openDiff: (tabId: string, filePath: string, headContent: string) => void;
   closeDiff: (tabId: string) => void;
+  renameSelectedFile: (tabId: string, newPath: string) => void;
 }
 
 const initialWsId = localStorage.getItem('devhub_active_workspace');
@@ -342,20 +360,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       const filePanelState = tab.contentType === 'file'
         ? {
             ...state.filePanelState,
-            [tab.id]: {
-              expandedDirs: new Set<string>(),
-              selectedFile: null as string | null,
-              fileContent: null as string | null,
-              originalContent: null as string | null,
-              language: 'text',
-              isBinary: false,
-              isWritable: true,
-              loading: false,
-              gitChanges: [] as GitChange[],
-              diffTarget: null as string | null,
-              diffOriginal: null as string | null,
-              diffLoading: false,
-            },
+            [tab.id]: createFilePanelState(),
           }
         : state.filePanelState;
       scheduleBackendSave(state.activeWorkspaceId, root, tabs);
@@ -390,8 +395,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       const { [tabId]: _panel, ...restPanel } = state.filePanelState;
       const filePanelState = closedTab?.contentType === 'file' ? restPanel : state.filePanelState;
 
+      // Clean up browser ephemeral state for browser tabs
+      const { [tabId]: _logs, ...restBrowserLogs } = state.browserLogs;
+      const { [tabId]: _bp, ...restBrowserPanel } = state.browserPanelState;
+      const { [tabId]: _ba, ...restBrowserAuto } = state.browserAutomation;
+      const isBrowser = closedTab?.contentType === 'browser';
+
       scheduleBackendSave(state.activeWorkspaceId, root, restTabs);
-      return { root, tabs: restTabs, filePanelState };
+      return {
+        root,
+        tabs: restTabs,
+        filePanelState,
+        ...(isBrowser ? {
+          browserLogs: restBrowserLogs,
+          browserPanelState: restBrowserPanel,
+          browserAutomation: restBrowserAuto,
+        } : {}),
+      };
     });
   },
 
@@ -617,20 +637,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
   toggleFileDir: (tabId, dirPath) => {
     set(state => {
       const existing = state.filePanelState[tabId];
-      const panel = existing || {
-        expandedDirs: new Set<string>(),
-        selectedFile: null as string | null,
-        fileContent: null as string | null,
-        originalContent: null as string | null,
-        language: 'text',
-        isBinary: false,
-        isWritable: true,
-        loading: false,
-        gitChanges: [] as GitChange[],
-        diffTarget: null as string | null,
-        diffOriginal: null as string | null,
-        diffLoading: false,
-      };
+      const panel = existing || createFilePanelState();
       const expanded = new Set(panel.expandedDirs);
       if (expanded.has(dirPath)) {
         expanded.delete(dirPath);
@@ -649,20 +656,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
   selectFile: (tabId, filePath) => {
     set(state => {
       const existing = state.filePanelState[tabId];
-      const panel = existing || {
-        expandedDirs: new Set<string>(),
-        selectedFile: null as string | null,
-        fileContent: null as string | null,
-        originalContent: null as string | null,
-        language: 'text',
-        isBinary: false,
-        isWritable: true,
-        loading: false,
-        gitChanges: [] as GitChange[],
-        diffTarget: null as string | null,
-        diffOriginal: null as string | null,
-        diffLoading: false,
-      };
+      if (existing && existing.selectedFile === filePath) return state;
+      const panel = existing || createFilePanelState();
       return {
         filePanelState: {
           ...state.filePanelState,
@@ -766,6 +761,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
         filePanelState: {
           ...state.filePanelState,
           [tabId]: { ...panel, diffTarget: null, diffOriginal: null, diffLoading: false },
+        },
+      };
+    });
+  },
+
+  // Rename selected file path without triggering a disk re-read (preserves dirty content)
+  renameSelectedFile: (tabId, newPath) => {
+    set(state => {
+      const panel = state.filePanelState[tabId];
+      if (!panel) return state;
+      return {
+        filePanelState: {
+          ...state.filePanelState,
+          [tabId]: { ...panel, selectedFile: newPath },
         },
       };
     });

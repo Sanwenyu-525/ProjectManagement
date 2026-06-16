@@ -168,7 +168,18 @@ pub async fn files_read(path: String) -> Result<FileContent, String> {
         });
     }
 
-    let content = String::from_utf8_lossy(&buf).to_string();
+    let content = match std::str::from_utf8(&buf) {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            // Not valid UTF-8 — try GBK (common on Chinese Windows systems)
+            let (decoded, _, had_errors) = encoding_rs::GBK.decode(&buf);
+            if had_errors {
+                String::from_utf8_lossy(&buf).to_string()
+            } else {
+                decoded.into_owned()
+            }
+        }
+    };
     let line_count = content.lines().count();
 
     Ok(FileContent {

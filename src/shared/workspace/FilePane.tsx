@@ -1,8 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { FileTextOutlined, PlusOutlined, FolderAddOutlined, SearchOutlined, BranchesOutlined, UndoOutlined, CloseOutlined } from '@ant-design/icons';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { Modal, message } from 'antd';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useThemeStore } from '../../stores/themeStore';
 import { filesApi, gitApi } from '../../api';
+import { isEnterCommit } from '@/lib/keyboard';
+import { createTerminal } from './terminalFactory';
+import { getAllLeaves } from './treeUtils';
 import type { FileTab } from './types';
 import type { GitChange } from '../../stores/workspaceStore';
 import FileTree from './FileTree';
@@ -25,6 +30,8 @@ interface Props {
 export default function FilePane({ tab }: Props) {
   const { rootPath } = tab;
   const tabId = tab.id;
+  const isDark = useThemeStore(s => s.mode === 'dark');
+  const styles = makeStyles(isDark);
 
   const panel = useWorkspaceStore(s => s.filePanelState[tabId]);
   const toggleFileDir = useWorkspaceStore(s => s.toggleFileDir);
@@ -35,10 +42,12 @@ export default function FilePane({ tab }: Props) {
   const setGitChanges = useWorkspaceStore(s => s.setGitChanges);
   const openDiff = useWorkspaceStore(s => s.openDiff);
   const closeDiff = useWorkspaceStore(s => s.closeDiff);
+  const renameSelectedFile = useWorkspaceStore(s => s.renameSelectedFile);
 
   const [searchText, setSearchText] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
 
   // Root path prompt
   const [inputRoot, setInputRoot] = useState(rootPath || '');
@@ -74,7 +83,13 @@ export default function FilePane({ tab }: Props) {
     if (!rootPath) return;
     try {
       const changes = await gitApi.status(rootPath);
-      setGitChanges(tabId, changes as GitChange[]);
+      // git status returns relative paths — convert to absolute for matching with file tree
+      const sep = rootPath.includes('\\') ? '\\' : '/';
+      const absolute = (changes as GitChange[]).map(c => ({
+        ...c,
+        path: rootPath + sep + c.path.replace(/\//g, sep),
+      }));
+      setGitChanges(tabId, absolute);
     } catch {
       setGitChanges(tabId, []);
     }
@@ -105,27 +120,36 @@ export default function FilePane({ tab }: Props) {
 
   const handleDiscardChanges = useCallback(async (filePath: string) => {
     if (!rootPath) return;
-    if (!confirm(`确定丢弃「${filePath.split(/[/\\]/).pop()}」的所有更改？`)) return;
-    // git restore needs relative path from repo root
-    const relativePath = filePath.startsWith(rootPath)
-      ? filePath.slice(rootPath.length).replace(/^[/\\]/, '')
-      : filePath;
-    try {
-      await gitApi.restore(rootPath, [relativePath]);
-      refresh();
-      refreshGitChanges();
-      // If the discarded file is currently selected, reload it
-      if (panel?.selectedFile === filePath) {
-        selectFile(tabId, null);
-        setTimeout(() => selectFile(tabId, filePath), 0);
-      }
-      // Close diff if viewing this file
-      if (panel?.diffTarget === filePath) {
-        closeDiff(tabId);
-      }
-    } catch (e) {
-      console.error('Failed to discard changes:', e);
-    }
+    Modal.confirm({
+      title: '丢弃更改',
+      content: `确定丢弃「${filePath.split(/[/\\]/).pop()}」的所有更改？`,
+      okText: '丢弃',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: async () => {
+        // git restore needs relative path from repo root
+        const relativePath = filePath.startsWith(rootPath)
+          ? filePath.slice(rootPath.length).replace(/^[/\\]/, '')
+          : filePath;
+        try {
+          await gitApi.restore(rootPath, [relativePath]);
+          refresh();
+          refreshGitChanges();
+          // If the discarded file is currently selected, reload it
+          if (panel?.selectedFile === filePath) {
+            selectFile(tabId, null);
+            setTimeout(() => selectFile(tabId, filePath), 0);
+          }
+          // Close diff if viewing this file
+          if (panel?.diffTarget === filePath) {
+            closeDiff(tabId);
+          }
+        } catch (e) {
+          console.error('Failed to discard changes:', e);
+        }
+      },
+    });
   }, [rootPath, tabId, panel?.selectedFile, panel?.diffTarget, refresh, refreshGitChanges, selectFile, closeDiff]);
 
   // Load file content when selectedFile changes
@@ -176,6 +200,7 @@ export default function FilePane({ tab }: Props) {
       refreshGitChanges();
     } catch (e) {
       console.error('Failed to save file:', e);
+      message.error('保存失败：' + String(e));
     }
   }, [tabId, panel?.selectedFile, panel?.fileContent, clearFileDirty, refreshGitChanges]);
 
@@ -190,11 +215,27 @@ export default function FilePane({ tab }: Props) {
     refresh();
     refreshGitChanges();
     const filePath = panel?.selectedFile;
-    if (filePath) {
+    if (!filePath) return;
+    const isDirty = panel && panel.fileContent !== null && panel.originalContent !== null
+      && panel.fileContent !== panel.originalContent;
+    if (isDirty) {
+      Modal.confirm({
+        title: '刷新文件',
+        content: '当前文件有未保存的更改，刷新将丢失这些更改。是否继续？',
+        okText: '刷新',
+        cancelText: '取消',
+        okButtonProps: { danger: true },
+        centered: true,
+        onOk: () => {
+          selectFile(tabId, null);
+          setTimeout(() => selectFile(tabId, filePath), 0);
+        },
+      });
+    } else {
       selectFile(tabId, null);
       setTimeout(() => selectFile(tabId, filePath), 0);
     }
-  }, [tabId, panel?.selectedFile, selectFile, refresh, refreshGitChanges]);
+  }, [tabId, panel?.selectedFile, panel?.fileContent, panel?.originalContent, selectFile, refresh, refreshGitChanges]);
 
   const handleToggleSearch = useCallback(() => {
     setShowSearch(prev => !prev);
@@ -205,14 +246,14 @@ export default function FilePane({ tab }: Props) {
     try {
       await filesApi.rename(oldPath, newPath);
       refresh();
-      // If the renamed file was selected, update selection
+      // Update the selectedFile path without re-reading from disk (preserves dirty content)
       if (panel?.selectedFile === oldPath) {
-        selectFile(tabId, newPath);
+        renameSelectedFile(tabId, newPath);
       }
     } catch (e) {
       console.error('Failed to rename:', e);
     }
-  }, [tabId, panel?.selectedFile, selectFile, refresh]);
+  }, [tabId, panel?.selectedFile, renameSelectedFile, refresh]);
 
   const handleCreateItem = useCallback(async () => {
     if (!newItemType || !newItemName.trim()) return;
@@ -244,18 +285,72 @@ export default function FilePane({ tab }: Props) {
     const msg = isDir
       ? `确定删除文件夹「${name}」及其所有内容？`
       : `确定删除文件「${name}」？`;
-    if (!confirm(msg)) return;
-    try {
-      await filesApi.delete(path);
-      refresh();
-      // If deleted file was selected, clear selection
-      if (panel?.selectedFile === path) {
-        selectFile(tabId, null);
-      }
-    } catch (e) {
-      console.error('Failed to delete:', e);
-    }
+    Modal.confirm({
+      title: isDir ? '删除文件夹' : '删除文件',
+      content: msg,
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: async () => {
+        try {
+          await filesApi.delete(path);
+          refresh();
+          // If deleted file was selected, clear selection
+          if (panel?.selectedFile === path) {
+            selectFile(tabId, null);
+          }
+        } catch (e) {
+          console.error('Failed to delete:', e);
+        }
+      },
+    });
   }, [tabId, panel?.selectedFile, selectFile, refresh]);
+
+  const handleDeleteBatch = useCallback(async (paths: string[]) => {
+    const names = paths.map(p => p.split(/[/\\]/).pop() || p);
+    const msg = paths.length === 1
+      ? `确定删除文件「${names[0]}」？`
+      : `确定删除选中的 ${paths.length} 个文件？\n${names.join('、')}`;
+    Modal.confirm({
+      title: `删除${paths.length === 1 ? '文件' : `${paths.length}个文件`}`,
+      content: msg,
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: async () => {
+        try {
+          for (const p of paths) {
+            await filesApi.delete(p);
+          }
+          refresh();
+          if (paths.includes(panel?.selectedFile || '')) {
+            selectFile(tabId, null);
+          }
+        } catch (e) {
+          console.error('Failed to batch delete:', e);
+        }
+      },
+    });
+  }, [tabId, panel?.selectedFile, selectFile, refresh]);
+
+  const handleOpenTerminal = useCallback(async (dirPath: string) => {
+    const result = await createTerminal({ cwd: dirPath });
+    if (!result) return;
+    const wsState = useWorkspaceStore.getState();
+    const leaves = getAllLeaves(wsState.root);
+    if (leaves[0]) {
+      wsState.addTab(leaves[0].id, {
+        id: result.terminal.id,
+        label: result.terminal.label,
+        contentType: 'terminal',
+        status: 'running',
+        shell: result.terminal.shell,
+        cwd: result.terminal.cwd,
+      });
+    }
+  }, []);
 
   const handleMove = useCallback(async (srcPath: string, destDir: string) => {
     const fileName = srcPath.split(/[/\\]/).pop() || srcPath;
@@ -265,10 +360,14 @@ export default function FilePane({ tab }: Props) {
       await filesApi.rename(srcPath, newPath);
       refresh();
       flashHighlight(newPath);
+      // Update selectedFile if the moved file was selected
+      if (panel?.selectedFile === srcPath) {
+        selectFile(tabId, newPath);
+      }
     } catch (e) {
       console.error('Failed to move file:', e);
     }
-  }, [refresh, flashHighlight]);
+  }, [tabId, panel?.selectedFile, selectFile, refresh, flashHighlight]);
 
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
     if (!rootPath) return;
@@ -310,14 +409,14 @@ export default function FilePane({ tab }: Props) {
   if (showRootInput || !rootPath) {
     return (
       <div style={styles.rootInput}>
-        <FileTextOutlined style={{ fontSize: 32, color: '#4a5568', marginBottom: 12 }} />
+        <FileTextOutlined style={{ fontSize: 32, color: ICON_GRAY, marginBottom: 12 }} />
         <span style={styles.rootLabel}>选择项目文件夹</span>
         <div style={styles.rootInputRow}>
           <input
             value={inputRoot}
             onChange={e => setInputRoot(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Enter' && inputRoot.trim()) {
+              if (isEnterCommit(e) && inputRoot.trim()) {
                 // Update the tab's rootPath
                 useWorkspaceStore.getState().updateTabLabel(tabId, inputRoot.trim().split(/[/\\]/).pop() || inputRoot);
                 // We need to update rootPath on the tab itself
@@ -419,12 +518,14 @@ export default function FilePane({ tab }: Props) {
                 ref={newItemRef}
                 value={newItemName}
                 onChange={e => setNewItemName(e.target.value)}
+                onCompositionStart={() => { composingRef.current = true; }}
+                onCompositionEnd={() => { composingRef.current = false; }}
                 onKeyDown={e => {
-                  if (e.key === 'Enter') handleCreateItem();
+                  if (isEnterCommit(e)) handleCreateItem();
                   if (e.key === 'Escape') { setNewItemType(null); setNewItemName(''); setNewItemTargetDir(null); }
                 }}
                 onBlur={() => {
-                  if (!newItemName.trim()) { setNewItemType(null); setNewItemTargetDir(null); }
+                  if (!composingRef.current && !newItemName.trim()) { setNewItemType(null); setNewItemTargetDir(null); }
                 }}
                 placeholder={newItemType === 'folder' ? '文件夹名称' : '文件名 (如 App.tsx)'}
                 style={styles.newItemInput}
@@ -442,10 +543,12 @@ export default function FilePane({ tab }: Props) {
             onToggleDir={handleToggleDir}
             onRename={handleRename}
             onDelete={handleDelete}
+            onDeleteBatch={handleDeleteBatch}
             onCreateInDir={handleCreateInDir}
             onMove={handleMove}
             onViewDiff={handleViewDiff}
             onDiscardChanges={handleDiscardChanges}
+            onOpenTerminal={handleOpenTerminal}
             filterText={searchText || undefined}
             refreshKey={refreshKey}
           />
@@ -514,7 +617,7 @@ export default function FilePane({ tab }: Props) {
                   </div>
                 ) : (
                   <div style={styles.empty}>
-                    <FileTextOutlined style={{ fontSize: 28, color: '#4a5568', marginBottom: 8 }} />
+                    <FileTextOutlined style={{ fontSize: 28, color: ICON_GRAY, marginBottom: 8 }} />
                     <span style={{ color: 'var(--ws-text-secondary)', fontSize: 12 }}>二进制文件，无法预览</span>
                     <span style={{ color: 'var(--ws-text-muted)', fontSize: 10, marginTop: 4 }}>
                       {formatSize(panel.fileContent.length || 0)}
@@ -533,7 +636,7 @@ export default function FilePane({ tab }: Props) {
             </>
           ) : (
             <div style={styles.empty}>
-              <FileTextOutlined style={{ fontSize: 28, color: '#4a5568', marginBottom: 8 }} />
+              <FileTextOutlined style={{ fontSize: 28, color: ICON_GRAY, marginBottom: 8 }} />
               <span style={{ color: 'var(--ws-text-secondary)', fontSize: 12 }}>选择文件查看内容</span>
             </div>
           )}
@@ -545,219 +648,225 @@ export default function FilePane({ tab }: Props) {
 
 // ── Styles ──
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    width: '100%',
-    height: '100%',
-    background: 'var(--ws-content-bg)',
-  },
-  searchBar: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '4px 8px',
-    background: 'rgba(255, 255, 255, 0.03)',
-    borderBottom: '1px solid var(--ws-border-subtle)',
-    flexShrink: 0,
-  },
-  searchInput: {
-    flex: 1,
-    height: 24,
-    padding: '0 8px',
-    background: 'var(--ws-hover)',
-    border: '1px solid var(--ws-border)',
-    borderRadius: 4,
-    color: 'var(--ws-text)',
-    fontSize: 12,
-    fontFamily: "'Fira Code', monospace",
-    outline: 'none',
-  },
-  main: {
-    display: 'flex',
-    flex: 1,
-    overflow: 'hidden',
-  },
-  sidebar: {
-    display: 'flex',
-    flexDirection: 'column',
-    width: 200,
-    minWidth: 150,
-    maxWidth: 350,
-    background: 'rgba(255, 255, 255, 0.015)',
-    borderRight: '1px solid var(--ws-border-subtle)',
-    flexShrink: 0,
-    overflow: 'hidden',
-  },
-  sidebarHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '6px 10px',
-    borderBottom: '1px solid var(--ws-border-subtle)',
-    flexShrink: 0,
-  },
-  sidebarTitle: {
-    fontSize: 10,
-    fontWeight: 600,
-    color: 'var(--ws-text-muted)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-    fontFamily: "'Fira Sans', sans-serif",
-  },
-  sidebarActions: {
-    display: 'flex',
-    gap: 2,
-  },
-  sidebarBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    border: 'none',
-    background: 'transparent',
-    color: 'var(--ws-text-muted)',
-    cursor: 'pointer',
-    padding: 0,
-  },
-  newItemRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '4px 10px',
-    borderBottom: '1px solid var(--ws-border-subtle)',
-    flexShrink: 0,
-  },
-  newItemInput: {
-    flex: 1,
-    height: 22,
-    padding: '0 6px',
-    background: 'var(--ws-border-subtle)',
-    border: '1px solid rgba(99, 102, 241, 0.4)',
-    borderRadius: 3,
-    color: 'var(--ws-text)',
-    fontSize: 11,
-    fontFamily: "'Fira Code', monospace",
-    outline: 'none',
-  },
-  divider: {
-    width: 1,
-    background: 'var(--ws-border-subtle)',
-    flexShrink: 0,
-  },
-  editorArea: {
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 1,
-    overflow: 'hidden',
-    minWidth: 0,
-  },
-  empty: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: '100%',
-    gap: 4,
-  },
-  imagePreview: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: '100%',
-    padding: 16,
-    overflow: 'auto',
-    background: 'repeating-conic-gradient(rgba(255,255,255,0.03) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px',
-  },
-  image: {
-    maxWidth: '100%',
-    maxHeight: '100%',
-    objectFit: 'contain',
-    borderRadius: 4,
-    boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
-  },
-  rootInput: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: '100%',
-    gap: 8,
-    background: 'var(--ws-content-bg)',
-    padding: 20,
-  },
-  rootLabel: {
-    fontSize: 13,
-    color: 'var(--ws-text-secondary)',
-    fontFamily: "'Fira Sans', sans-serif",
-    fontWeight: 500,
-  },
-  rootInputRow: {
-    display: 'flex',
-    gap: 6,
-    width: '100%',
-    maxWidth: 400,
-  },
-  rootInputField: {
-    flex: 1,
-    padding: '6px 10px',
-    background: 'var(--ws-hover)',
-    border: '1px solid var(--ws-border)',
-    borderRadius: 6,
-    color: 'var(--ws-text)',
-    fontSize: 12,
-    fontFamily: "'Fira Code', monospace",
-    outline: 'none',
-  },
-  rootHint: {
-    fontSize: 10,
-    color: 'var(--ws-text-muted)',
-    fontStyle: 'italic',
-  },
-  diffToolbar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '4px 10px',
-    background: 'rgba(99, 102, 241, 0.08)',
-    borderBottom: '1px solid rgba(99, 102, 241, 0.15)',
-    flexShrink: 0,
-  },
-  diffToolbarTitle: {
-    fontSize: 11,
-    color: '#c4b5fd',
-    fontFamily: "'Fira Code', monospace",
-    fontWeight: 500,
-  },
-  diffActionBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '3px 8px',
-    border: '1px solid var(--ws-border)',
-    borderRadius: 4,
-    background: 'var(--ws-hover)',
-    color: 'var(--ws-text-secondary)',
-    fontSize: 11,
-    cursor: 'pointer',
-    fontFamily: "'Fira Sans', sans-serif",
-  },
-  diffActionBtnDanger: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '3px 8px',
-    border: '1px solid rgba(248, 113, 113, 0.3)',
-    borderRadius: 4,
-    background: 'rgba(248, 113, 113, 0.08)',
-    color: '#f87171',
-    fontSize: 11,
-    cursor: 'pointer',
-    fontFamily: "'Fira Sans', sans-serif",
-  },
-};
+const ICON_GRAY = 'var(--ws-icon-muted, #94a3b8)';
+
+function makeStyles(isDark: boolean): Record<string, React.CSSProperties> {
+  return {
+    container: {
+      display: 'flex',
+      flexDirection: 'column',
+      width: '100%',
+      height: '100%',
+      background: 'var(--ws-content-bg)',
+    },
+    searchBar: {
+      display: 'flex',
+      alignItems: 'center',
+      padding: '4px 8px',
+      background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
+      borderBottom: '1px solid var(--ws-border-subtle)',
+      flexShrink: 0,
+    },
+    searchInput: {
+      flex: 1,
+      height: 24,
+      padding: '0 8px',
+      background: 'var(--ws-hover)',
+      border: '1px solid var(--ws-border)',
+      borderRadius: 4,
+      color: 'var(--ws-text)',
+      fontSize: 12,
+      fontFamily: "'Fira Code', monospace",
+      outline: 'none',
+    },
+    main: {
+      display: 'flex',
+      flex: 1,
+      overflow: 'hidden',
+    },
+    sidebar: {
+      display: 'flex',
+      flexDirection: 'column',
+      width: 200,
+      minWidth: 150,
+      maxWidth: 350,
+      background: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(0, 0, 0, 0.02)',
+      borderRight: '1px solid var(--ws-border-subtle)',
+      flexShrink: 0,
+      overflow: 'hidden',
+    },
+    sidebarHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '6px 10px',
+      borderBottom: '1px solid var(--ws-border-subtle)',
+      flexShrink: 0,
+    },
+    sidebarTitle: {
+      fontSize: 10,
+      fontWeight: 600,
+      color: 'var(--ws-text-muted)',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.5px',
+      fontFamily: "'Fira Sans', sans-serif",
+    },
+    sidebarActions: {
+      display: 'flex',
+      gap: 2,
+    },
+    sidebarBtn: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 20,
+      height: 20,
+      borderRadius: 4,
+      border: 'none',
+      background: 'transparent',
+      color: 'var(--ws-text-muted)',
+      cursor: 'pointer',
+      padding: 0,
+    },
+    newItemRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      padding: '4px 10px',
+      borderBottom: '1px solid var(--ws-border-subtle)',
+      flexShrink: 0,
+    },
+    newItemInput: {
+      flex: 1,
+      height: 22,
+      padding: '0 6px',
+      background: 'var(--ws-border-subtle)',
+      border: '1px solid rgba(99, 102, 241, 0.4)',
+      borderRadius: 3,
+      color: 'var(--ws-text)',
+      fontSize: 11,
+      fontFamily: "'Fira Code', monospace",
+      outline: 'none',
+    },
+    divider: {
+      width: 1,
+      background: 'var(--ws-border-subtle)',
+      flexShrink: 0,
+    },
+    editorArea: {
+      display: 'flex',
+      flexDirection: 'column',
+      flex: 1,
+      overflow: 'hidden',
+      minWidth: 0,
+    },
+    empty: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      height: '100%',
+      gap: 4,
+    },
+    imagePreview: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      height: '100%',
+      padding: 16,
+      overflow: 'auto',
+      background: isDark
+        ? 'repeating-conic-gradient(rgba(255,255,255,0.03) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px'
+        : 'repeating-conic-gradient(rgba(0,0,0,0.04) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px',
+    },
+    image: {
+      maxWidth: '100%',
+      maxHeight: '100%',
+      objectFit: 'contain',
+      borderRadius: 4,
+      boxShadow: isDark ? '0 2px 12px rgba(0,0,0,0.3)' : '0 2px 12px rgba(0,0,0,0.12)',
+    },
+    rootInput: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '100%',
+      height: '100%',
+      gap: 8,
+      background: 'var(--ws-content-bg)',
+      padding: 20,
+    },
+    rootLabel: {
+      fontSize: 13,
+      color: 'var(--ws-text-secondary)',
+      fontFamily: "'Fira Sans', sans-serif",
+      fontWeight: 500,
+    },
+    rootInputRow: {
+      display: 'flex',
+      gap: 6,
+      width: '100%',
+      maxWidth: 400,
+    },
+    rootInputField: {
+      flex: 1,
+      padding: '6px 10px',
+      background: 'var(--ws-hover)',
+      border: '1px solid var(--ws-border)',
+      borderRadius: 6,
+      color: 'var(--ws-text)',
+      fontSize: 12,
+      fontFamily: "'Fira Code', monospace",
+      outline: 'none',
+    },
+    rootHint: {
+      fontSize: 10,
+      color: 'var(--ws-text-muted)',
+      fontStyle: 'italic',
+    },
+    diffToolbar: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '4px 10px',
+      background: 'rgba(99, 102, 241, 0.08)',
+      borderBottom: '1px solid var(--ws-active-bg, rgba(99, 102, 241, 0.15))',
+      flexShrink: 0,
+    },
+    diffToolbarTitle: {
+      fontSize: 11,
+      color: isDark ? '#c4b5fd' : '#6d28d9',
+      fontFamily: "'Fira Code', monospace",
+      fontWeight: 500,
+    },
+    diffActionBtn: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 4,
+      padding: '3px 8px',
+      border: '1px solid var(--ws-border)',
+      borderRadius: 4,
+      background: 'var(--ws-hover)',
+      color: 'var(--ws-text-secondary)',
+      fontSize: 11,
+      cursor: 'pointer',
+      fontFamily: "'Fira Sans', sans-serif",
+    },
+    diffActionBtnDanger: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 4,
+      padding: '3px 8px',
+      border: '1px solid rgba(248, 113, 113, 0.3)',
+      borderRadius: 4,
+      background: 'rgba(248, 113, 113, 0.08)',
+      color: '#f87171',
+      fontSize: 11,
+      cursor: 'pointer',
+      fontFamily: "'Fira Sans', sans-serif",
+    },
+  };
+}

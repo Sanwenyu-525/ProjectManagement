@@ -1,6 +1,9 @@
 import { useState, useRef } from 'react';
 import { Terminal } from '../terminalTypes';
 import { CloseOutlined } from '@ant-design/icons';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { isEnterCommit } from '@/lib/keyboard';
 
 interface TerminalTabProps {
   terminal: Terminal;
@@ -16,6 +19,8 @@ export default function TerminalTab({ terminal, isActive, onSelect, onClose, onR
   const [editLabel, setEditLabel] = useState('');
   const [hovered, setHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id: terminal.id });
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -31,37 +36,36 @@ export default function TerminalTab({ terminal, isActive, onSelect, onClose, onR
     setEditing(false);
   };
 
-  const statusColor = terminal.status === 'running' ? '#22c55e'
-    : terminal.status === 'exited' ? '#6b7a99'
-    : '#ef4444';
+  const statusColor = terminal.status === 'running' ? 'var(--color-status-done)'
+    : terminal.status === 'exited' ? 'var(--ws-text-secondary, #6b7a99)'
+    : 'var(--color-status-cancel)';
 
   return (
     <div
+      ref={setNodeRef}
       onClick={() => onSelect(terminal.id)}
       onDoubleClick={handleDoubleClick}
       onContextMenu={(e) => onContextMenu?.(e, terminal.id)}
+      {...attributes}
+      {...listeners}
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 8,
         padding: '5px 12px 5px 24px',
-        cursor: 'pointer',
+        cursor: 'grab',
         fontSize: 12,
-        color: isActive ? '#ffffff' : '#b0b8c8',
-        background: isActive ? '#37373d' : 'transparent',
+        color: isActive ? 'var(--ws-text, #1a1f36)' : 'var(--ws-text-secondary, #6b7a99)',
+        background: isActive ? 'var(--ws-hover, rgba(0,0,0,0.06))' : hovered ? 'var(--ws-active-bg, rgba(99,102,241,0.10))' : 'transparent',
         borderRadius: 4,
         margin: '1px 6px',
         transition: 'all 0.1s',
         position: 'relative',
+        opacity: isDragging ? 0.4 : 1,
+        transform: CSS.Translate.toString(transform),
       }}
-      onMouseEnter={e => {
-        setHovered(true);
-        if (!isActive) e.currentTarget.style.background = '#2a2d2e';
-      }}
-      onMouseLeave={e => {
-        setHovered(false);
-        if (!isActive) e.currentTarget.style.background = 'transparent';
-      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <span style={{
         width: 6,
@@ -77,16 +81,18 @@ export default function TerminalTab({ terminal, isActive, onSelect, onClose, onR
           autoFocus
           value={editLabel}
           onChange={e => setEditLabel(e.target.value)}
-          onBlur={commitEdit}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={() => { composingRef.current = false; }}
+          onBlur={() => { if (!composingRef.current) commitEdit(); }}
           onKeyDown={e => {
-            if (e.key === 'Enter') commitEdit();
+            if (isEnterCommit(e)) commitEdit();
             if (e.key === 'Escape') setEditing(false);
           }}
           onClick={e => e.stopPropagation()}
           style={{
             background: 'transparent',
-            border: '1px solid #007acc',
-            color: '#fff',
+            border: '1px solid var(--ws-active-border, #6366f1)',
+            color: 'var(--ws-text, #1a1f36)',
             padding: '1px 4px',
             fontSize: 12,
             flex: 1,
@@ -111,17 +117,9 @@ export default function TerminalTab({ terminal, isActive, onSelect, onClose, onR
           e.stopPropagation();
           onClose(terminal.id);
         }}
-        onMouseEnter={e => {
-          e.currentTarget.style.color = '#e8e8e8';
-          e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.color = '#555';
-          e.currentTarget.style.background = 'transparent';
-        }}
         style={{
           fontSize: 9,
-          color: '#555',
+          color: 'var(--ws-text-secondary, #6b7a99)',
           cursor: 'pointer',
           opacity: isActive || hovered ? 1 : 0,
           transition: 'opacity 0.15s, color 0.1s, background 0.1s',

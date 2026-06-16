@@ -91,7 +91,7 @@ export default function HealthTab({ projectId }: { projectId: string }) {
           ) : (
             <Tag icon={<WarningOutlined />} color="warning">有变化</Tag>
           )}
-          <span style={{ color: '#8b95a5', fontSize: 13 }}>
+          <span style={{ color: 'var(--color-text-placeholder)', fontSize: 13 }}>
             最近检查：{latest.checkDate}
           </span>
         </Space>
@@ -110,25 +110,25 @@ export default function HealthTab({ projectId }: { projectId: string }) {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {latest.currentBranch && (
             <div>
-              <span style={{ color: '#8b95a5', fontSize: 12 }}>当前分支</span>
+              <span style={{ color: 'var(--color-text-placeholder)', fontSize: 12 }}>当前分支</span>
               <div style={{ fontWeight: 600 }}>{latest.currentBranch}</div>
             </div>
           )}
           <div>
-            <span style={{ color: '#8b95a5', fontSize: 12 }}>未提交文件</span>
-            <div style={{ fontWeight: 600, color: latest.dirtyFileCount > 0 ? '#faad14' : '#52c41a' }}>
+            <span style={{ color: 'var(--color-text-placeholder)', fontSize: 12 }}>未提交文件</span>
+            <div style={{ fontWeight: 600, color: latest.dirtyFileCount > 0 ? 'var(--color-amber)' : 'var(--color-status-done)' }}>
               {latest.dirtyFileCount}
             </div>
           </div>
           <div>
-            <span style={{ color: '#8b95a5', fontSize: 12 }}>待推送提交</span>
-            <div style={{ fontWeight: 600, color: latest.aheadCount > 0 ? '#1890ff' : '#52c41a' }}>
+            <span style={{ color: 'var(--color-text-placeholder)', fontSize: 12 }}>待推送提交</span>
+            <div style={{ fontWeight: 600, color: latest.aheadCount > 0 ? 'var(--color-info)' : 'var(--color-status-done)' }}>
               {latest.aheadCount}
             </div>
           </div>
           <div>
-            <span style={{ color: '#8b95a5', fontSize: 12 }}>落后远程</span>
-            <div style={{ fontWeight: 600, color: latest.behindCount > 0 ? '#ff4d4f' : '#52c41a' }}>
+            <span style={{ color: 'var(--color-text-placeholder)', fontSize: 12 }}>落后远程</span>
+            <div style={{ fontWeight: 600, color: latest.behindCount > 0 ? 'var(--color-status-cancel)' : 'var(--color-status-done)' }}>
               {latest.behindCount}
             </div>
           </div>

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { ReloadOutlined, PlusOutlined, CheckOutlined, CloseOutlined, QuestionCircleOutlined } from '@ant-design/icons';
-import { Popover } from 'antd';
+import { Popover, Modal } from 'antd';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { workspacesApi } from '../../api';
+import { isEnterCommit } from '@/lib/keyboard';
 
 interface Workspace {
   id: string;
@@ -26,6 +27,7 @@ function WorkspaceTag({ workspace, isActive, color, onSelect, onDelete, onRename
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
 
   const startEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -62,15 +64,17 @@ function WorkspaceTag({ workspace, isActive, color, onSelect, onDelete, onRename
           autoFocus
           value={editValue}
           onChange={e => setEditValue(e.target.value)}
-          onBlur={commitEdit}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={() => { composingRef.current = false; }}
+          onBlur={() => { if (!composingRef.current) commitEdit(); }}
           onKeyDown={e => {
-            if (e.key === 'Enter') commitEdit();
+            if (isEnterCommit(e)) commitEdit();
             if (e.key === 'Escape') setEditing(false);
           }}
           onClick={e => e.stopPropagation()}
           style={{
             background: 'transparent',
-            border: '1px solid #007acc',
+            border: '1px solid var(--ws-active-border, #007acc)',
             color: 'inherit',
             padding: '0 4px',
             fontSize: 11,
@@ -105,6 +109,7 @@ export default function WorkspaceToolbar() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
 
   // Load workspaces
   useEffect(() => {
@@ -148,38 +153,53 @@ export default function WorkspaceToolbar() {
     }
   };
 
-  const handleDelete = async (ws: Workspace) => {
-    // Check if workspace has active items
-    try {
-      const layoutJson = await workspacesApi.loadLayout(ws.id);
-      if (layoutJson) {
-        const layout = JSON.parse(layoutJson) as { tabs: Record<string, { contentType?: string }> };
-        const tabs = Object.values(layout.tabs || {});
-        const terminals = tabs.filter(t => t.contentType === 'terminal').length;
-        const agents = tabs.filter(t => t.contentType === 'agent').length;
-        const browsers = tabs.filter(t => t.contentType === 'browser').length;
-        const parts: string[] = [];
-        if (terminals) parts.push(`${terminals} 个终端`);
-        if (agents) parts.push(`${agents} 个智能体`);
-        if (browsers) parts.push(`${browsers} 个浏览器`);
-        if (parts.length > 0) {
-          if (!confirm(`工作区「${ws.name}」有 ${parts.join('、')}，确定删除？`)) return;
+  const handleDelete = (ws: Workspace) => {
+    const doDelete = async () => {
+      try {
+        await workspacesApi.delete(ws.id);
+        setWorkspaces(prev => prev.filter(w => w.id !== ws.id));
+        if (activeWs?.id === ws.id) {
+          handleSelect(null);
         }
+      } catch (e) {
+        console.error('Failed to delete workspace:', e);
       }
-    } catch {
-      // If we can't check, still allow delete with generic confirm
-      if (!confirm(`确定删除工作区「${ws.name}」？`)) return;
-    }
+    };
 
-    try {
-      await workspacesApi.delete(ws.id);
-      setWorkspaces(prev => prev.filter(w => w.id !== ws.id));
-      if (activeWs?.id === ws.id) {
-        handleSelect(null);
-      }
-    } catch (e) {
-      console.error('Failed to delete workspace:', e);
-    }
+    const showConfirm = (content: string) => {
+      Modal.confirm({
+        title: '删除工作区',
+        content,
+        okText: '删除',
+        cancelText: '取消',
+        okButtonProps: { danger: true },
+        centered: true,
+        onOk: doDelete,
+      });
+    };
+
+    workspacesApi.loadLayout(ws.id)
+      .then(layoutJson => {
+        if (layoutJson) {
+          const layout = JSON.parse(layoutJson) as { tabs: Record<string, { contentType?: string }> };
+          const tabs = Object.values(layout.tabs || {});
+          const terminals = tabs.filter(t => t.contentType === 'terminal').length;
+          const agents = tabs.filter(t => t.contentType === 'agent').length;
+          const browsers = tabs.filter(t => t.contentType === 'browser').length;
+          const parts: string[] = [];
+          if (terminals) parts.push(`${terminals} 个终端`);
+          if (agents) parts.push(`${agents} 个智能体`);
+          if (browsers) parts.push(`${browsers} 个浏览器`);
+          if (parts.length > 0) {
+            showConfirm(`工作区「${ws.name}」有 ${parts.join('、')}，确定删除？`);
+            return;
+          }
+        }
+        showConfirm(`确定删除工作区「${ws.name}」？`);
+      })
+      .catch(() => {
+        showConfirm(`确定删除工作区「${ws.name}」？`);
+      });
   };
 
   const handleRename = async (ws: Workspace, newName: string) => {
@@ -205,12 +225,12 @@ export default function WorkspaceToolbar() {
             ...styles.tag,
             ...(activeWs === null ? styles.tagActive : {}),
             borderColor: activeWs === null ? 'transparent' : 'var(--ws-border)',
-            borderBottomColor: activeWs === null ? '#6366f1' : 'transparent',
-            background: activeWs === null ? 'rgba(99, 102, 241, 0.12)' : 'transparent',
-            color: activeWs === null ? '#6366f1' : 'var(--ws-text-secondary)',
+            borderBottomColor: activeWs === null ? 'var(--ws-active-border, #6366f1)' : 'transparent',
+            background: activeWs === null ? 'var(--ws-active-bg, rgba(99, 102, 241, 0.12))' : 'transparent',
+            color: activeWs === null ? 'var(--ws-active-border, #6366f1)' : 'var(--ws-text-secondary)',
           }}
         >
-          <span style={{ ...styles.tagDot, background: '#6366f1' }} />
+          <span style={{ ...styles.tagDot, background: 'var(--ws-active-border, #6366f1)' }} />
           默认
           {activeWs === null && <CheckOutlined style={styles.tagCheck} />}
         </button>
@@ -218,7 +238,7 @@ export default function WorkspaceToolbar() {
         {/* Workspace tags */}
         {workspaces.map(ws => {
           const isActive = activeWs?.id === ws.id;
-          const color = ws.color || '#6366f1';
+          const color = ws.color || 'var(--ws-active-border, #6366f1)';
           return (
             <WorkspaceTag
               key={ws.id}
@@ -239,11 +259,13 @@ export default function WorkspaceToolbar() {
               ref={inputRef}
               value={newName}
               onChange={e => setNewName(e.target.value)}
+              onCompositionStart={() => { composingRef.current = true; }}
+              onCompositionEnd={() => { composingRef.current = false; }}
               onKeyDown={e => {
-                if (e.key === 'Enter') handleCreate();
+                if (isEnterCommit(e)) handleCreate();
                 if (e.key === 'Escape') { setCreating(false); setNewName(''); }
               }}
-              onBlur={() => { if (!newName.trim()) { setCreating(false); } }}
+              onBlur={() => { if (!composingRef.current && !newName.trim()) { setCreating(false); } }}
               placeholder="工作区名称"
               style={styles.createInput}
             />
@@ -362,9 +384,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     background: 'rgba(239, 68, 68, 0.2)',
     color: '#ef4444',
     marginLeft: 2,
@@ -375,9 +397,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     border: '1px dashed var(--ws-border)',
     background: 'transparent',
     color: 'var(--ws-text-secondary)',
@@ -407,9 +429,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     border: 'none',
     background: 'rgba(34, 197, 94, 0.15)',
     color: '#22c55e',

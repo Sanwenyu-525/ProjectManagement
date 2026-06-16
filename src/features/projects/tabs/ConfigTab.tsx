@@ -96,8 +96,8 @@ export default function ConfigTab({ project, onSaved }: { project: ProjectDetail
   return (
     <div style={{ maxWidth: 520, padding: '8px 0' }}>
       <div style={{ marginBottom: 20 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
-          <span style={{ color: '#22c55e', marginRight: 4 }}>●</span> 前端命令
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 6 }}>
+          <span style={{ color: 'var(--color-status-done)', marginRight: 4 }}>●</span> 前端命令
         </label>
         <Input value={frontendCmd} onChange={e => setFrontendCmd(e.target.value)} placeholder="如 npm run dev、pnpm dev、yarn start" />
         <CwdInput cwd={frontendCwd} setCwd={setFrontendCwd} detecting={detectingFrontend}
@@ -105,8 +105,8 @@ export default function ConfigTab({ project, onSaved }: { project: ProjectDetail
           onBrowse={() => handleBrowseCwd(setFrontendCwd)} />
       </div>
       <div style={{ marginBottom: 20 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1a1f36', marginBottom: 6 }}>
-          <span style={{ color: '#3b82f6', marginRight: 4 }}>●</span> 后端命令（可选）
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 6 }}>
+          <span style={{ color: 'var(--color-info)', marginRight: 4 }}>●</span> 后端命令（可选）
         </label>
         <Input value={backendCmd} onChange={e => setBackendCmd(e.target.value)} placeholder="如 cargo run、python manage.py runserver" />
         <CwdInput cwd={backendCwd} setCwd={setBackendCwd} detecting={detectingBackend}
@@ -114,7 +114,7 @@ export default function ConfigTab({ project, onSaved }: { project: ProjectDetail
           onBrowse={() => handleBrowseCwd(setBackendCwd)} />
       </div>
       <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving}
-        style={{ background: '#22c55e', borderColor: '#22c55e' }}>
+        style={{ background: 'var(--color-status-done)', borderColor: 'var(--color-status-done)' }}>
         保存配置
       </Button>
     </div>

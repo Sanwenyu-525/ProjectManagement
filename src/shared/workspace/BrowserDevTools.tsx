@@ -34,8 +34,8 @@ function ConsoleLogRow({ entry, onSendError }: { entry: ConsoleLogEntry; onSendE
       }}
     >
       <span style={styles.logIcon}>
-        {entry.method === 'error' ? <CloseCircleOutlined style={{ color: '#ef4444', fontSize: 11 }} />
-          : entry.method === 'warn' ? <WarningOutlined style={{ color: '#eab308', fontSize: 11 }} />
+        {entry.method === 'error' ? <CloseCircleOutlined style={{ color: 'var(--color-status-cancel)', fontSize: 11 }} />
+          : entry.method === 'warn' ? <WarningOutlined style={{ color: 'var(--color-amber)', fontSize: 11 }} />
           : <InfoCircleOutlined style={{ color: 'var(--ws-text-muted)', fontSize: 11 }} />}
       </span>
       <span style={styles.logText}>{errorText}</span>
@@ -127,10 +127,10 @@ export default function BrowserDevTools({ consoleLogs, networkRequests, onClearC
             <div style={styles.scrollArea}>
               {networkRequests.map(req => {
                 const isExpanded = expandedRequest === req.id;
-                const statusColor = req.status >= 200 && req.status < 300 ? '#22c55e'
-                  : req.status >= 400 && req.status < 500 ? '#eab308'
-                  : req.status >= 500 ? '#ef4444'
-                  : '#64748b';
+                const statusColor = req.status >= 200 && req.status < 300 ? 'var(--color-status-done)'
+                  : req.status >= 400 && req.status < 500 ? 'var(--color-amber)'
+                  : req.status >= 500 ? 'var(--color-status-cancel)'
+                  : 'var(--ws-text-muted)';
                 return (
                   <div key={req.id}>
                     <div
@@ -221,16 +221,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
   errorBadge: {
     fontSize: 9,
-    color: '#ef4444',
-    background: 'rgba(239, 68, 68, 0.15)',
+    color: 'var(--color-status-cancel)',
+    background: 'var(--color-status-cancel)',
     padding: '0 4px',
     borderRadius: 3,
     lineHeight: '14px',
   },
   warnBadge: {
     fontSize: 9,
-    color: '#eab308',
-    background: 'rgba(234, 179, 8, 0.12)',
+    color: 'var(--color-amber)',
+    background: 'var(--color-amber-light)',
     padding: '0 4px',
     borderRadius: 3,
     lineHeight: '14px',
@@ -287,8 +287,8 @@ const styles: Record<string, React.CSSProperties> = {
     height: 18,
     borderRadius: 3,
     border: 'none',
-    background: 'rgba(99, 102, 241, 0.15)',
-    color: '#818cf8',
+    background: 'var(--color-purple-light)',
+    color: 'var(--color-purple)',
     cursor: 'pointer',
     padding: 0,
     flexShrink: 0,

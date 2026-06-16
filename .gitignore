@@ -17,7 +17,8 @@ tsconfig.tsbuildinfo
 
 # Environment
 .env
-.env.local
+.env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -32,9 +33,11 @@ Thumbs.db
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Superpowers
 .superpowers/
+docs/superpowers/
 
 # Logs
 *.log
@@ -46,21 +49,12 @@ temp/
 
 # Build artifacts
 *.tsbuildinfo
-
-# User-specific files
-ChatGPT Image*
-
-# Claude Code
-CLAUDE.md
-
-# Superpowers
-.superpowers/
-docs/superpowers/
-
-# Design System
 design-system/
 
 # Development docs
 docs/features/
 docs/project-analysis.md
 docs/ui-optimization.md
+
+# User-specific files
+ChatGPT Image*

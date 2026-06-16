@@ -1,6 +1,7 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import { Terminal, PanePosition } from '../terminalTypes';
 import { TerminalGroup as TerminalGroupType, useTerminalStore } from '../../stores/terminalStore';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import TerminalGroup from './TerminalGroup';
 import { PlusOutlined, PartitionOutlined } from '@ant-design/icons';
 
@@ -35,6 +36,11 @@ export default function TerminalTabBar({
   const tabBarWidth = useTerminalStore(s => s.tabBarWidth);
   const setTabBarWidth = useTerminalStore(s => s.setTabBarWidth);
   const removeGroup = useTerminalStore(s => s.removeGroup);
+  const reorderTerminalInGroup = useTerminalStore(s => s.reorderTerminalInGroup);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({ dragging: false, startX: 0, startWidth: 0 });
@@ -143,12 +149,18 @@ export default function TerminalTabBar({
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    reorderTerminalInGroup(String(active.id), String(over.id));
+  }, [reorderTerminalInGroup]);
+
   return (
     <div
       style={{
         width: tabBarWidth,
         minWidth: 140,
-        background: '#252526',
+        background: 'var(--ws-navigator-bg, rgba(15,16,24,0.95))',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -163,10 +175,10 @@ export default function TerminalTabBar({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '8px 12px',
-        borderBottom: '1px solid #3c3c3c',
+        borderBottom: '1px solid var(--ws-border, rgba(0,0,0,0.08))',
         flexShrink: 0,
       }}>
-        <span style={{ fontSize: 11, color: '#7a8399', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <span style={{ fontSize: 11, color: 'var(--ws-text-secondary, #6b7a99)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           终端
         </span>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -177,7 +189,7 @@ export default function TerminalTabBar({
             style={{
               background: 'none',
               border: 'none',
-              color: terminalCount >= maxTerminals ? '#333' : '#888',
+              color: terminalCount >= maxTerminals ? 'var(--ws-text-muted, #94a3b8)' : 'var(--ws-text-secondary, #6b7a99)',
               cursor: terminalCount >= maxTerminals ? 'not-allowed' : 'pointer',
               padding: '3px 6px',
               borderRadius: 3,
@@ -185,7 +197,7 @@ export default function TerminalTabBar({
               alignItems: 'center',
             }}
             onMouseEnter={e => {
-              if (terminalCount < maxTerminals) e.currentTarget.style.background = '#3c3c3c';
+              if (terminalCount < maxTerminals) e.currentTarget.style.background = 'var(--ws-hover, rgba(255,255,255,0.04))';
             }}
             onMouseLeave={e => {
               e.currentTarget.style.background = 'none';
@@ -198,9 +210,9 @@ export default function TerminalTabBar({
               onClick={() => setSplitVerticalOpen(!splitVerticalOpen)}
               title={splitVerticalOpen ? '关闭上下分屏' : '上下分屏'}
               style={{
-                background: splitVerticalOpen ? 'rgba(59, 130, 246, 0.2)' : 'none',
-                border: splitVerticalOpen ? '1px solid rgba(59, 130, 246, 0.3)' : 'none',
-                color: splitVerticalOpen ? '#60a5fa' : '#888',
+                background: splitVerticalOpen ? 'var(--color-info-light)' : 'none',
+                border: splitVerticalOpen ? '1px solid var(--color-info)' : 'none',
+                color: splitVerticalOpen ? 'var(--color-info)' : 'var(--ws-text-secondary, #6b7a99)',
                 cursor: 'pointer',
                 padding: '3px 6px',
                 borderRadius: 3,
@@ -208,10 +220,10 @@ export default function TerminalTabBar({
                 alignItems: 'center',
               }}
               onMouseEnter={e => {
-                if (!splitVerticalOpen) e.currentTarget.style.background = '#3c3c3c';
+                if (!splitVerticalOpen) e.currentTarget.style.background = 'var(--ws-hover, rgba(255,255,255,0.04))';
               }}
               onMouseLeave={e => {
-                e.currentTarget.style.background = splitVerticalOpen ? 'rgba(59, 130, 246, 0.2)' : 'none';
+                e.currentTarget.style.background = splitVerticalOpen ? 'var(--color-info-light)' : 'none';
               }}
             >
               <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
@@ -224,9 +236,9 @@ export default function TerminalTabBar({
             onClick={() => setSplitPaneOpen(!splitPaneOpen)}
             title={splitPaneOpen ? '关闭分屏' : '左右分屏'}
             style={{
-              background: splitPaneOpen ? 'rgba(59, 130, 246, 0.2)' : 'none',
-              border: splitPaneOpen ? '1px solid rgba(59, 130, 246, 0.3)' : 'none',
-              color: splitPaneOpen ? '#60a5fa' : '#888',
+              background: splitPaneOpen ? 'var(--color-info-light)' : 'none',
+              border: splitPaneOpen ? '1px solid var(--color-info)' : 'none',
+              color: splitPaneOpen ? 'var(--color-info)' : 'var(--ws-text-secondary, #6b7a99)',
               cursor: 'pointer',
               padding: '3px 6px',
               borderRadius: 3,
@@ -234,10 +246,10 @@ export default function TerminalTabBar({
               alignItems: 'center',
             }}
             onMouseEnter={e => {
-              if (!splitPaneOpen) e.currentTarget.style.background = '#3c3c3c';
+              if (!splitPaneOpen) e.currentTarget.style.background = 'var(--ws-hover, rgba(255,255,255,0.04))';
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = splitPaneOpen ? 'rgba(59, 130, 246, 0.2)' : 'none';
+              e.currentTarget.style.background = splitPaneOpen ? 'var(--color-info-light)' : 'none';
             }}
           >
             <PartitionOutlined style={{ fontSize: 11 }} />
@@ -246,40 +258,42 @@ export default function TerminalTabBar({
       </div>
 
       {/* Groups list */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        padding: '4px 0',
-      }}>
-        {groupedTerminals.map(({ group, terminals: groupTerminals }) => (
-          <TerminalGroup
-            key={group.id}
-            group={group}
-            terminals={groupTerminals}
-            activeId={activeId}
-            onSelect={onSelect}
-            onClose={onClose}
-            onRename={onRename}
-            onToggleCollapse={toggleGroupCollapse}
-            onDeleteGroup={removeGroup}
-            onCreateTerminal={onCreateTerminal}
-            onContextMenu={handleContextMenu}
-            onGroupContextMenu={handleGroupContextMenu}
-          />
-        ))}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '4px 0',
+        }}>
+          {groupedTerminals.map(({ group, terminals: groupTerminals }) => (
+            <TerminalGroup
+              key={group.id}
+              group={group}
+              terminals={groupTerminals}
+              activeId={activeId}
+              onSelect={onSelect}
+              onClose={onClose}
+              onRename={onRename}
+              onToggleCollapse={toggleGroupCollapse}
+              onDeleteGroup={removeGroup}
+              onCreateTerminal={onCreateTerminal}
+              onContextMenu={handleContextMenu}
+              onGroupContextMenu={handleGroupContextMenu}
+            />
+          ))}
 
-        {paneTerminals.length === 0 && (
-          <div style={{
-            padding: '20px 12px',
-            textAlign: 'center',
-            color: '#555',
-            fontSize: 12,
-          }}>
-            无终端
-          </div>
-        )}
-      </div>
+          {paneTerminals.length === 0 && (
+            <div style={{
+              padding: '20px 12px',
+              textAlign: 'center',
+              color: 'var(--ws-text-secondary, #6b7a99)',
+              fontSize: 12,
+            }}>
+              无终端
+            </div>
+          )}
+        </div>
+      </DndContext>
 
       {/* Context Menu */}
       {contextMenu && (
@@ -300,7 +314,7 @@ export default function TerminalTabBar({
         onMouseDown={handleResizeStart}
         onMouseEnter={e => {
           const indicator = e.currentTarget.querySelector('[data-indicator]') as HTMLElement;
-          if (indicator) indicator.style.background = 'rgba(255,255,255,0.35)';
+          if (indicator) indicator.style.background = 'var(--ws-handle, rgba(0,0,0,0.10))';
         }}
         onMouseLeave={e => {
           if (isDragging) return;
@@ -327,7 +341,7 @@ export default function TerminalTabBar({
             height: 24,
             borderRadius: 2,
             transform: 'translateY(-50%)',
-            background: isDragging ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0)',
+            background: isDragging ? 'var(--ws-handle, rgba(0,0,0,0.10))' : 'transparent',
             transition: isDragging ? 'none' : 'background 0.15s',
           }}
         />
@@ -351,6 +365,21 @@ function ContextMenu({
   const moveTerminalToGroup = useTerminalStore(s => s.moveTerminalToGroup);
   const groups = useTerminalStore(s => s.groups);
   const removeGroup = useTerminalStore(s => s.removeGroup);
+
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    let cx = x, cy = y;
+    if (cx + rect.width > window.innerWidth - 8) cx = window.innerWidth - rect.width - 8;
+    if (cy + rect.height > window.innerHeight - 8) cy = window.innerHeight - rect.height - 8;
+    if (cx < 8) cx = 8;
+    if (cy < 8) cy = 8;
+    el.style.left = `${cx}px`;
+    el.style.top = `${cy}px`;
+  }, [x, y]);
 
   const [showGroupSubmenu, setShowGroupSubmenu] = useState(false);
 
@@ -399,17 +428,19 @@ function ContextMenu({
 
   return (
     <div
+      ref={menuRef}
       style={{
         position: 'fixed',
         left: x,
         top: y,
-        background: '#2d2d30',
-        border: '1px solid #454545',
+        background: 'var(--ws-navigator-bg, rgba(15,16,24,0.95))',
+        border: '1px solid var(--ws-border, rgba(0,0,0,0.08))',
         borderRadius: 6,
         padding: '4px 0',
         minWidth: 160,
         zIndex: 1000,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        backdropFilter: 'var(--ws-glass-blur, blur(20px) saturate(1.8))',
       }}
       onClick={e => e.stopPropagation()}
     >
@@ -420,11 +451,11 @@ function ContextMenu({
           style={{
             padding: '6px 14px',
             fontSize: 12,
-            color: item.danger ? '#ef4444' : '#ccc',
+            color: item.danger ? '#ef4444' : 'var(--ws-text, #1a1f36)',
             cursor: 'pointer',
             transition: 'background 0.1s',
           }}
-          onMouseEnter={e => e.currentTarget.style.background = '#3e3e42'}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--ws-hover, rgba(0,0,0,0.04))'}
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
           {item.label}
@@ -437,12 +468,13 @@ function ContextMenu({
           position: 'absolute',
           left: '100%',
           top: 0,
-          background: '#2d2d30',
-          border: '1px solid #454545',
+          background: 'var(--ws-navigator-bg, rgba(15,16,24,0.95))',
+          border: '1px solid var(--ws-border, rgba(0,0,0,0.08))',
           borderRadius: 6,
           padding: '4px 0',
           minWidth: 140,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          backdropFilter: 'var(--ws-glass-blur, blur(20px) saturate(1.8))',
         }}>
           {groups.filter(g => !g.isProjectGroup).map(g => (
             <div
@@ -454,18 +486,18 @@ function ContextMenu({
               style={{
                 padding: '6px 14px',
                 fontSize: 12,
-                color: '#ccc',
+                color: 'var(--ws-text, #1a1f36)',
                 cursor: 'pointer',
                 transition: 'background 0.1s',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = '#3e3e42'}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--ws-hover, rgba(0,0,0,0.04))'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
               {g.label}
             </div>
           ))}
           {groups.filter(g => !g.isProjectGroup).length === 0 && (
-            <div style={{ padding: '6px 14px', fontSize: 12, color: '#555' }}>
+            <div style={{ padding: '6px 14px', fontSize: 12, color: 'var(--ws-text-secondary, #6b7a99)' }}>
               无自定义分组
             </div>
           )}

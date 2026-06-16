@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { LeftOutlined, RightOutlined, ReloadOutlined, ExportOutlined, CodeOutlined, ApiOutlined, CameraOutlined, SearchOutlined } from '@ant-design/icons';
 import { open } from '@tauri-apps/plugin-shell';
+import { isEnterCommit } from '@/lib/keyboard';
 
 interface Props {
   url?: string;
@@ -81,7 +82,7 @@ export default function BrowserToolbar({
         type="text"
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+        onKeyDown={(e) => { if (isEnterCommit(e)) handleSubmit(); }}
         placeholder="输入 URL（如 localhost:5173）"
         style={styles.urlInput}
       />
@@ -128,9 +129,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 22,
-    height: 22,
-    borderRadius: 4,
+    width: 24,
+    height: 24,
+    borderRadius: 5,
     border: 'none',
     background: 'transparent',
     color: 'var(--ws-text-secondary)',
@@ -148,7 +149,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   urlInput: {
     flex: 1,
-    height: 22,
+    height: 24,
     background: 'var(--ws-border-subtle)',
     border: '1px solid var(--ws-border)',
     borderRadius: 4,
@@ -171,7 +172,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 5,
     height: 5,
     borderRadius: '50%',
-    background: '#ef4444',
+    background: 'var(--color-status-cancel)',
   },
   countDot: {
     position: 'absolute',
@@ -180,6 +181,6 @@ const styles: Record<string, React.CSSProperties> = {
     width: 5,
     height: 5,
     borderRadius: '50%',
-    background: '#60a5fa',
+    background: 'var(--color-info)',
   },
 };

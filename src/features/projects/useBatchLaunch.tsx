@@ -50,13 +50,13 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
         title: '端口冲突',
         content: (
           <div>
-            <p style={{ marginBottom: 8, color: '#6b7a99', fontSize: 13 }}>
+            <p style={{ marginBottom: 8, color: 'var(--color-text-description)', fontSize: 13 }}>
               以下项目使用了相同端口，同时启动可能导致冲突：
             </p>
             {conflicts.map(({ project, port }) => (
               <div key={project.id} style={{ padding: '4px 0', fontSize: 12 }}>
-                <span style={{ color: '#1a1f36' }}>{project.name}</span>
-                <span style={{ color: '#94a3b8', marginLeft: 8 }}>端口 {port}</span>
+                <span style={{ color: 'var(--color-text-primary)' }}>{project.name}</span>
+                <span style={{ color: 'var(--color-text-muted)', marginLeft: 8 }}>端口 {port}</span>
               </div>
             ))}
           </div>
@@ -110,20 +110,20 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
     const confirmed = await new Promise<boolean>((resolve) => {
       Modal.confirm({
         title: '批量启动项目',
-        icon: <ThunderboltOutlined style={{ color: '#52c41a' }} />,
+        icon: <ThunderboltOutlined style={{ color: 'var(--color-status-done)' }} />,
         width: 580,
         content: (
           <div>
-            <div style={{ marginBottom: 12, color: '#6b7a99', fontSize: 13 }}>
-              即将启动 <strong style={{ color: '#1a1f36' }}>{withCommands.length}</strong> 个项目
+            <div style={{ marginBottom: 12, color: 'var(--color-text-description)', fontSize: 13 }}>
+              即将启动 <strong style={{ color: 'var(--color-text-primary)' }}>{withCommands.length}</strong> 个项目
               {smartSortEnabled && (
-                <span style={{ marginLeft: 8, color: '#52c41a', fontSize: 12 }}>(智能排序已启用)</span>
+                <span style={{ marginLeft: 8, color: 'var(--color-status-done)', fontSize: 12 }}>(智能排序已启用)</span>
               )}
             </div>
             <div style={{ marginBottom: 12 }}>
               {sortedForDisplay.map((project, index) => {
                 const priority = getProjectPriority(project);
-                const colorMap: Record<string, string> = { blue: '#3b82f6', green: '#22c55e', orange: '#f59e0b', purple: '#8b5cf6' };
+                const colorMap: Record<string, string> = { blue: 'var(--color-info)', green: 'var(--color-status-done)', orange: 'var(--color-amber)', purple: 'var(--color-purple)' };
                 return (
                   <div key={project.id} style={{
                     display: 'flex', alignItems: 'center', gap: 8,
@@ -133,13 +133,13 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
                     {smartSortEnabled && (
                       <div style={{
                         width: 24, height: 24, borderRadius: '50%',
-                        background: colorMap[getPriorityColor(priority)] || '#6b7280',
+                        background: colorMap[getPriorityColor(priority)] || 'var(--color-text-tertiary)',
                         color: '#fff', fontSize: 10, fontWeight: 600,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>{priority}</div>
                     )}
-                    <span style={{ flex: 1, fontSize: 12, color: '#1a1f36' }}>{project.name}</span>
-                    <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: "'Fira Code', monospace", maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text-primary)' }}>{project.name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontFamily: "'Fira Code', monospace", maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {getEffectiveCommand(project)}
                     </span>
                   </div>

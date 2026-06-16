@@ -39,7 +39,7 @@ export default function BranchSelector({ branches, onSwitch, loading }: BranchSe
               label: (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>{b.name}</span>
-                  {b.current && <Badge color="#22c55e" />}
+                  {b.current && <Badge color="var(--color-status-done)" />}
                 </span>
               ),
             })),

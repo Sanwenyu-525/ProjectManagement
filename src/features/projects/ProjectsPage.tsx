@@ -260,12 +260,12 @@ export default function ProjectsPage() {
       const confirmed = await new Promise<boolean>((resolve) => {
         Modal.confirm({
           title: '启动项目',
-          icon: <PlayCircleOutlined style={{ color: '#52c41a' }} />,
+          icon: <PlayCircleOutlined style={{ color: 'var(--color-status-done)' }} />,
           width: 520,
           content: (
             <div>
-              <div style={{ marginBottom: 12, color: '#6b7a99', fontSize: 13 }}>
-                即将启动项目：<strong style={{ color: '#1a1f36' }}>{project.name}</strong>
+              <div style={{ marginBottom: 12, color: 'var(--color-text-description)', fontSize: 13 }}>
+                即将启动项目：<strong style={{ color: 'var(--color-text-primary)' }}>{project.name}</strong>
               </div>
             </div>
           ),
@@ -321,7 +321,7 @@ export default function ProjectsPage() {
         alignItems: 'center',
         marginBottom: 24,
         paddingBottom: 16,
-        borderBottom: '1px solid rgba(0,0,0,0.06)',
+        borderBottom: '1px solid var(--color-border-subtle)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>项目管理</h2>
@@ -340,9 +340,9 @@ export default function ProjectsPage() {
               onClick={batch.handleBatchLaunch}
               size="large"
               style={{
-                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                background: 'linear-gradient(135deg, var(--color-status-done) 0%, color-mix(in srgb, var(--color-status-done) 80%, black) 100%)',
                 border: 'none',
-                boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)',
+                boxShadow: '0 4px 12px color-mix(in srgb, var(--color-status-done) 30%, transparent)',
               }}
             >
               启动选中 ({batch.selectedProjectIds.size})
@@ -353,7 +353,7 @@ export default function ProjectsPage() {
             onClick={() => setQuickLaunchModalOpen(true)}
             size="large"
             style={{
-              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              background: 'linear-gradient(135deg, var(--color-info) 0%, var(--color-info) 100%)',
               color: 'white',
               border: 'none',
               boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
@@ -386,12 +386,12 @@ export default function ProjectsPage() {
         gap: 12,
         marginBottom: 20,
         padding: '12px 16px',
-        background: 'rgba(0,0,0,0.02)',
+        background: 'var(--color-bg-surface)',
         borderRadius: 8,
       }}>
         <Input
           placeholder="搜索项目..."
-          prefix={<SearchOutlined style={{ color: '#8b95a5' }} />}
+          prefix={<SearchOutlined style={{ color: 'var(--color-text-placeholder)' }} />}
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{ width: 280, borderRadius: 6 }}
@@ -450,7 +450,7 @@ export default function ProjectsPage() {
                     borderRadius: 12,
                     height: 220,
                     position: 'relative',
-                    border: isSelected ? '2px solid #22c55e' : '1px solid rgba(0,0,0,0.08)',
+                    border: isSelected ? '2px solid var(--color-status-done)' : '1px solid var(--color-border-subtle)',
                     boxShadow: isSelected
                       ? '0 8px 24px rgba(34, 197, 94, 0.15)'
                       : '0 2px 8px rgba(0,0,0,0.04)',
@@ -484,13 +484,13 @@ export default function ProjectsPage() {
                     <Tooltip title="刷新检测">
                       <Button type="text" size="small" icon={<ReloadOutlined />}
                         onClick={(e) => { e.stopPropagation(); handleRefreshProject(project); }}
-                        style={{ color: '#8b95a5' }}
+                        style={{ color: 'var(--color-text-placeholder)' }}
                       />
                     </Tooltip>
                     <Tooltip title="启动项目">
                       <Button type="text" size="small" icon={<PlayCircleOutlined />}
                         onClick={(e) => { e.stopPropagation(); handleLaunchProject(project); }}
-                        style={{ color: '#22c55e' }}
+                        style={{ color: 'var(--color-status-done)' }}
                       />
                     </Tooltip>
                     <Tooltip title="打开终端">
@@ -502,13 +502,13 @@ export default function ProjectsPage() {
                             navigate('/');
                           }
                         }}
-                        style={{ color: '#8b95a5' }}
+                        style={{ color: 'var(--color-text-placeholder)' }}
                       />
                     </Tooltip>
                     <Tooltip title="删除项目">
                       <Button type="text" size="small" icon={<DeleteOutlined />}
                         onClick={(e) => { e.stopPropagation(); handleDelete(project.id); }}
-                        style={{ color: '#ef4444' }}
+                        style={{ color: 'var(--color-status-cancel)' }}
                       />
                     </Tooltip>
                   </div>
@@ -517,10 +517,10 @@ export default function ProjectsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, marginTop: 4 }}>
                     <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={32} />
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: '#1a1f36', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {project.name}
                       </div>
-                      <div style={{ fontSize: 11, color: '#8b95a5', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-placeholder)', display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Tag color={STATUS_COLORS[project.status]} style={{ margin: 0, fontSize: 10, padding: '0 4px', lineHeight: '16px' }}>
                           {project.status}
                         </Tag>
@@ -536,12 +536,12 @@ export default function ProjectsPage() {
                   {/* Tech stack */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
                     {project.techStack?.slice(0, 3).map(tech => (
-                      <Tag key={tech} style={{ fontSize: 10, padding: '0 4px', borderRadius: 4, background: 'rgba(99, 102, 241, 0.08)', color: '#6366f1', border: 'none' }}>
+                      <Tag key={tech} style={{ fontSize: 10, padding: '0 4px', borderRadius: 4, background: 'var(--color-purple-light)', color: 'var(--color-purple)', border: 'none' }}>
                         {tech}
                       </Tag>
                     ))}
                     {(project.techStack?.length || 0) > 3 && (
-                      <Tag style={{ fontSize: 10, padding: '0 4px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: '#8b95a5', border: 'none' }}>
+                      <Tag style={{ fontSize: 10, padding: '0 4px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: 'var(--color-text-placeholder)', border: 'none' }}>
                         +{project.techStack.length - 3}
                       </Tag>
                     )}
@@ -594,7 +594,7 @@ export default function ProjectsPage() {
           <div style={{ display: 'flex', gap: 12 }}>
             <Form.Item name="localPath" label="本地路径" style={{ flex: 1 }}>
               <Input placeholder="D:\Projects\my-app" suffix={
-                <FolderOpenOutlined style={{ cursor: 'pointer', color: '#8b95a5' }} onClick={handleBrowseProjectPath} />
+                <FolderOpenOutlined style={{ cursor: 'pointer', color: 'var(--color-text-placeholder)' }} onClick={handleBrowseProjectPath} />
               } />
             </Form.Item>
             <Form.Item name="repoUrl" label="Git 仓库" style={{ flex: 1 }}>
@@ -634,18 +634,18 @@ export default function ProjectsPage() {
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: '#6b7a99' }}>扫描路径</label>
+              <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-text-description)' }}>扫描路径</label>
               <Input
                 value={scan.scanPath}
                 onChange={e => scan.setScanPath(e.target.value)}
                 placeholder="输入或选择要扫描的目录..."
                 suffix={
-                  <FolderOpenOutlined style={{ cursor: 'pointer', color: '#8b95a5' }} onClick={handleBrowseFolder} />
+                  <FolderOpenOutlined style={{ cursor: 'pointer', color: 'var(--color-text-placeholder)' }} onClick={handleBrowseFolder} />
                 }
               />
             </div>
             <div style={{ width: 120 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: '#6b7a99' }}>扫描深度</label>
+              <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: 'var(--color-text-description)' }}>扫描深度</label>
               <InputNumber
                 value={scan.scanMaxDepth}
                 onChange={v => scan.setScanMaxDepth(v || 1)}
@@ -684,7 +684,7 @@ export default function ProjectsPage() {
                     </div>
                   ),
                 },
-                { title: '路径', dataIndex: 'localPath', key: 'localPath', ellipsis: true, render: (path: string) => <span style={{ fontFamily: "'Fira Code', monospace", fontSize: 11, color: '#8b95a5' }}>{path}</span> },
+                { title: '路径', dataIndex: 'localPath', key: 'localPath', ellipsis: true, render: (path: string) => <span style={{ fontFamily: "'Fira Code', monospace", fontSize: 11, color: 'var(--color-text-placeholder)' }}>{path}</span> },
                 {
                   title: '关联', dataIndex: 'groupId', key: 'groupId', width: 120,
                   render: (groupId: string) => {
@@ -705,7 +705,7 @@ export default function ProjectsPage() {
             />
             <div style={{ marginTop: 12, textAlign: 'right' }}>
               <Space>
-                <span style={{ color: '#9eadc0' }}>
+                <span style={{ color: 'var(--color-text-light)' }}>
                   已选择 {scan.selectedKeys.length} / {scan.scanResults.length} 项
                 </span>
                 <Button
@@ -746,27 +746,27 @@ export default function ProjectsPage() {
                 marginBottom: 4,
               }}>
                 <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {progress.status === 'pending' && <ClockCircleOutlined style={{ fontSize: 18, color: '#8b95a5' }} />}
+                  {progress.status === 'pending' && <ClockCircleOutlined style={{ fontSize: 18, color: 'var(--color-text-placeholder)' }} />}
                   {progress.status === 'launching' && <Spin size="small" />}
-                  {progress.status === 'success' && <CheckCircleOutlined style={{ fontSize: 20, color: '#52c41a' }} />}
-                  {progress.status === 'failed' && <CloseCircleOutlined style={{ fontSize: 20, color: '#ff4d4f' }} />}
+                  {progress.status === 'success' && <CheckCircleOutlined style={{ fontSize: 20, color: 'var(--color-status-done)' }} />}
+                  {progress.status === 'failed' && <CloseCircleOutlined style={{ fontSize: 20, color: 'var(--color-status-cancel)' }} />}
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={22} />
-                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1a1f36' }}>{project.name}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>{project.name}</span>
                     {smartSortEnabled && (
                       <Tag color={getPriorityColor(priority)} style={{ fontSize: 10, margin: 0, padding: '0 6px' }}>
                         {getPriorityLabel(priority)}
                       </Tag>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: '#6b7a99', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-description)', display: 'flex', alignItems: 'center', gap: 8 }}>
                     {progress.status === 'pending' && '等待启动...'}
-                    {progress.status === 'launching' && <span style={{ color: '#3b82f6' }}>正在启动...</span>}
+                    {progress.status === 'launching' && <span style={{ color: 'var(--color-info)' }}>正在启动...</span>}
                     {progress.status === 'success' && <span>已启动</span>}
-                    {progress.status === 'failed' && <span style={{ color: '#ff4d4f' }}>{progress.error || '启动失败'}</span>}
+                    {progress.status === 'failed' && <span style={{ color: 'var(--color-status-cancel)' }}>{progress.error || '启动失败'}</span>}
                   </div>
                 </div>
 

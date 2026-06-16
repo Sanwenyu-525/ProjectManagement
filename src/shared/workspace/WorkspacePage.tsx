@@ -78,6 +78,7 @@ export default function WorkspacePage() {
               status: 'running',
               shell: cfg.shell,
               cwd: newTerminal.cwd,
+              namePinned: !!req.label,
             });
           }
 
@@ -169,7 +170,11 @@ export default function WorkspacePage() {
         </div>
         <div
           onMouseDown={handleResizeStart}
-          style={styles.resizeHandle}
+          style={{
+            width: 1,
+            cursor: 'col-resize',
+            flexShrink: 0,
+          }}
         />
         <div style={styles.paneArea}>
           <WorkspacePane />
@@ -197,12 +202,5 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflow: 'hidden',
     display: 'flex',
-  },
-  resizeHandle: {
-    width: 5,
-    cursor: 'col-resize',
-    background: 'var(--ws-handle)',
-    flexShrink: 0,
-    transition: 'background 0.15s',
   },
 };

@@ -1,12 +1,14 @@
 /* src/shared/components/SearchBox.tsx */
 
-import { useState, useRef, useEffect } from 'react';
-import { SearchOutlined } from '@ant-design/icons';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { MoonOutlined, SearchOutlined, SunOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { isEnterCommit } from '@/lib/keyboard';
 import { searchApi } from '../../api';
 import ProjectIcon from '../ProjectIcon';
 import { parseTechStack } from '../../lib/normalize';
 import { useThemeStore } from '../../stores/themeStore';
+import { getThemeColors } from '../../lib/themeColors';
 
 interface SearchResult {
   type: 'project' | 'task' | 'document' | 'member';
@@ -47,61 +49,66 @@ interface ThemeColors {
   loadingText: string;
 }
 
-const LIGHT_THEME: ThemeColors = {
-  inputBg: 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.12) 100%), rgba(255,255,255,0.25)',
-  inputBgHover: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.18) 100%), rgba(255,255,255,0.3)',
-  border: 'rgba(255,255,255,0.35)',
-  borderFocus: 'rgba(34,197,94,0.5)',
-  borderHover: 'rgba(34,197,94,0.3)',
-  text: '#1a1f36',
-  icon: '#9eadc0',
-  iconFocus: '#22c55e',
-  placeholder: '#9eadc0',
-  kbdBg: 'rgba(255,255,255,0.15)',
-  kbdBorder: 'rgba(255,255,255,0.2)',
-  kbdText: '#9eadc0',
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 8px rgba(0,0,0,0.06)',
-  boxShadowFocus: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 0 20px rgba(34,197,94,0.15)',
-  boxShadowHover: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 12px rgba(0,0,0,0.1)',
-  dropdownBg: 'rgba(255,255,255,0.95)',
-  dropdownBorder: 'rgba(255,255,255,0.5)',
-  dropdownShadow: '0 8px 32px rgba(0,0,0,0.12)',
-  resultHover: 'rgba(34,197,94,0.15)',
-  resultText: '#1a1f36',
-  resultMeta: '#9eadc0',
-  emptyText: '#9eadc0',
-  loadingText: '#9eadc0',
-};
-
-const DARK_THEME: ThemeColors = {
-  inputBg: 'rgba(255,255,255,0.06)',
-  inputBgHover: 'rgba(255,255,255,0.1)',
-  border: 'rgba(255,255,255,0.08)',
-  borderFocus: 'rgba(99,102,241,0.5)',
-  borderHover: 'rgba(99,102,241,0.3)',
-  text: '#e2e8f0',
-  icon: '#7c8db0',
-  iconFocus: '#a5b4fc',
-  placeholder: '#5e6a80',
-  kbdBg: 'rgba(255,255,255,0.08)',
-  kbdBorder: 'rgba(255,255,255,0.08)',
-  kbdText: '#7c8db0',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-  boxShadowFocus: '0 0 0 2px rgba(99,102,241,0.3), 0 2px 12px rgba(0,0,0,0.3)',
-  boxShadowHover: '0 4px 12px rgba(0,0,0,0.25)',
-  dropdownBg: 'rgba(22,24,33,0.98)',
-  dropdownBorder: 'rgba(255,255,255,0.08)',
-  dropdownShadow: '0 8px 32px rgba(0,0,0,0.4)',
-  resultHover: 'rgba(99,102,241,0.12)',
-  resultText: '#e2e8f0',
-  resultMeta: '#7c8db0',
-  emptyText: '#5e6a80',
-  loadingText: '#5e6a80',
-};
+function buildTheme(isDark: boolean): ThemeColors {
+  const tc = getThemeColors();
+  if (isDark) {
+    return {
+      inputBg: tc.bgCard,
+      inputBgHover: 'rgba(45,212,191,0.08)',
+      border: tc.border,
+      borderFocus: 'rgba(45,212,191,0.50)',
+      borderHover: 'rgba(45,212,191,0.30)',
+      text: tc.text,
+      icon: tc.textTertiary,
+      iconFocus: tc.accent,
+      placeholder: tc.textMuted,
+      kbdBg: 'rgba(148,163,184,0.08)',
+      kbdBorder: tc.border,
+      kbdText: tc.textTertiary,
+      boxShadow: '0 2px 10px rgba(0,0,0,0.24)',
+      boxShadowFocus: `0 0 0 3px rgba(45,212,191,0.14), 0 8px 24px rgba(0,0,0,0.32)`,
+      boxShadowHover: '0 8px 22px rgba(0,0,0,0.28)',
+      dropdownBg: 'rgba(13,20,29,0.96)',
+      dropdownBorder: tc.border,
+      dropdownShadow: '0 16px 44px rgba(0,0,0,0.48)',
+      resultHover: `rgba(45,212,191,0.10)`,
+      resultText: tc.text,
+      resultMeta: tc.textTertiary,
+      emptyText: tc.textMuted,
+      loadingText: tc.textMuted,
+    };
+  }
+  return {
+    inputBg: `linear-gradient(135deg, rgba(255,255,255,0.50) 0%, rgba(255,255,255,0.24) 100%), ${tc.bgSurface}`,
+    inputBgHover: `linear-gradient(135deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.32) 100%), rgba(255,255,255,0.48)`,
+    border: 'rgba(255,255,255,0.52)',
+    borderFocus: `rgba(20,184,166,0.52)`,
+    borderHover: `rgba(20,184,166,0.34)`,
+    text: tc.text,
+    icon: tc.textTertiary,
+    iconFocus: tc.primary,
+    placeholder: tc.textMuted,
+    kbdBg: 'rgba(255,255,255,0.30)',
+    kbdBorder: 'rgba(255,255,255,0.46)',
+    kbdText: tc.textTertiary,
+    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.72), 0 4px 14px ${tc.border}`,
+    boxShadowFocus: `inset 0 1px 0 rgba(255,255,255,0.76), 0 0 0 3px rgba(20,184,166,0.14), 0 8px 24px ${tc.border}`,
+    boxShadowHover: `inset 0 1px 0 rgba(255,255,255,0.76), 0 8px 22px ${tc.border}`,
+    dropdownBg: 'rgba(255,255,255,0.88)',
+    dropdownBorder: 'rgba(255,255,255,0.58)',
+    dropdownShadow: `0 16px 44px ${tc.border}, inset 0 1px 0 rgba(255,255,255,0.72)`,
+    resultHover: `rgba(20,184,166,0.10)`,
+    resultText: tc.text,
+    resultMeta: tc.textTertiary,
+    emptyText: tc.textMuted,
+    loadingText: tc.textMuted,
+  };
+}
 
 export default function SearchBox() {
   const navigate = useNavigate();
   const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -110,8 +117,11 @@ export default function SearchBox() {
   const toggleTheme = useThemeStore(s => s.toggle);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const composingRef = useRef(false);
+  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 
-  const theme = isDark ? DARK_THEME : LIGHT_THEME;
+  const theme = useMemo(() => buildTheme(isDark), [isDark]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -121,7 +131,10 @@ export default function SearchBox() {
       }
     };
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -199,6 +212,13 @@ export default function SearchBox() {
     }
   };
 
+  const handleSearchDebounced = useCallback((value: string) => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      handleSearch(value);
+    }, 200);
+  }, []);
+
   const handleResultClick = (result: SearchResult) => {
     if (result.type === 'project') {
       navigate(`/projects/${result.id}`);
@@ -212,51 +232,44 @@ export default function SearchBox() {
   };
 
   const getTypeColor = (type: string) => {
+    const c = getThemeColors();
     switch (type) {
-      case 'project': return '#22c55e';
-      case 'task': return '#f59e0b';
-      case 'document': return '#3b82f6';
-      default: return '#6b7a99';
+      case 'project': return c.primary;
+      case 'task': return c.amber;
+      case 'document': return c.info;
+      default: return c.textTertiary;
     }
   };
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: 500 }}>
       <div
-        tabIndex={0}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          background: theme.inputBg,
-          border: `1px solid ${focused ? theme.borderFocus : theme.border}`,
+          background: hovered || focused ? theme.inputBgHover : theme.inputBg,
+          border: `1px solid ${focused ? theme.borderFocus : hovered ? theme.borderHover : theme.border}`,
           borderRadius: 8,
           padding: '8px 12px',
           height: 36,
           minWidth: 0,
-          boxShadow: focused ? theme.boxShadowFocus : theme.boxShadow,
+          boxShadow: focused ? theme.boxShadowFocus : hovered ? theme.boxShadowHover : theme.boxShadow,
           transition: 'all 0.3s ease',
           cursor: 'pointer',
           boxSizing: 'border-box',
           position: 'relative',
           overflow: 'hidden',
         }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = focused ? theme.borderFocus : theme.borderHover;
-          e.currentTarget.style.boxShadow = theme.boxShadowHover;
-          e.currentTarget.style.background = theme.inputBgHover;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = focused ? theme.borderFocus : theme.border;
-          e.currentTarget.style.boxShadow = focused ? theme.boxShadowFocus : theme.boxShadow;
-          e.currentTarget.style.background = theme.inputBg;
-        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         onFocus={() => {
           setFocused(true);
-          inputRef.current?.focus();
         }}
         onBlur={() => setFocused(false)}
-        onClick={() => inputRef.current?.focus()}
+        onClick={() => {
+          inputRef.current?.focus();
+        }}
       >
         <SearchOutlined
           style={{
@@ -270,19 +283,27 @@ export default function SearchBox() {
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
-            handleSearch(e.target.value);
+            handleSearchDebounced(e.target.value);
+          }}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={(e) => {
+            composingRef.current = false;
+            setQuery(e.currentTarget.value);
+            handleSearchDebounced(e.currentTarget.value);
           }}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && query.trim()) {
+            if (composingRef.current) return;
+            if (isEnterCommit(e) && query.trim()) {
+              if (debounceTimer.current) clearTimeout(debounceTimer.current);
               handleSearch(query);
             }
           }}
           style={{
             border: 'none',
             background: 'transparent',
-            color: theme.text,
+            color: 'var(--color-text-primary, #1e293b)',
             fontSize: 13,
             flex: 1,
             outline: 'none',
@@ -313,7 +334,7 @@ export default function SearchBox() {
           onMouseEnter={e => { e.currentTarget.style.color = theme.text; }}
           onMouseLeave={e => { e.currentTarget.style.color = theme.icon; }}
         >
-          {isDark ? '☀' : '☾'}
+          {isDark ? <SunOutlined /> : <MoonOutlined />}
         </button>
         <kbd style={{
           fontSize: 10,
@@ -325,7 +346,7 @@ export default function SearchBox() {
           fontFamily: "'Fira Code', monospace",
           flexShrink: 0,
         }}>
-          ⌘K
+          {isMac ? '⌘K' : 'Ctrl+K'}
         </kbd>
       </div>
 

@@ -105,7 +105,7 @@ export function formatContextForAgent(ctx: WorkspaceContext): string {
   if (ctx.projects.length > 1) {
     lines.push(`## Projects (${ctx.projects.length})`);
     for (const p of ctx.projects.slice(0, 10)) {
-      lines.push(`- ${p.name} (${p.status}) — ${p.techStack.slice(0, 3).join(', ')}`);
+      lines.push(`- ${p.name} (${p.status}) — ${p.techStack.slice(0, 6).join(', ')}`);
     }
     if (ctx.projects.length > 10) {
       lines.push(`- ... and ${ctx.projects.length - 10} more`);

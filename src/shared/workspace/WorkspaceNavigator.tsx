@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Dropdown } from 'antd';
-import { PlusOutlined, CaretDownOutlined, CaretRightOutlined, CodeOutlined, RobotOutlined, ThunderboltOutlined, GlobalOutlined, LinkOutlined, CloseOutlined, CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined, ClearOutlined, FolderOpenOutlined, PushpinOutlined, PushpinFilled } from '@ant-design/icons';
+import { PlusOutlined, CaretDownOutlined, CaretRightOutlined, CodeOutlined, RobotOutlined, ThunderboltOutlined, GlobalOutlined, LinkOutlined, CloseOutlined, CheckCircleOutlined, CloseCircleOutlined, FileTextOutlined, ClearOutlined, FolderOpenOutlined, PushpinOutlined, PushpinFilled, CopyOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { isEnterCommit } from '@/lib/keyboard';
 import type { TestReport } from '../../stores/workspaceStore';
 import { usePreviewStore } from '../../stores/previewStore';
 import { terminalApi, detectApi } from '../../api';
@@ -75,6 +77,33 @@ function Section({
   );
 }
 
+// ── Context menu button (local helper) ──
+
+function CtxBtn({ icon, label, danger, onClick }: {
+  icon: React.ReactNode;
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+        padding: '5px 12px', border: 'none', background: hov ? 'var(--ws-border)' : 'transparent',
+        color: danger ? '#f87171' : 'var(--ws-text)', fontSize: 12,
+        fontFamily: "'Fira Sans', sans-serif", cursor: 'pointer', textAlign: 'left',
+        borderRadius: 4, margin: '1px 4px', transition: 'background 0.08s',
+      }}
+    >
+      {icon}<span>{label}</span>
+    </button>
+  );
+}
+
 // ── Nav item (shared by terminal, agent, browser sections) ──
 
 type DragProps = {
@@ -86,21 +115,24 @@ type DragProps = {
   isDragging: boolean;
 };
 
-function NavItem({ label, isActive, icon, onClick, onClose, onRename, dragProps, namePinned, onTogglePin }: {
+function NavItem({ label, isActive, icon, onClick, onClose, onRename, onContextMenu, dragProps, namePinned, onTogglePin, isContextTarget }: {
   label: string;
   isActive: boolean;
   icon: React.ReactNode;
   onClick: () => void;
   onClose?: () => void;
   onRename?: (newLabel: string) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   dragProps?: DragProps;
   namePinned?: boolean;
   onTogglePin?: () => void;
+  isContextTarget?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const composingRef = useRef(false);
 
   const startEdit = (e: React.MouseEvent) => {
     if (!onRename) return;
@@ -120,6 +152,7 @@ function NavItem({ label, isActive, icon, onClick, onClose, onRename, dragProps,
     <div
       onClick={editing ? undefined : onClick}
       onDoubleClick={startEdit}
+      onContextMenu={onContextMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       draggable={!!dragProps}
@@ -129,9 +162,9 @@ function NavItem({ label, isActive, icon, onClick, onClose, onRename, dragProps,
       onDragEnd={dragProps?.onDragEnd}
       style={{
         ...styles.item,
-        ...(isActive ? styles.itemActive : {}),
+        ...(isActive || isContextTarget ? styles.itemActive : {}),
         ...(!isActive && hovered ? { background: 'var(--ws-hover)' } : {}),
-        ...(dragProps?.isDragOver ? { background: 'rgba(99, 102, 241, 0.15)', outline: '1px dashed rgba(99, 102, 241, 0.4)' } : {}),
+        ...(dragProps?.isDragOver ? { background: 'var(--ws-active-bg, rgba(99, 102, 241, 0.15))', outline: '1px dashed rgba(99, 102, 241, 0.4)' } : {}),
         ...(dragProps?.isDragging ? { opacity: 0.4 } : {}),
       }}
     >
@@ -142,15 +175,17 @@ function NavItem({ label, isActive, icon, onClick, onClose, onRename, dragProps,
           autoFocus
           value={editValue}
           onChange={e => setEditValue(e.target.value)}
-          onBlur={commitEdit}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={() => { composingRef.current = false; }}
+          onBlur={() => { if (!composingRef.current) commitEdit(); }}
           onKeyDown={e => {
-            if (e.key === 'Enter') commitEdit();
+            if (isEnterCommit(e)) commitEdit();
             if (e.key === 'Escape') setEditing(false);
           }}
           onClick={e => e.stopPropagation()}
           style={{
             background: 'transparent',
-            border: '1px solid #6366f1',
+            border: '1px solid var(--ws-active-border, #6366f1)',
             color: 'var(--ws-text)',
             padding: '0 4px',
             fontSize: 12,
@@ -170,7 +205,7 @@ function NavItem({ label, isActive, icon, onClick, onClose, onRename, dragProps,
           title={namePinned ? '取消固定名称' : '固定名称'}
         >
           {namePinned
-            ? <PushpinFilled style={{ fontSize: 8, color: '#6366f1' }} />
+            ? <PushpinFilled style={{ fontSize: 8, color: 'var(--ws-active-border, #6366f1)' }} />
             : <PushpinOutlined style={{ fontSize: 8 }} />}
         </button>
       )}
@@ -281,14 +316,10 @@ export default function WorkspaceNavigator() {
   const root = useWorkspaceStore(s => s.root);
   const tabs = useWorkspaceStore(s => s.tabs);
 
-  // Filter to only terminals in current workspace (by tab membership)
-  const terminalTabIds = useMemo(
-    () => new Set(Object.values(tabs).filter(t => t.contentType === 'terminal').map(t => t.id)),
+  // Use workspace tabs as source of truth — terminal store is ephemeral (empty on restart)
+  const workspaceTerminalTabs = useMemo(
+    () => Object.values(tabs).filter(t => t.contentType === 'terminal'),
     [tabs],
-  );
-  const terminals = useMemo(
-    () => allTerminals.filter(t => terminalTabIds.has(t.id)),
-    [allTerminals, terminalTabIds],
   );
   const activeTabId = useMemo(() => {
     // Find which tab is active across all leaves
@@ -326,16 +357,6 @@ export default function WorkspaceNavigator() {
     const agentCommands = getAllRuntimes().map(rt => rt.id);
     detectApi.installedAgents(agentCommands).then(setInstalledAgents).catch(() => {});
   }, []);
-
-  const browserLogs = useWorkspaceStore(s => s.browserLogs);
-  const browserErrorCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const [tabId, logs] of Object.entries(browserLogs)) {
-      const errors = logs.consoleLogs.filter(l => l.method === 'error').length;
-      if (errors > 0) counts[tabId] = errors;
-    }
-    return counts;
-  }, [browserLogs]);
 
   const discoveredPreviews = usePreviewStore(s => s.previews);
 
@@ -548,13 +569,60 @@ export default function WorkspaceNavigator() {
     useWorkspaceStore.getState().closeTab(fileId);
   };
 
+  // ── File item context menu ──
+  const [fileCtxMenu, setFileCtxMenu] = useState<{ x: number; y: number; file: { id: string; label: string; rootPath?: string } } | null>(null);
+  const fileCtxMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleFileContextMenu = (e: React.MouseEvent, file: { id: string; label: string; rootPath?: string }) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFileCtxMenu({ x: e.clientX, y: e.clientY, file });
+  };
+
+  // Close file context menu on outside click (use click, not mousedown, so menu items' onClick fires first)
+  useEffect(() => {
+    if (!fileCtxMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (fileCtxMenuRef.current && !fileCtxMenuRef.current.contains(e.target as Node)) {
+        setFileCtxMenu(null);
+      }
+    };
+    // Use setTimeout to avoid closing on the same click that opened the menu
+    const timer = setTimeout(() => document.addEventListener('click', handler), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handler);
+    };
+  }, [fileCtxMenu]);
+
+  const handleFileCtxOpenTerminal = async () => {
+    if (!fileCtxMenu?.file.rootPath) return;
+    const { createTerminal } = await import('./terminalFactory');
+    const { getAllLeaves } = await import('./treeUtils');
+    const result = await createTerminal({ cwd: fileCtxMenu.file.rootPath });
+    if (!result) return;
+    const wsState = useWorkspaceStore.getState();
+    const leaves = getAllLeaves(wsState.root);
+    if (leaves[0]) {
+      wsState.addTab(leaves[0].id, {
+        id: result.terminal.id,
+        label: result.terminal.label,
+        contentType: 'terminal',
+        status: 'running',
+        shell: result.terminal.shell,
+        cwd: result.terminal.cwd,
+      });
+    }
+    setFileCtxMenu(null);
+  };
+
   return (
     <div style={styles.container}>
       {/* Terminal section */}
       <Section
         title="终端"
         icon={<CodeOutlined style={styles.sectionIcon} />}
-        count={terminals.length}
+        count={workspaceTerminalTabs.length}
         addButton={
           <div style={{ display: 'flex', gap: 2 }}>
             <button
@@ -574,33 +642,35 @@ export default function WorkspaceNavigator() {
           </div>
         }
       >
-        {terminals.length === 0 ? (
+        {workspaceTerminalTabs.length === 0 ? (
           <div style={styles.emptyHint}>无活动终端</div>
         ) : (
-          terminals.map(t => {
-            const statusColor = t.status === 'running' ? '#22c55e' : t.status === 'exited' ? '#6b7280' : '#ef4444';
-            const tab = tabs[t.id];
+          workspaceTerminalTabs.map(tab => {
+            // Status from terminal store (available if process is running)
+            const process = allTerminals.find(t => t.id === tab.id);
+            const status = process?.status || (tab as { status?: string }).status || 'stopped';
+            const statusColor = status === 'running' ? '#22c55e' : status === 'exited' ? 'var(--ws-text-muted, #6b7280)' : '#ef4444';
             return (
               <NavItem
-                key={t.id}
-                label={t.label}
-                isActive={t.id === activeTabId}
-                icon={<span style={{ ...styles.statusDot, background: statusColor, boxShadow: t.status === 'running' ? '0 0 4px rgba(34, 197, 94, 0.4)' : 'none' }} />}
-                onClick={() => handleSelectTerminal(t.id)}
-                onClose={() => handleCloseTerminal(t.id)}
-                onRename={(newLabel) => handleRenameTerminal(t.id, newLabel)}
-                namePinned={tab?.namePinned}
+                key={tab.id}
+                label={tab.label}
+                isActive={tab.id === activeTabId}
+                icon={<span style={{ ...styles.statusDot, background: statusColor, boxShadow: status === 'running' ? '0 0 4px rgba(34, 197, 94, 0.4)' : 'none' }} />}
+                onClick={() => handleSelectTerminal(tab.id)}
+                onClose={() => handleCloseTerminal(tab.id)}
+                onRename={(newLabel) => handleRenameTerminal(tab.id, newLabel)}
+                namePinned={tab.namePinned}
                 onTogglePin={() => {
-                  const current = useWorkspaceStore.getState().tabs[t.id];
-                  if (current) useWorkspaceStore.getState().setTabNamePinned(t.id, !current.namePinned);
+                  const current = useWorkspaceStore.getState().tabs[tab.id];
+                  if (current) useWorkspaceStore.getState().setTabNamePinned(tab.id, !current.namePinned);
                 }}
                 dragProps={{
-                  onDragStart: (e) => handleDragStart(e, t.id),
-                  onDragOver: (e) => handleItemDragOver(e, t.id),
-                  onDrop: (e) => handleItemDrop(e, t.id),
+                  onDragStart: (e) => handleDragStart(e, tab.id),
+                  onDragOver: (e) => handleItemDragOver(e, tab.id),
+                  onDrop: (e) => handleItemDrop(e, tab.id),
                   onDragEnd: handleDragEnd,
-                  isDragOver: dragOverId === t.id,
-                  isDragging: draggedId === t.id,
+                  isDragOver: dragOverId === tab.id,
+                  isDragging: draggedId === tab.id,
                 }}
               />
             );
@@ -687,28 +757,42 @@ export default function WorkspaceNavigator() {
       <Section
         title="浏览器"
         icon={<GlobalOutlined style={styles.sectionIcon} />}
-        count={discoveredPreviews.length}
+        count={browserSessions.length + discoveredPreviews.filter(p => !browserSessions.some(s => s.url === p.url)).length}
         onAdd={handleCreateBrowser}
       >
-        {discoveredPreviews.length === 0 ? (
+        {browserSessions.length === 0 && discoveredPreviews.length === 0 ? (
           <div style={styles.emptyHint}>运行 dev server 后自动发现</div>
         ) : (
-          discoveredPreviews.map(preview => {
-            // Check if this preview is already open as a browser tab
-            const isOpen = browserSessions.some(s => s.url === preview.url);
-            const existingTab = isOpen ? browserSessions.find(s => s.url === preview.url) : null;
-            // Count console errors for this tab
-            const errorCount = existingTab ? (browserErrorCounts[existingTab.id] || 0) : 0;
-            return (
-              <BrowserPreviewItem
-                key={preview.url}
-                label={preview.label}
-                isOpen={isOpen}
-                errorCount={errorCount}
-                onClick={() => {
-                  if (existingTab) {
-                    handleSelectBrowser(existingTab.id);
-                  } else {
+          <>
+            {/* Browser tabs from workspace store */}
+            {browserSessions.map(session => (
+              <NavItem
+                key={session.id}
+                label={session.label}
+                isActive={session.id === activeTabId}
+                icon={<GlobalOutlined style={{ fontSize: 11, color: '#60a5fa', flexShrink: 0 }} />}
+                onClick={() => handleSelectBrowser(session.id)}
+                onClose={() => handleCloseBrowser(session.id)}
+                dragProps={{
+                  onDragStart: (e) => handleDragStart(e, session.id),
+                  onDragOver: (e) => handleItemDragOver(e, session.id),
+                  onDrop: (e) => handleItemDrop(e, session.id),
+                  onDragEnd: handleDragEnd,
+                  isDragOver: dragOverId === session.id,
+                  isDragging: draggedId === session.id,
+                }}
+              />
+            ))}
+            {/* Discovered previews not yet opened as tabs */}
+            {discoveredPreviews.filter(p => !browserSessions.some(s => s.url === p.url)).map(preview => {
+              const errorCount = 0;
+              return (
+                <BrowserPreviewItem
+                  key={preview.url}
+                  label={preview.label}
+                  isOpen={false}
+                  errorCount={errorCount}
+                  onClick={() => {
                     const id = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
                     const wsState = useWorkspaceStore.getState();
                     const leaves = getAllLeaves(wsState.root);
@@ -720,12 +804,11 @@ export default function WorkspaceNavigator() {
                         url: preview.url,
                       });
                     }
-                  }
-                }}
-                onClose={existingTab ? () => handleCloseBrowser(existingTab.id) : undefined}
-              />
-            );
-          })
+                  }}
+                />
+              );
+            })}
+          </>
         )}
       </Section>
 
@@ -782,6 +865,8 @@ export default function WorkspaceNavigator() {
                 icon={<FolderOpenOutlined style={{ fontSize: 11, color: '#fbbf24', flexShrink: 0 }} />}
                 onClick={() => handleSelectFile(f.id)}
                 onClose={() => handleCloseFile(f.id)}
+                onContextMenu={(e) => handleFileContextMenu(e, f)}
+                isContextTarget={fileCtxMenu?.file.id === f.id}
                 dragProps={{
                   onDragStart: (e) => handleDragStart(e, f.id),
                   onDragOver: (e) => handleItemDragOver(e, f.id),
@@ -795,6 +880,40 @@ export default function WorkspaceNavigator() {
           })
         )}
       </Section>
+
+      {/* File item context menu */}
+      {fileCtxMenu && createPortal(
+        <div
+          ref={fileCtxMenuRef}
+          style={{
+            position: 'fixed',
+            left: fileCtxMenu.x,
+            top: fileCtxMenu.y,
+            zIndex: 10000,
+            minWidth: 160,
+            background: 'var(--ws-contextmenu-bg)',
+            border: '1px solid var(--ws-border)',
+            borderRadius: 6,
+            padding: '4px 0',
+            boxShadow: 'var(--ws-contextmenu-shadow)',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          {fileCtxMenu.file.rootPath && (
+            <CtxBtn icon={<CodeOutlined style={{ fontSize: 11 }} />} label="在终端中打开" onClick={handleFileCtxOpenTerminal} />
+          )}
+          <CtxBtn icon={<CopyOutlined style={{ fontSize: 11 }} />} label="复制路径" onClick={() => {
+            if (fileCtxMenu.file.rootPath) navigator.clipboard.writeText(fileCtxMenu.file.rootPath).catch(() => {});
+            setFileCtxMenu(null);
+          }} />
+          <div style={{ height: 1, background: 'var(--ws-border-subtle)', margin: '4px 8px' }} />
+          <CtxBtn icon={<CloseOutlined style={{ fontSize: 11 }} />} label="关闭" danger onClick={() => {
+            handleCloseFile(fileCtxMenu.file.id);
+            setFileCtxMenu(null);
+          }} />
+        </div>,
+        document.body,
+      )}
 
       {/* Build section (placeholder) */}
       <Section
@@ -914,8 +1033,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   openBadge: {
     fontSize: 9,
-    color: '#22c55e',
-    background: 'rgba(34, 197, 94, 0.12)',
+    color: 'var(--color-status-done)',
+    background: 'var(--color-status-done)',
     padding: '0 5px',
     borderRadius: 4,
     lineHeight: '15px',
@@ -924,8 +1043,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   errorBadge: {
     fontSize: 9,
-    color: '#f87171',
-    background: 'rgba(239, 68, 68, 0.15)',
+    color: 'var(--color-status-cancel)',
+    background: 'var(--color-status-cancel)',
     padding: '0 5px',
     borderRadius: 4,
     lineHeight: '15px',

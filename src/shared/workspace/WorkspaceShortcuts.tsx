@@ -23,6 +23,7 @@ export function useWorkspaceShortcuts() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return;
+      if (e.isComposing) return;
       const root = useWorkspaceStore.getState().root;
       const leaves = getAllLeaves(root);
       if (leaves.length === 0) return;

@@ -96,15 +96,15 @@ export default function TerminalPane({ pane, onCreateTerminal, onTerminalInput }
             alignItems: 'center',
             justifyContent: 'center',
             flex: 1,
-            color: '#555',
+            color: 'var(--ws-text-secondary, #6b7a99)',
           }}>
             <div style={{ marginBottom: 12, fontSize: 13 }}>无活动终端</div>
             <button
               onClick={() => onCreateTerminal()}
               style={{
-                background: '#007acc',
-                color: '#fff',
-                border: 'none',
+                background: 'var(--ws-active-bg, rgba(99,102,241,0.10))',
+                color: 'var(--ws-active-border, #6366f1)',
+                border: '1px solid var(--ws-border, rgba(0,0,0,0.08))',
                 padding: '8px 16px',
                 borderRadius: 4,
                 cursor: 'pointer',

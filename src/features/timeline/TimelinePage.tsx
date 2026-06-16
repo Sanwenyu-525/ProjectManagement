@@ -146,10 +146,10 @@ export default function TimelinePage() {
         alignItems: 'center',
         marginBottom: 24,
         paddingBottom: 16,
-        borderBottom: '1px solid rgba(0,0,0,0.06)',
+        borderBottom: '1px solid var(--color-border-subtle)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <ClockCircleOutlined style={{ fontSize: 24, color: '#8b5cf6' }} />
+          <ClockCircleOutlined style={{ fontSize: 24, color: 'var(--color-purple)' }} />
           <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>活动时间线</h2>
         </div>
         <Button onClick={loadTimeline}>刷新</Button>
@@ -164,12 +164,12 @@ export default function TimelinePage() {
         </Col>
         <Col xs={24} sm={8}>
           <Card size="small">
-            <Statistic title="今日活动" value={stats.today} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#3b82f6' }} />
+            <Statistic title="今日活动" value={stats.today} prefix={<ClockCircleOutlined />} valueStyle={{ color: 'var(--color-info)' }} />
           </Card>
         </Col>
         <Col xs={24} sm={8}>
           <Card size="small">
-            <Statistic title="本周活动" value={stats.thisWeek} prefix={<CalendarOutlined />} valueStyle={{ color: '#22c55e' }} />
+            <Statistic title="本周活动" value={stats.thisWeek} prefix={<CalendarOutlined />} valueStyle={{ color: 'var(--color-status-done)' }} />
           </Card>
         </Col>
       </Row>
@@ -248,7 +248,7 @@ export default function TimelinePage() {
                           <Tag color={categoryColor} style={{ margin: 0, fontSize: 11 }}>{action.category}</Tag>
                         </div>
                         <Text strong style={{ display: 'block', marginTop: 8 }}>{log.entityType}</Text>
-                        {details && <div style={{ marginTop: 4, color: '#6b7a99', fontSize: 13 }}>{details}</div>}
+                        {details && <div style={{ marginTop: 4, color: 'var(--color-text-description)', fontSize: 13 }}>{details}</div>}
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <Tooltip title={log.projectName || log.projectId}>
@@ -261,11 +261,11 @@ export default function TimelinePage() {
                             {log.projectName || '未知项目'}
                           </Tag>
                         </Tooltip>
-                        <div style={{ fontSize: 12, color: '#9eadc0', marginTop: 8 }}>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-light)', marginTop: 8 }}>
                           <ClockCircleOutlined style={{ marginRight: 4 }} />
                           {timeAgo}
                         </div>
-                        <div style={{ fontSize: 11, color: '#c0c8d8', marginTop: 4 }}>
+                        <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
                           {new Date(log.createdAt).toLocaleString('zh-CN')}
                         </div>
                       </div>

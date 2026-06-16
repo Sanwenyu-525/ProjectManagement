@@ -1,3 +1,5 @@
+import { getThemeColors } from './themeColors';
+
 /** Project status display config */
 export const STATUS_COLORS: Record<string, string> = {
   Idea: 'default',
@@ -9,16 +11,19 @@ export const STATUS_COLORS: Record<string, string> = {
   Archived: 'default',
 };
 
-/** Project status hex colors for ECharts */
-export const STATUS_HEX_COLORS: Record<string, string> = {
-  Idea: '#d9d9d9',
-  Planning: '#1677ff',
-  Development: '#fa8c16',
-  Testing: '#722ed1',
-  Deployed: '#52c41a',
-  Maintained: '#13c2c2',
-  Archived: '#8c8c8c',
-};
+/** Project status hex colors for ECharts — call at render time for theme-aware values */
+export function getStatusHexColors(): Record<string, string> {
+  const c = getThemeColors();
+  return {
+    Idea: '#d9d9d9',
+    Planning: c.info,
+    Development: c.amber,
+    Testing: c.purple,
+    Deployed: c.statusDone,
+    Maintained: '#13c2c2',
+    Archived: '#8c8c8c',
+  };
+}
 
 /** All project statuses */
 export const PROJECT_STATUSES = ['Idea', 'Planning', 'Development', 'Testing', 'Deployed', 'Maintained', 'Archived'] as const;
@@ -26,13 +31,16 @@ export const PROJECT_STATUSES = ['Idea', 'Planning', 'Development', 'Testing', '
 /** Priority options */
 export const PRIORITY_OPTIONS = ['Low', 'Medium', 'High', 'Critical'] as const;
 
-/** Activity action display config */
-export const ACTIVITY_ACTION_CONFIG: Record<string, { label: string; color: string }> = {
-  status_change: { label: '状态变更', color: '#1677ff' },
-  task_created: { label: '创建任务', color: '#52c41a' },
-  task_status_change: { label: '任务状态变更', color: '#fa8c16' },
-  repo_synced: { label: '仓库同步', color: '#13c2c2' },
-};
+/** Activity action display config — call at render time for theme-aware values */
+export function getActivityActionConfig(): Record<string, { label: string; color: string }> {
+  const c = getThemeColors();
+  return {
+    status_change: { label: '状态变更', color: c.info },
+    task_created: { label: '创建任务', color: c.statusDone },
+    task_status_change: { label: '任务状态变更', color: c.amber },
+    repo_synced: { label: '仓库同步', color: '#13c2c2' },
+  };
+}
 
 /** Parse activity log details JSON */
 export function parseActivityDetails(action: string, detailsStr: string | null): string {

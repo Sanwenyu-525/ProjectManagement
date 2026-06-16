@@ -55,17 +55,17 @@ impl r2d2::ManageConnection for ConnectionManager {
 }
 
 /// Execute a migration SQL file as a single batch (handles multi-line statements).
+/// Logs errors to stderr instead of silently swallowing them.
 fn run_migration_sql(conn: &Connection, sql: &str) {
-    let _ = conn.execute_batch(sql);
+    if let Err(e) = conn.execute_batch(sql) {
+        eprintln!("[devhub] Migration warning: {}", e);
+    }
 }
 
 /// Thread-safe SQLite database wrapper with connection pool.
 pub struct Database {
     pool: Pool<ConnectionManager>,
 }
-
-unsafe impl Send for Database {}
-unsafe impl Sync for Database {}
 
 impl Database {
     pub fn new(path: &Path) -> Result<Self, DbError> {

@@ -122,7 +122,11 @@ export default function TerminalLeafContent({ leafId, activeTabId, terminalIds }
   if (leafTerminals.length > 0) {
     return (
       <div
-        style={{ width: '100%', height: '100%', position: 'relative' }}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'relative',
+        }}
         onDragOver={e => {
           if (e.dataTransfer.types.includes('text/plain')) {
             e.preventDefault();

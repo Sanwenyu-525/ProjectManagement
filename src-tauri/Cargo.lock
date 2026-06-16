@@ -565,6 +565,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
+ "encoding_rs",
  "portable-pty",
  "r2d2",
  "rusqlite",

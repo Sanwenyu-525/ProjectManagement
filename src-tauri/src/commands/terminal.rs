@@ -28,6 +28,46 @@ struct PtyTerminal {
 static PTY_TERMINALS: std::sync::LazyLock<Mutex<HashMap<String, PtyTerminal>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
+// ── UTF-8 stream decoding helper ────────────────────────────────────────
+
+/// Decode a raw byte chunk from a stream into a String, correctly handling
+/// multi-byte UTF-8 characters that may be split across read() calls.
+/// `remnant` carries incomplete trailing bytes between calls.
+fn decode_stream_chunk(remnant: &mut Vec<u8>, buf: &[u8]) -> String {
+    let mut combined = std::mem::take(remnant);
+    combined.extend_from_slice(buf);
+
+    // Find the last valid UTF-8 character boundary
+    let valid_len = {
+        let mut i = combined.len();
+        while i > 0 && (combined[i - 1] & 0xC0) == 0x80 {
+            i -= 1;
+        }
+        if i > 0 {
+            let leader = combined[i - 1];
+            let expected = match leader {
+                b if b < 0x80 => 1,
+                b if (b >> 5) == 0x6 => 2,
+                b if (b >> 4) == 0xE => 3,
+                b if (b >> 3) == 0x1E => 4,
+                _ => 1,
+            };
+            let actual = combined.len() - i + 1;
+            if actual <= expected { i } else { combined.len() }
+        } else {
+            0
+        }
+    };
+
+    if valid_len < combined.len() {
+        *remnant = combined[valid_len..].to_vec();
+        combined.truncate(valid_len);
+    }
+
+    String::from_utf8(combined)
+        .unwrap_or_else(|e| String::from_utf8_lossy(&e.as_bytes()).to_string())
+}
+
 // Cached launcher path (written once, reused on every call)
 static LAUNCHER_PATH: std::sync::LazyLock<Mutex<Option<String>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
@@ -204,17 +244,45 @@ pub async fn terminal_start_shell(
         .openpty(size)
         .map_err(|e| format!("创建 PTY 失败: {}", e))?;
 
-    // Build the shell command
-    let mut cmd_builder = CommandBuilder::new(&shell);
-    if let Some(ref shell_args) = args {
-        for arg in shell_args {
-            cmd_builder.arg(arg);
+    // Build the shell command.
+    // On Windows, route through cmd.exe /C to set codepage to UTF-8 (65001)
+    // before starting the shell, preventing GBK vs UTF-8 encoding mismatch.
+    #[cfg(target_os = "windows")]
+    let cmd_builder = {
+        // Build the full shell command string: "chcp 65001 >nul & shell [args...]"
+        let mut shell_cmd = String::from("chcp 65001 >nul 2>&1 & ");
+        shell_cmd.push_str(&shell);
+        if let Some(ref shell_args) = args {
+            for arg in shell_args {
+                shell_cmd.push(' ');
+                shell_cmd.push_str(arg);
+            }
         }
-    }
-    cmd_builder.cwd(&cwd);
-    cmd_builder.env("TERM", "xterm-256color");
-    cmd_builder.env("FORCE_COLOR", "1");
-    cmd_builder.env("COLORTERM", "truecolor");
+        let mut c = CommandBuilder::new("cmd.exe");
+        c.arg("/C");
+        c.arg(&shell_cmd);
+        c.cwd(&cwd);
+        c.env("TERM", "xterm-256color");
+        c.env("FORCE_COLOR", "1");
+        c.env("COLORTERM", "truecolor");
+        c.env("PYTHONIOENCODING", "utf-8");
+        c
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd_builder = {
+        let mut c = CommandBuilder::new(&shell);
+        if let Some(ref shell_args) = args {
+            for arg in shell_args {
+                c.arg(arg);
+            }
+        }
+        c.cwd(&cwd);
+        c.env("TERM", "xterm-256color");
+        c.env("FORCE_COLOR", "1");
+        c.env("COLORTERM", "truecolor");
+        c
+    };
 
     // Spawn the shell on the PTY slave
     let child = pair
@@ -247,17 +315,18 @@ pub async fn terminal_start_shell(
         );
     }
 
-    // Output reader thread
+    // Output reader thread (with UTF-8 remnant handling for CJK characters)
     let app_out = app.clone();
     let tid_out = terminal_id.clone();
     std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 8192];
+        let mut remnant: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let data = decode_stream_chunk(&mut remnant, &buf[..n]);
                     let _ = app_out.emit(
                         "terminal-output",
                         TerminalOutput {
@@ -334,10 +403,12 @@ pub async fn terminal_start_agent(
     // Spawn the agent command. On Windows, npm-installed CLIs (like `claude`)
     // are `.cmd` scripts that portable_pty can't exec directly — always route
     // through cmd.exe /C which handles both .cmd/.bat scripts and .exe files.
+    // Also set codepage to UTF-8 (65001) to prevent GBK encoding mismatch.
     #[cfg(target_os = "windows")]
     let mut cmd_builder = {
         let mut c = CommandBuilder::new("cmd.exe");
         c.arg("/C");
+        c.arg("chcp 65001 >nul 2>&1 &");
         c.arg(&command);
         for arg in &args {
             c.arg(arg);
@@ -386,16 +457,18 @@ pub async fn terminal_start_agent(
         );
     }
 
+    // Output reader thread (with UTF-8 remnant handling for CJK characters)
     let app_out = app.clone();
     let tid_out = terminal_id.clone();
     std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 8192];
+        let mut remnant: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let data = decode_stream_chunk(&mut remnant, &buf[..n]);
                     let _ = app_out.emit(
                         "terminal-output",
                         TerminalOutput {

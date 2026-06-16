@@ -1,5 +1,6 @@
 import { Terminal } from '../terminalTypes';
 import { TerminalGroup as TerminalGroupType } from '../../stores/terminalStore';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import TerminalTab from './TerminalTab';
 import { RightOutlined, DownOutlined, CloseOutlined, PlusOutlined } from '@ant-design/icons';
 
@@ -47,7 +48,7 @@ export default function TerminalGroup({
           cursor: 'pointer',
           fontSize: 11,
           fontWeight: 600,
-          color: hasActive ? '#e0e6f0' : '#7a8399',
+          color: hasActive ? 'var(--ws-text, #1a1f36)' : 'var(--ws-text-secondary, #6b7a99)',
           textTransform: 'uppercase',
           letterSpacing: '0.5px',
           userSelect: 'none',
@@ -61,7 +62,7 @@ export default function TerminalGroup({
           <span>{group.label}</span>
           <span style={{
             fontSize: 11,
-            color: '#7a8399',
+            color: 'var(--ws-text-secondary, #6b7a99)',
             fontWeight: 400,
           }}>
             {count}
@@ -72,11 +73,11 @@ export default function TerminalGroup({
             e.stopPropagation();
             onCreateTerminal?.(group.id === 'global' ? undefined : group.id);
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = '#e0e6f0'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7a8399'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--ws-hover, rgba(0,0,0,0.04))'; e.currentTarget.style.color = 'var(--ws-text, #1a1f36)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ws-text-secondary, #6b7a99)'; }}
           style={{
             fontSize: 12,
-            color: '#7a8399',
+            color: 'var(--ws-text-secondary, #6b7a99)',
             cursor: 'pointer',
             padding: '2px 4px',
             borderRadius: 3,
@@ -93,11 +94,11 @@ export default function TerminalGroup({
               e.stopPropagation();
               onDeleteGroup?.(group.id);
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; e.currentTarget.style.color = '#ef4444'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7a8399'; }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-status-cancel)'; e.currentTarget.style.color = 'var(--color-status-cancel)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ws-text-secondary, #6b7a99)'; }}
             style={{
               fontSize: 12,
-              color: '#7a8399',
+              color: 'var(--ws-text-secondary, #6b7a99)',
               cursor: 'pointer',
               padding: '2px 4px',
               borderRadius: 3,
@@ -112,17 +113,21 @@ export default function TerminalGroup({
       </div>
 
       {/* Terminal tabs */}
-      {!group.isCollapsed && terminals.map(t => (
-        <TerminalTab
-          key={t.id}
-          terminal={t}
-          isActive={t.id === activeId}
-          onSelect={onSelect}
-          onClose={onClose}
-          onRename={onRename}
-          onContextMenu={onContextMenu}
-        />
-      ))}
+      {!group.isCollapsed && (
+        <SortableContext items={terminals.map(t => t.id)} strategy={verticalListSortingStrategy}>
+          {terminals.map(t => (
+            <TerminalTab
+              key={t.id}
+              terminal={t}
+              isActive={t.id === activeId}
+              onSelect={onSelect}
+              onClose={onClose}
+              onRename={onRename}
+              onContextMenu={onContextMenu}
+            />
+          ))}
+        </SortableContext>
+      )}
     </div>
   );
 }

@@ -18,21 +18,22 @@ import { projectsApi } from '../../api';
 import type { ProjectWithStats } from '../../types';
 import type { FC } from 'react';
 import ProjectIcon from '../../shared/ProjectIcon';
+import { getThemeColors } from '../../lib/themeColors';
 
 // 统计卡片配置
 const STAT_CONFIG = [
-  { key: 'total', title: '项目总数', icon: FolderOutlined, iconColor: '#6366f1' },
-  { key: 'active', title: '进行中', icon: RocketOutlined, iconColor: '#f59e0b' },
-  { key: 'deployed', title: '已部署', icon: CheckCircleOutlined, iconColor: '#22c55e' },
-  { key: 'archived', title: '已归档', icon: DatabaseOutlined, iconColor: '#94a3b8' },
+  { key: 'total', title: '项目总数', icon: FolderOutlined, iconColor: 'var(--color-purple)' },
+  { key: 'active', title: '进行中', icon: RocketOutlined, iconColor: 'var(--color-amber)' },
+  { key: 'deployed', title: '已部署', icon: CheckCircleOutlined, iconColor: 'var(--color-status-done)' },
+  { key: 'archived', title: '已归档', icon: DatabaseOutlined, iconColor: 'var(--color-text-muted)' },
 ];
 
 // 状态监控配置
 const STATUS_MONITOR_CONFIG = [
-  { key: 'running', title: '运行中', icon: CheckCircleOutlined, color: '#52c41a' },
-  { key: 'stopped', title: '已停止', icon: CloseCircleOutlined, color: '#8b95a5' },
-  { key: 'error', title: '异常', icon: WarningOutlined, color: '#ff4d4f' },
-  { key: 'total', title: '总数', icon: DashboardOutlined, color: '#3b82f6' },
+  { key: 'running', title: '运行中', icon: CheckCircleOutlined, color: 'var(--color-status-done)' },
+  { key: 'stopped', title: '已停止', icon: CloseCircleOutlined, color: 'var(--color-text-placeholder)' },
+  { key: 'error', title: '异常', icon: WarningOutlined, color: 'var(--color-status-cancel)' },
+  { key: 'total', title: '总数', icon: DashboardOutlined, color: 'var(--color-info)' },
 ];
 
 // 统计卡片
@@ -48,22 +49,22 @@ function StatCard({ title, value, icon: Icon, iconColor, delay }: {
       style={{
         borderRadius: 12,
         height: 120,
-        borderColor: isHovered ? `${iconColor}40` : undefined,
-        boxShadow: isHovered ? `0 4px 12px ${iconColor}15` : undefined,
+        borderColor: isHovered ? `color-mix(in srgb, ${iconColor} 25%, transparent)` : undefined,
+        boxShadow: isHovered ? `0 4px 12px color-mix(in srgb, ${iconColor} 8%, transparent)` : undefined,
         transition: 'all 0.3s ease',
       }}
       styles={{ body: { padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' } }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div style={{ fontSize: 13, color: '#6b7a99' }}>{title}</div>
+      <div style={{ fontSize: 13, color: 'var(--color-text-description)' }}>{title}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div style={{ fontSize: 28, fontWeight: 700, color: '#1a1f36', fontFamily: "'Fira Code', monospace" }}>
+        <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: "'Fira Code', monospace" }}>
           {value}
         </div>
         <div style={{
           width: 36, height: 36, borderRadius: 8,
-          background: `${iconColor}10`,
+          background: `color-mix(in srgb, ${iconColor} 6%, transparent)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Icon style={{ fontSize: 16, color: iconColor }} />
@@ -86,9 +87,9 @@ function StatusMonitorCard({ title, value, icon: Icon, color, delay }: {
       style={{
         borderRadius: 12,
         height: 100,
-        background: `linear-gradient(135deg, ${color}08 0%, ${color}02 100%)`,
-        border: `1px solid ${color}20`,
-        boxShadow: isHovered ? `0 4px 12px ${color}15` : undefined,
+        background: `linear-gradient(135deg, color-mix(in srgb, ${color} 3%, transparent) 0%, color-mix(in srgb, ${color} 1%, transparent) 100%)`,
+        border: `1px solid color-mix(in srgb, ${color} 12%, transparent)`,
+        boxShadow: isHovered ? `0 4px 12px color-mix(in srgb, ${color} 8%, transparent)` : undefined,
         transition: 'all 0.3s ease',
       }}
       styles={{ body: { padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' } }}
@@ -97,7 +98,7 @@ function StatusMonitorCard({ title, value, icon: Icon, color, delay }: {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Icon style={{ fontSize: 16, color }} />
-        <span style={{ fontSize: 13, color: '#6b7a99' }}>{title}</span>
+        <span style={{ fontSize: 13, color: 'var(--color-text-description)' }}>{title}</span>
       </div>
       <div style={{ fontSize: 28, fontWeight: 700, color, fontFamily: "'Fira Code', monospace" }}>
         {value}
@@ -110,7 +111,7 @@ function StatusMonitorCard({ title, value, icon: Icon, color, delay }: {
 function ProjectStatusCard({ project }: { project: ProjectWithStats }) {
   const navigate = useNavigate();
   const isRunning = project.frontendStatus === 'running' || project.backendStatus === 'running';
-  const statusColor = isRunning ? '#52c41a' : '#8b95a5';
+  const statusColor = isRunning ? 'var(--color-status-done)' : 'var(--color-text-placeholder)';
   const healthScore = calculateHealthScore(project);
 
   return (
@@ -121,8 +122,8 @@ function ProjectStatusCard({ project }: { project: ProjectWithStats }) {
         style={{
           borderRadius: 12,
           height: 200,
-          border: `1px solid ${statusColor}20`,
-          boxShadow: `0 2px 8px ${statusColor}10`,
+          border: `1px solid color-mix(in srgb, ${statusColor} 12%, transparent)`,
+          boxShadow: `0 2px 8px color-mix(in srgb, ${statusColor} 6%, transparent)`,
           transition: 'all 0.3s ease',
         }}
         styles={{ body: { padding: 16, height: '100%', display: 'flex', flexDirection: 'column' } }}
@@ -153,27 +154,27 @@ function ProjectStatusCard({ project }: { project: ProjectWithStats }) {
             </div>
           </div>
           {isRunning ? (
-            <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />
+            <CheckCircleOutlined style={{ color: 'var(--color-status-done)', fontSize: 18 }} />
           ) : (
-            <CloseCircleOutlined style={{ color: '#8b95a5', fontSize: 18 }} />
+            <CloseCircleOutlined style={{ color: 'var(--color-text-placeholder)', fontSize: 18 }} />
           )}
         </div>
 
         {/* Info */}
-        <div style={{ flex: 1, marginBottom: 12, fontSize: 12, color: '#6b7a99' }}>
+        <div style={{ flex: 1, marginBottom: 12, fontSize: 12, color: 'var(--color-text-description)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
             <span>运行时间</span>
-            <span style={{ color: '#1a1f36' }}>{isRunning ? '2h 30m' : 'N/A'}</span>
+            <span style={{ color: 'var(--color-text-primary)' }}>{isRunning ? '2h 30m' : 'N/A'}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>端口</span>
-            <span style={{ color: '#1a1f36' }}>{extractPortFromCommand(project.openCommand) || 'N/A'}</span>
+            <span style={{ color: 'var(--color-text-primary)' }}>{extractPortFromCommand(project.openCommand) || 'N/A'}</span>
           </div>
         </div>
 
         {/* Health Score */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#6b7a99' }}>健康度</span>
+          <span style={{ fontSize: 12, color: 'var(--color-text-description)' }}>健康度</span>
           <Progress
             type="circle"
             percent={healthScore}
@@ -222,12 +223,13 @@ function calculateHealthScore(project: ProjectWithStats): number {
   return Math.round(Math.max(0, Math.min(100, activity + statusScore + completeness)));
 }
 
-function getHealthColor(score: number): string {
-  if (score >= 90) return '#52c41a';
-  if (score >= 70) return '#3b82f6';
-  if (score >= 50) return '#f59e0b';
-  return '#ff4d4f';
-}
+const getHealthColor = (score: number) => {
+  const c = getThemeColors();
+  if (score >= 90) return c.statusDone;
+  if (score >= 70) return c.info;
+  if (score >= 50) return c.statusProgress;
+  return c.statusCancel;
+};
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -300,10 +302,10 @@ export default function DashboardPage() {
         alignItems: 'center',
         marginBottom: 24,
         paddingBottom: 16,
-        borderBottom: '1px solid rgba(0,0,0,0.06)',
+        borderBottom: '1px solid var(--color-border-subtle)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <DashboardOutlined style={{ fontSize: 24, color: '#3b82f6' }} />
+          <DashboardOutlined style={{ fontSize: 24, color: 'var(--color-info)' }} />
           <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>仪表盘</h2>
         </div>
         <Button
@@ -334,7 +336,7 @@ export default function DashboardPage() {
       {/* Status Monitor */}
       <div className="animate-in animate-in-delay-3" style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <DashboardOutlined style={{ color: '#3b82f6' }} />
+          <DashboardOutlined style={{ color: 'var(--color-info)' }} />
           <span style={{ fontWeight: 600, fontSize: 16 }}>项目状态监控</span>
         </div>
         <Row gutter={[16, 16]}>
@@ -356,9 +358,9 @@ export default function DashboardPage() {
       <div className="animate-in animate-in-delay-4" style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <CheckCircleOutlined style={{ color: '#52c41a' }} />
+            <CheckCircleOutlined style={{ color: 'var(--color-status-done)' }} />
             <span style={{ fontWeight: 600 }}>项目状态</span>
-            <Tag style={{ fontSize: 11, background: 'rgba(52, 196, 26, 0.1)', color: '#52c41a', border: 'none' }}>
+            <Tag style={{ fontSize: 11, background: 'rgba(52, 196, 26, 0.1)', color: 'var(--color-status-done)', border: 'none' }}>
               {statusStats.running} 运行中
             </Tag>
           </div>
@@ -374,9 +376,9 @@ export default function DashboardPage() {
       <div className="animate-in animate-in-delay-5">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <ClockCircleOutlined style={{ color: '#6b7a99' }} />
+            <ClockCircleOutlined style={{ color: 'var(--color-text-description)' }} />
             <span style={{ fontWeight: 600 }}>最近活跃项目</span>
-            <Tag style={{ fontSize: 11, background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', border: 'none' }}>
+            <Tag style={{ fontSize: 11, background: 'rgba(34, 197, 94, 0.1)', color: 'var(--color-status-done)', border: 'none' }}>
               {recentProjects.length}
             </Tag>
           </div>
@@ -390,7 +392,7 @@ export default function DashboardPage() {
         {recentProjects.length === 0 ? (
           <Card style={{ borderRadius: 12 }}>
             <Empty
-              description={<span style={{ color: '#9eadc0' }}>还没有项目，点击"新建项目"开始</span>}
+              description={<span style={{ color: 'var(--color-text-light)' }}>还没有项目，点击"新建项目"开始</span>}
             >
               <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/projects/new')}>
                 新建项目

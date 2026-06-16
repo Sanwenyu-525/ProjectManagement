@@ -5,6 +5,7 @@ import {
   FileOutlined, DiffOutlined,
 } from '@ant-design/icons';
 import { gitApi } from '../../../api';
+import { isEnterCommit } from '@/lib/keyboard';
 
 interface FileEntry {
   path: string;
@@ -22,13 +23,13 @@ interface StagingAreaProps {
 }
 
 const STATUS_LABELS: Record<string, { text: string; color: string }> = {
-  Modified: { text: 'M', color: '#f59e0b' },
-  Added: { text: 'A', color: '#22c55e' },
-  Deleted: { text: 'D', color: '#ef4444' },
-  Renamed: { text: 'R', color: '#8b5cf6' },
-  Untracked: { text: 'U', color: '#6b7a99' },
-  Conflicted: { text: 'C', color: '#ef4444' },
-  TypeChanged: { text: 'T', color: '#6366f1' },
+  Modified: { text: 'M', color: 'var(--color-amber)' },
+  Added: { text: 'A', color: 'var(--color-status-done)' },
+  Deleted: { text: 'D', color: 'var(--color-status-cancel)' },
+  Renamed: { text: 'R', color: 'var(--color-purple)' },
+  Untracked: { text: 'U', color: 'var(--color-text-description)' },
+  Conflicted: { text: 'C', color: 'var(--color-status-cancel)' },
+  TypeChanged: { text: 'T', color: 'var(--color-purple)' },
 };
 
 export default function StagingArea({ repoPath, files, loading, onRefresh, onFileClick, selectedFile }: StagingAreaProps) {
@@ -108,7 +109,7 @@ export default function StagingArea({ repoPath, files, loading, onRefresh, onFil
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Staged files */}
-      <div style={{ flex: stagedFiles.length > 0 ? 'none' : 1, overflow: 'auto', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+      <div style={{ flex: stagedFiles.length > 0 ? 'none' : 1, overflow: 'auto', borderBottom: '1px solid var(--color-border-subtle)' }}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)',
@@ -139,12 +140,12 @@ export default function StagingArea({ repoPath, files, loading, onRefresh, onFil
       </div>
 
       {/* Unstaged files */}
-      <div style={{ flex: 1, overflow: 'auto', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+      <div style={{ flex: 1, overflow: 'auto', borderBottom: '1px solid var(--color-border-subtle)' }}>
         <div style={{
           position: 'sticky', top: 0, zIndex: 1,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)',
-          background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(8px)',
+          background: 'var(--color-bg-card)', backdropFilter: 'blur(8px)',
         }}>
           <span>更改 ({unstagedFiles.length})</span>
           {unstagedFiles.length > 0 && (
@@ -183,7 +184,7 @@ export default function StagingArea({ repoPath, files, loading, onRefresh, onFil
           autoSize={{ minRows: 2, maxRows: 4 }}
           style={{ fontSize: 12, marginBottom: 8 }}
           onKeyDown={e => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            if (isEnterCommit(e) && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
               handleCommit();
             }
@@ -228,9 +229,9 @@ function FileRow({ file, checked, onToggle, onClick, selected, disabled }: {
       }}
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
-      onFocus={(e) => { if (!selected) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+      onFocus={(e) => { if (!selected) e.currentTarget.style.background = 'var(--color-bg-card)'; }}
       onBlur={(e) => { if (!selected) e.currentTarget.style.background = 'transparent'; }}
-      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'var(--color-bg-card)'; }}
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'transparent'; }}
     >
       <Checkbox checked={checked} onChange={onToggle} disabled={disabled} onClick={e => e.stopPropagation()} />

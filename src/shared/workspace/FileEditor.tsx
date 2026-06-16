@@ -1,16 +1,8 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
-import { EditorView } from '@codemirror/view';
-import { javascript } from '@codemirror/lang-javascript';
-import { json } from '@codemirror/lang-json';
-import { markdown } from '@codemirror/lang-markdown';
-import { rust } from '@codemirror/lang-rust';
-import { css } from '@codemirror/lang-css';
-import { html } from '@codemirror/lang-html';
-import { yaml } from '@codemirror/lang-yaml';
-import { sql } from '@codemirror/lang-sql';
-import { python } from '@codemirror/lang-python';
-import { keymap } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
+import { useThemeStore } from '../../stores/themeStore';
+import { makeDevhubTheme, devhubHighlight, getLanguageExtension } from './cmTheme';
 
 interface Props {
   content: string;
@@ -20,125 +12,15 @@ interface Props {
   onSave?: () => void;
 }
 
-// ── DevHub dark theme ──
+// ── Extensions assembler ──
 
-const devhubTheme = EditorView.theme({
-  '&': {
-    backgroundColor: 'transparent',
-    color: 'var(--ws-text)',
-    fontFamily: "'Fira Code', monospace",
-    fontSize: '13px',
-    height: '100%',
-  },
-  '.cm-content': {
-    caretColor: '#818cf8',
-    padding: '8px 0',
-  },
-  '.cm-cursor': {
-    borderLeftColor: '#818cf8',
-    borderLeftWidth: '2px',
-  },
-  '.cm-gutters': {
-    backgroundColor: 'transparent',
-    color: 'var(--ws-text-muted)',
-    border: 'none',
-    paddingRight: '4px',
-    fontFamily: "'Fira Code', monospace",
-    fontSize: '12px',
-  },
-  '.cm-activeLineGutter': {
-    backgroundColor: 'var(--ws-border-subtle)',
-    color: 'var(--ws-text-secondary)',
-  },
-  '.cm-activeLine': {
-    backgroundColor: 'var(--ws-hover)',
-  },
-  '.cm-selectionBackground': {
-    backgroundColor: 'rgba(99, 102, 241, 0.2) !important',
-  },
-  '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'rgba(99, 102, 241, 0.25) !important',
-  },
-  '.cm-matchingBracket': {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    outline: '1px solid rgba(99, 102, 241, 0.4)',
-  },
-  '.cm-searchMatch': {
-    backgroundColor: 'rgba(250, 204, 21, 0.2)',
-    outline: '1px solid rgba(250, 204, 21, 0.4)',
-  },
-  '.cm-searchMatch.cm-searchMatch-selected': {
-    backgroundColor: 'rgba(250, 204, 21, 0.35)',
-  },
-  '.cm-foldPlaceholder': {
-    backgroundColor: 'var(--ws-border-subtle)',
-    color: 'var(--ws-text-muted)',
-    border: 'none',
-  },
-  '.cm-tooltip': {
-    backgroundColor: '#1e293b',
-    border: '1px solid var(--ws-border)',
-    color: 'var(--ws-text)',
-  },
-  '.cm-panels': {
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    color: 'var(--ws-text)',
-  },
-  '.cm-panel.cm-search': {
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-  },
-}, { dark: true });
-
-// ── Token colors (solarized-ish) ──
-
-const devhubHighlight = EditorView.baseTheme({
-  '.ͼb': { color: '#7dd3fc' },     // keyword
-  '.ͼc': { color: '#a5f3fc' },     // comment
-  '.ͼd': { color: '#86efac' },     // string
-  '.ͼe': { color: '#fbbf24' },     // number
-  '.ͼi': { color: '#c4b5fd' },     // type name
-  '.ͼg': { color: '#f9a8d4' },     // variable name
-});
-
-// ── Language extension resolver ──
-
-function getExtensions(language: string, onSave?: () => void) {
+function getExtensions(language: string, isDark: boolean, onSave?: () => void) {
   const exts = [];
 
-  switch (language) {
-    case 'typescript':
-      exts.push(javascript({ jsx: true, typescript: true }));
-      break;
-    case 'javascript':
-      exts.push(javascript({ jsx: true }));
-      break;
-    case 'json':
-      exts.push(json());
-      break;
-    case 'markdown':
-      exts.push(markdown());
-      break;
-    case 'rust':
-      exts.push(rust());
-      break;
-    case 'css':
-      exts.push(css());
-      break;
-    case 'html':
-      exts.push(html());
-      break;
-    case 'yaml':
-      exts.push(yaml());
-      break;
-    case 'sql':
-      exts.push(sql());
-      break;
-    case 'python':
-      exts.push(python());
-      break;
-  }
+  const langExt = getLanguageExtension(language);
+  if (langExt) exts.push(langExt);
 
-  exts.push(devhubTheme);
+  exts.push(makeDevhubTheme(isDark));
   exts.push(devhubHighlight);
 
   if (onSave) {
@@ -154,42 +36,90 @@ function getExtensions(language: string, onSave?: () => void) {
 // ── Component ──
 
 export default function FileEditor({ content, language, readOnly, onChange, onSave }: Props) {
+  const isDark = useThemeStore(s => s.mode === 'dark');
+
+  // Refs to hold latest callbacks
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
+  // Stable extensions — keymap reads onSave via ref, so deps stay minimal
   const extensions = useMemo(
-    () => getExtensions(language, onSave),
-    [language, onSave],
+    () => getExtensions(language, isDark, () => onSaveRef.current?.()),
+    [language, isDark],
   );
 
+  // Uncontrolled mode: CodeMirror owns its state. The `value` prop is NOT passed,
+  // so the library skips its value-sync useEffect entirely (early return on
+  // `value === undefined`). This prevents the library from doing full-document
+  // replacement during IME composition — the root cause of Chinese input requiring
+  // two attempts when the cursor is not at the end of the document.
+  //
+  // External content changes (file switches, git checkout) are synced
+  // imperatively via the viewRef + useEffect below.
+
+  const viewRef = useRef<EditorView | null>(null);
+  const contentRef = useRef(content);
+
+  // Capture the EditorView when CodeMirror creates it
+  const handleCreateEditor = useCallback((view: EditorView) => {
+    viewRef.current = view;
+  }, []);
+
+  // Sync external content changes (file switches) into CodeMirror.
+  // Skips if content hasn't changed (prevents re-dispatching user's own edits).
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || content === contentRef.current) return;
+    contentRef.current = content;
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: content },
+    });
+  }, [content]);
+
+  // onChange fires the parent callback. No composition guards needed —
+  // in uncontrolled mode, React never re-renders CodeMirror on keystroke,
+  // so the browser's IME composition is never interrupted.
   const handleChange = useCallback((value: string) => {
-    onChange?.(value);
-  }, [onChange]);
+    contentRef.current = value;
+    onChangeRef.current?.(value);
+  }, []);
+
+  // Stable basicSetup — inline object would create a new reference every render,
+  // causing useCodeMirror to reconfigure the EditorView and interrupt IME composition.
+  const basicSetup = useMemo(() => ({
+    lineNumbers: true,
+    bracketMatching: true,
+    indentOnInput: true,
+    highlightActiveLine: true,
+    highlightActiveLineGutter: true,
+    highlightSelectionMatches: true,
+    foldGutter: true,
+    closeBrackets: true,
+    autocompletion: false,
+    rectangularSelection: true,
+    crosshairCursor: false,
+    drawSelection: false,
+    dropCursor: true,
+    allowMultipleSelections: true,
+    searchKeymap: true,
+    tabSize: 2,
+  }), []);
 
   return (
     <div style={{ height: '100%', overflow: 'hidden' }}>
       <CodeMirror
-        value={content}
         extensions={extensions}
         readOnly={readOnly}
         onChange={handleChange}
-        theme="dark"
+        onCreateEditor={handleCreateEditor}
+        theme={isDark ? 'dark' : 'light'}
         style={{ height: '100%' }}
-        basicSetup={{
-          lineNumbers: true,
-          bracketMatching: true,
-          indentOnInput: true,
-          highlightActiveLine: true,
-          highlightActiveLineGutter: true,
-          highlightSelectionMatches: true,
-          foldGutter: true,
-          closeBrackets: true,
-          autocompletion: false,
-          rectangularSelection: true,
-          crosshairCursor: false,
-          drawSelection: true,
-          dropCursor: true,
-          allowMultipleSelections: true,
-          searchKeymap: true,
-          tabSize: 2,
-        }}
+        // Pass undefined explicitly to skip @uiw/react-codemirror's value = '' default,
+        // which would otherwise trigger the sync effect to replace content with empty string.
+        value={undefined as unknown as string}
+        basicSetup={basicSetup}
       />
     </div>
   );

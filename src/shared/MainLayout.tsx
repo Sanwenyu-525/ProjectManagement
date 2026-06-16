@@ -33,7 +33,7 @@ export default function MainLayout() {
 
   const isFullPage = fullPageRoutes.some(r => location.pathname.startsWith(r));
   const showWorkspace = !isFullPage;
-  const isDark = isDarkTheme;  // global dark theme from store
+  const isDark = isDarkTheme;
 
   // Daily project health check — runs once per day on first app open
   useEffect(() => {
@@ -92,22 +92,16 @@ export default function MainLayout() {
         width={220}
         collapsedWidth={64}
         style={{
-          background: isDark
-            ? 'rgba(13, 14, 22, 0.98)'
-            : 'linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 100%), rgba(255, 255, 255, 0.3)',
-          borderRight: isDark
-            ? '1px solid rgba(255, 255, 255, 0.08)'
-            : '1px solid rgba(255, 255, 255, 0.45)',
-          backdropFilter: isDark ? 'none' : 'blur(20px) saturate(1.8)',
-          WebkitBackdropFilter: isDark ? 'none' : 'blur(20px) saturate(1.8)',
+          background: 'var(--ws-navigator-bg)',
+          borderRight: '1px solid var(--ws-glass-border)',
+          backdropFilter: 'var(--ws-glass-blur)',
+          WebkitBackdropFilter: 'var(--ws-glass-blur)',
           position: 'fixed',
           top: 0,
           left: 0,
           height: '100vh',
           zIndex: 10,
-          boxShadow: isDark
-            ? 'none'
-            : 'inset -1px 0 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 16px rgba(0, 0, 0, 0.06)',
+          boxShadow: 'var(--ws-glass-shadow)',
         }}
       >
         {/* Logo */}
@@ -118,7 +112,7 @@ export default function MainLayout() {
             alignItems: 'center',
             justifyContent: collapsed ? 'center' : 'flex-start',
             padding: collapsed ? 0 : '0 20px',
-            borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.06)',
+            borderBottom: '1px solid var(--ws-border-subtle)',
             gap: 10,
             cursor: 'pointer',
           }}
@@ -136,7 +130,7 @@ export default function MainLayout() {
           />
           {!collapsed && (
             <span style={{
-              color: isDark ? '#c8d0de' : '#1a1f36',
+              color: 'var(--ws-text)',
               fontSize: 16,
               fontWeight: 700,
               fontFamily: "'Fira Code', monospace",
@@ -154,35 +148,27 @@ export default function MainLayout() {
           style={{
             borderRight: 'none',
             marginTop: 8,
-            ...(isDark ? {
-              background: 'transparent',
-              color: '#8892a8',
-            } : {}),
+            background: 'transparent',
+            color: 'var(--ws-text-secondary)',
           }}
         />
       </Sider>
 
-      <Layout style={{ flex: 1, marginLeft: collapsed ? 64 : 220, height: '100vh', overflow: 'hidden', position: 'relative' }}>
+      <Layout style={{ flex: 1, marginLeft: collapsed ? 64 : 220, height: '100vh', overflow: 'hidden', position: 'relative', background: 'transparent' }}>
         <Header style={{
-          background: isDark
-            ? 'rgba(13, 14, 22, 0.98)'
-            : 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.12) 100%), rgba(255, 255, 255, 0.25)',
+          background: 'var(--ws-toolbar-bg)',
           padding: '0 24px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: isDark
-            ? '1px solid rgba(255, 255, 255, 0.08)'
-            : '1px solid rgba(255, 255, 255, 0.45)',
+          borderBottom: '1px solid var(--ws-glass-border)',
           height: 64,
           lineHeight: '64px',
-          backdropFilter: isDark ? 'none' : 'blur(20px) saturate(1.8)',
-          WebkitBackdropFilter: isDark ? 'none' : 'blur(20px) saturate(1.8)',
+          backdropFilter: 'var(--ws-glass-blur)',
+          WebkitBackdropFilter: 'var(--ws-glass-blur)',
           position: 'relative',
           zIndex: 10,
-          boxShadow: isDark
-            ? 'none'
-            : 'inset 0 -1px 0 rgba(255, 255, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(0, 0, 0, 0.06)',
+          boxShadow: 'var(--ws-glass-shadow)',
           flexWrap: 'nowrap',
           flexShrink: 0,
         }}>
@@ -212,29 +198,29 @@ export default function MainLayout() {
                 borderRadius: 8,
                 border: '1px solid transparent',
                 background: 'transparent',
-                color: isDark ? '#c8d0de' : '#1a1f36',
+                color: 'var(--ws-text)',
                 transition: 'all 0.15s ease',
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.background = isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(34, 197, 94, 0.15)';
-                e.currentTarget.style.borderColor = isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(34, 197, 94, 0.3)';
-                e.currentTarget.style.color = isDark ? '#a5b4fc' : '#16a34a';
+                e.currentTarget.style.background = 'var(--ws-active-bg)';
+                e.currentTarget.style.borderColor = 'var(--ws-active-border)';
+                e.currentTarget.style.color = 'var(--ws-active-border)';
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.background = 'transparent';
                 e.currentTarget.style.borderColor = 'transparent';
-                e.currentTarget.style.color = isDark ? '#c8d0de' : '#1a1f36';
+                e.currentTarget.style.color = 'var(--ws-text)';
               }}
             >
               <Avatar
                 size={36}
                 icon={<UserOutlined />}
                 style={{
-                  background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                  boxShadow: '0 2px 8px rgba(34, 197, 94, 0.2)',
+                  background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent-hover))',
+                  boxShadow: '0 2px 10px var(--color-primary-glow)',
                 }}
               />
-              <span style={{ fontSize: 13, fontWeight: 500, color: isDark ? '#c8d0de' : '#1a1f36' }}>开发者</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ws-text)' }}>开发者</span>
             </div>
           </Dropdown>
           </div>

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, Fragment } from 'react';
+import { Modal } from 'antd';
 import type { PaneNode, PaneLeaf, PaneTab } from './types';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useTerminalStore } from '../../stores/terminalStore';
@@ -25,6 +26,7 @@ function PaneContent({ leafId }: { leafId: string }) {
   const updateTabLabel = useWorkspaceStore(s => s.updateTabLabel);
   const setTabNamePinned = useWorkspaceStore(s => s.setTabNamePinned);
   const sortLeafTabs = useWorkspaceStore(s => s.sortLeafTabs);
+  const reorderTabs = useWorkspaceStore(s => s.reorderTabs);
   const focusedLeafId = useWorkspaceStore(s => s.focusedLeafId);
   const setFocusedLeaf = useWorkspaceStore(s => s.setFocusedLeaf);
   const isFocused = focusedLeafId === leafId;
@@ -37,6 +39,16 @@ function PaneContent({ leafId }: { leafId: string }) {
     () => tabIds.map(id => tabs[id]).filter(Boolean),
     [tabIds, tabs],
   );
+
+  const otherPanes = useMemo(() => {
+    const allLeaves = getAllLeaves(root);
+    return allLeaves
+      .filter(l => l.id !== leafId)
+      .map(l => {
+        const activeTab = l.activeTabId ? tabs[l.activeTabId] : null;
+        return { id: l.id, label: activeTab?.label || '空面板' };
+      });
+  }, [root, leafId, tabs]);
 
   const activeTab = paneTabs.find(t => t.id === activeTabId);
   const isTerminal = activeTab?.contentType === 'terminal';
@@ -102,7 +114,30 @@ function PaneContent({ leafId }: { leafId: string }) {
   }, [leafId]);
 
   const handleClose = useCallback((tabId: string) => {
-    const tab = useWorkspaceStore.getState().tabs[tabId];
+    const wsState = useWorkspaceStore.getState();
+    const tab = wsState.tabs[tabId];
+
+    // Check for unsaved file changes
+    if (tab?.contentType === 'file') {
+      const panel = wsState.filePanelState[tabId];
+      const isDirty = panel && panel.fileContent !== null && panel.originalContent !== null
+        && panel.fileContent !== panel.originalContent;
+      if (isDirty) {
+        Modal.confirm({
+          title: '关闭未保存的文件',
+          content: '此文件有未保存的更改，关闭后更改将丢失。是否继续？',
+          okText: '关闭',
+          cancelText: '取消',
+          okButtonProps: { danger: true },
+          centered: true,
+          onOk: () => {
+            closeTab(tabId);
+          },
+        });
+        return;
+      }
+    }
+
     if (tab?.contentType === 'terminal') {
       terminalApi.stop(tabId).catch(() => {});
       useTerminalStore.getState().removeTerminal(tabId);
@@ -222,8 +257,61 @@ function PaneContent({ leafId }: { leafId: string }) {
         } : undefined}
         onClosePane={hasSiblings ? handleClosePane : undefined}
         onSort={handleSort}
+        onReorder={(fromIndex, toIndex) => {
+          const next = [...tabIds];
+          const [moved] = next.splice(fromIndex, 1);
+          next.splice(toIndex, 0, moved);
+          reorderTabs(leafId, next);
+        }}
         onRename={handleRename}
         onTogglePin={handleTogglePin}
+        onCloseOthers={(tabId) => {
+          const wsState = useWorkspaceStore.getState();
+          const leaf = (() => {
+            const walk = (n: PaneNode): PaneLeaf | null => {
+              if (n.type === 'leaf' && n.id === leafId) return n;
+              if (n.type === 'split') {
+                for (const c of n.children) {
+                  const found = walk(c);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+            return walk(wsState.root);
+          })();
+          if (!leaf) return;
+          leaf.tabIds.forEach(id => {
+            if (id !== tabId) wsState.closeTab(id);
+          });
+        }}
+        onCloseRight={(tabId) => {
+          const wsState = useWorkspaceStore.getState();
+          const leaf = (() => {
+            const walk = (n: PaneNode): PaneLeaf | null => {
+              if (n.type === 'leaf' && n.id === leafId) return n;
+              if (n.type === 'split') {
+                for (const c of n.children) {
+                  const found = walk(c);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+            return walk(wsState.root);
+          })();
+          if (!leaf) return;
+          const idx = leaf.tabIds.indexOf(tabId);
+          if (idx === -1) return;
+          leaf.tabIds.slice(idx + 1).forEach(id => wsState.closeTab(id));
+        }}
+        onMoveToPane={(tabId, targetLeafId) => {
+          const wsState = useWorkspaceStore.getState();
+          wsState.closeTab(tabId);
+          const tab = wsState.tabs[tabId];
+          if (tab) wsState.addTab(targetLeafId, tab);
+        }}
+        otherPanes={otherPanes}
       />
       <div style={contentStyles.content}>
         {isTerminal ? (

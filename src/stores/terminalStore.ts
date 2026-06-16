@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { DEFAULT_CWD } from '../lib/constants';
 import { Terminal, TerminalTheme, PanePosition } from '../shared/terminalTypes';
+import { useThemeStore } from './themeStore';
 
 export interface LaunchRequest {
   cwd: string;
@@ -47,7 +48,9 @@ interface TerminalStore {
 
   // Theme
   theme: TerminalTheme;
+  followAppTheme: boolean;
   setTheme: (t: TerminalTheme) => void;
+  setFollowAppTheme: (v: boolean) => void;
 
   // Groups
   groups: TerminalGroup[];
@@ -56,6 +59,8 @@ interface TerminalStore {
   renameGroup: (id: string, label: string) => void;
   toggleGroupCollapse: (id: string) => void;
   moveTerminalToGroup: (terminalId: string, groupId: string | null) => void;
+  reorderTerminals: (pane: PanePosition, fromIndex: number, toIndex: number) => void;
+  reorderTerminalInGroup: (sourceId: string, targetId: string) => void;
 
   // Split pane - Horizontal
   splitPaneOpen: boolean;
@@ -121,15 +126,31 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
 
   // Theme
   theme: (() => {
+    const follow = localStorage.getItem('terminal-follow-app') !== 'false';
+    if (follow) {
+      return useThemeStore.getState().mode === 'light' ? 'light' : 'dark';
+    }
     const saved = localStorage.getItem('terminal-theme');
     if (saved && ['dark', 'modern', 'matrix', 'light'].includes(saved)) {
       return saved as TerminalTheme;
     }
     return 'dark' as TerminalTheme;
   })(),
+  followAppTheme: localStorage.getItem('terminal-follow-app') !== 'false',
   setTheme: (t) => {
     localStorage.setItem('terminal-theme', t);
-    set({ theme: t });
+    localStorage.setItem('terminal-follow-app', 'false');
+    set({ theme: t, followAppTheme: false });
+  },
+  setFollowAppTheme: (v) => {
+    localStorage.setItem('terminal-follow-app', String(v));
+    set({ followAppTheme: v });
+    if (v) {
+      const appMode = useThemeStore.getState().mode;
+      const newTheme: TerminalTheme = appMode === 'light' ? 'light' : 'dark';
+      localStorage.setItem('terminal-theme', newTheme);
+      set({ theme: newTheme });
+    }
   },
 
   // Groups
@@ -166,6 +187,53 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       t.id === terminalId ? { ...t, groupId } : t
     ),
   })),
+
+  reorderTerminals: (pane, fromIndex, toIndex) => set(state => {
+    // Get indices of terminals for this pane in the full array
+    const paneIndices: number[] = [];
+    state.terminals.forEach((t, i) => {
+      if (t.pane === pane) paneIndices.push(i);
+    });
+    if (fromIndex < 0 || fromIndex >= paneIndices.length || toIndex < 0 || toIndex >= paneIndices.length) return state;
+    const fullFrom = paneIndices[fromIndex];
+    const fullTo = paneIndices[toIndex];
+    if (fullFrom === fullTo) return state;
+    const next = [...state.terminals];
+    const [moved] = next.splice(fullFrom, 1);
+    next.splice(fullTo, 0, moved);
+    return { terminals: next };
+  }),
+
+  reorderTerminalInGroup: (sourceId, targetId) => set(state => {
+    const source = state.terminals.find(t => t.id === sourceId);
+    const target = state.terminals.find(t => t.id === targetId);
+    if (!source || !target || source.pane !== target.pane) return state;
+    const sourceGroup = source.groupId || null;
+    const targetGroup = target.groupId || null;
+    if (sourceGroup !== targetGroup) return state;
+    // Get terminals in same pane+group, find indices
+    const groupTerminals = state.terminals.filter(
+      t => t.pane === source.pane && (t.groupId || null) === sourceGroup
+    );
+    const fromIdx = groupTerminals.findIndex(t => t.id === sourceId);
+    const toIdx = groupTerminals.findIndex(t => t.id === targetId);
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return state;
+    // Reorder within group
+    const reordered = [...groupTerminals];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    // Rebuild full array: keep non-group terminals, insert reordered group
+    const others = state.terminals.filter(
+      t => t.pane !== source.pane || (t.groupId || null) !== sourceGroup
+    );
+    // Insert reordered terminals at the position of the first group terminal
+    const insertAt = state.terminals.findIndex(
+      t => t.pane === source.pane && (t.groupId || null) === sourceGroup
+    );
+    const next = [...others];
+    next.splice(insertAt, 0, ...reordered);
+    return { terminals: next };
+  }),
 
   // Split pane
   splitPaneOpen: false,
@@ -213,3 +281,17 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   tabBarWidth: 200,
   setTabBarWidth: (w) => set({ tabBarWidth: Math.min(Math.max(w, 140), 400) }),
 }));
+
+// Auto-sync terminal theme with app theme
+let lastMode: 'light' | 'dark' | undefined;
+useThemeStore.subscribe((state) => {
+  if (state.mode === lastMode) return;
+  lastMode = state.mode;
+  const { followAppTheme, theme } = useTerminalStore.getState();
+  if (!followAppTheme) return;
+  const target: TerminalTheme = state.mode === 'light' ? 'light' : 'dark';
+  if (theme !== target) {
+    localStorage.setItem('terminal-theme', target);
+    useTerminalStore.setState({ theme: target });
+  }
+});

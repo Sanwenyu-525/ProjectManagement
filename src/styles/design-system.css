@@ -20,7 +20,6 @@ html {
 /* ===== Component Overrides (Ant Design) ===== */
 
 .ant-btn {
-  font-family: var(--font-sans) !important;
   border-radius: var(--radius-md) !important;
   transition: all var(--transition-fast) !important;
 }
@@ -46,7 +45,7 @@ html {
 .ant-input-focused,
 .ant-input-affix-wrapper-focused {
   border-color: var(--color-accent) !important;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.1) !important;
+  box-shadow: 0 0 0 2px var(--color-primary-light) !important;
 }
 
 .ant-tag {

@@ -1,12 +1,12 @@
 @import './shared/styles/variables.css';
 @import './shared/styles/animations.css';
 @import './shared/styles/glassmorphism.css';
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+/* Fonts loaded via non-blocking <link> in index.html */
 
 /* ==================== DevHub Custom Overrides ==================== */
 
 body {
-  font-family: 'Inter', 'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   background: linear-gradient(135deg, var(--color-gradient-start) 0%, var(--color-gradient-mid) 35%, var(--color-gradient-end) 65%, var(--color-gradient-accent) 100%);
   background-attachment: fixed;
 }
@@ -38,7 +38,7 @@ body {
   height: 700px;
   top: -250px;
   right: -150px;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.18) 0%, transparent 65%);
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.22) 0%, transparent 66%);
 }
 
 .bg-gradient-main::after {
@@ -46,7 +46,7 @@ body {
   height: 600px;
   bottom: -200px;
   left: -150px;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.16) 0%, transparent 65%);
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.18) 0%, transparent 66%);
 }
 
 /* ==================== Code font ==================== */
@@ -58,8 +58,8 @@ body {
 /* ==================== Selection ==================== */
 
 ::selection {
-  background: rgba(34, 197, 94, 0.2);
-  color: var(--text-primary);
+  background: rgba(20, 184, 166, 0.22);
+  color: var(--color-text-primary);
 }
 
 /* ==================== Focus visible ==================== */
@@ -81,18 +81,18 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.12);
+  background: rgba(82, 97, 116, 0.24);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(82, 97, 116, 0.36);
 }
 
 /* ==================== Skeleton loading ==================== */
 
 .skeleton {
-  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
+  background: linear-gradient(90deg, rgba(82, 97, 116, 0.06) 25%, rgba(20, 184, 166, 0.12) 50%, rgba(82, 97, 116, 0.06) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 8px;
@@ -107,15 +107,15 @@ body {
 
 .ant-card {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.2) 100%),
-    rgba(255, 255, 255, 0.35) !important;
-  backdrop-filter: blur(20px) saturate(1.8) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(1.8) !important;
-  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+    linear-gradient(135deg, rgba(255, 255, 255, 0.58) 0%, rgba(255, 255, 255, 0.28) 52%, rgba(232, 255, 247, 0.36) 100%),
+    rgba(255, 255, 255, 0.46) !important;
+  backdrop-filter: blur(28px) saturate(1.65) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(1.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.56) !important;
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.6),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.3),
-    0 8px 32px rgba(0, 0, 0, 0.1) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.30),
+    0 14px 40px rgba(39, 67, 92, 0.10) !important;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
   position: relative !important;
   overflow: hidden !important;
@@ -128,7 +128,7 @@ body {
   left: 0;
   right: 0;
   height: 40%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0) 100%);
   border-radius: inherit;
   pointer-events: none;
   z-index: 0;
@@ -136,70 +136,68 @@ body {
 
 .ant-card:hover {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.3) 100%),
-    rgba(255, 255, 255, 0.45) !important;
-  border-color: rgba(255, 255, 255, 0.55) !important;
+    linear-gradient(135deg, rgba(255, 255, 255, 0.68) 0%, rgba(255, 255, 255, 0.34) 52%, rgba(232, 255, 247, 0.46) 100%),
+    rgba(255, 255, 255, 0.56) !important;
+  border-color: rgba(255, 255, 255, 0.68) !important;
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.7),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
-    0 16px 48px rgba(0, 0, 0, 0.15),
-    0 0 24px rgba(34, 197, 94, 0.1) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.38),
+    0 20px 56px rgba(39, 67, 92, 0.14),
+    0 0 24px rgba(20, 184, 166, 0.12) !important;
 }
 
 .ant-card-hoverable:hover {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.3) 100%),
-    rgba(255, 255, 255, 0.45) !important;
-  border-color: rgba(34, 197, 94, 0.3) !important;
+    linear-gradient(135deg, rgba(255, 255, 255, 0.68) 0%, rgba(255, 255, 255, 0.34) 52%, rgba(232, 255, 247, 0.46) 100%),
+    rgba(255, 255, 255, 0.56) !important;
+  border-color: rgba(20, 184, 166, 0.34) !important;
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.7),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
-    0 16px 48px rgba(0, 0, 0, 0.15),
-    0 0 24px rgba(34, 197, 94, 0.15) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.38),
+    0 20px 56px rgba(39, 67, 92, 0.14),
+    0 0 24px rgba(20, 184, 166, 0.18) !important;
 }
 
 /* ==================== Sider Collapse Button Override ==================== */
 
 .ant-layout-sider-trigger {
   background: transparent !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.3) !important;
-  backdrop-filter: blur(20px) saturate(1.8) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(1.8) !important;
-  color: #1a1f36 !important;
+  border-top: 1px solid var(--ws-glass-border) !important;
+  backdrop-filter: var(--ws-glass-blur) !important;
+  -webkit-backdrop-filter: var(--ws-glass-blur) !important;
+  color: var(--ws-text) !important;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .ant-layout-sider-trigger:hover {
-  background: rgba(255, 255, 255, 0.35) !important;
+  background: var(--ws-active-bg) !important;
   color: var(--color-accent) !important;
 }
 
 /* Dark sidebar on workspace route */
 .workspace-mode .ant-layout-sider-trigger {
-  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  color: #8892a8 !important;
+  border-top: 1px solid var(--ws-glass-border) !important;
+  color: var(--ws-text-secondary) !important;
 }
 
 .workspace-mode .ant-layout-sider-trigger:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: #a5b4fc !important;
+  background: var(--ws-active-bg) !important;
+  color: var(--ws-active-border) !important;
 }
 
 /* Dark sidebar menu text */
 .workspace-mode .ant-menu-item,
 .workspace-mode .ant-menu-submenu-title {
-  color: #8892a8 !important;
+  color: var(--ws-text-secondary) !important;
 }
 
 .workspace-mode .ant-menu-item-selected {
-  color: #a5b4fc !important;
-  background: rgba(99, 102, 241, 0.12) !important;
+  color: var(--ws-active-border) !important;
+  background: var(--ws-active-bg) !important;
 }
 
 .workspace-mode .ant-menu-item:hover {
-  color: #c8d0de !important;
+  color: var(--ws-text) !important;
 }
 
 /* ==================== Git Dashboard Loading Rows ==================== */
@@ -215,10 +213,10 @@ body {
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.08) 50%, transparent 75%);
-  animation: shimmer 1.5s infinite;
+  animation: shimmerSlide 1.5s infinite;
 }
 
-@keyframes shimmer {
+@keyframes shimmerSlide {
   from { transform: translateX(-100%); }
   to   { transform: translateX(100%); }
 }
@@ -229,12 +227,12 @@ body {
 }
 
 .ant-dropdown-menu {
-  background: rgba(255, 255, 255, 0.75) !important;
-  backdrop-filter: blur(20px) saturate(1.4) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(1.4) !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(24px) saturate(1.55) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.55) !important;
   border-radius: 10px !important;
-  border: 1px solid rgba(0, 0, 0, 0.06) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.50) !important;
+  box-shadow: 0 14px 40px rgba(39, 67, 92, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
   padding: 4px !important;
   min-width: auto !important;
   width: fit-content !important;
@@ -244,11 +242,11 @@ body {
   border-radius: 8px !important;
   padding: 8px 12px !important;
   transition: background 0.15s !important;
-  color: #1a1f36 !important;
+  color: var(--color-text-primary) !important;
 }
 
 .ant-dropdown-menu-item:hover {
-  background: rgba(0, 0, 0, 0.05) !important;
+  background: rgba(20, 184, 166, 0.10) !important;
 }
 
 .ant-dropdown-menu-item-disabled {
@@ -270,21 +268,21 @@ body {
 }
 
 [data-theme="dark"] .bg-gradient-main::before {
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 65%);
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.12) 0%, transparent 66%);
 }
 
 [data-theme="dark"] .bg-gradient-main::after {
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.10) 0%, transparent 65%);
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.10) 0%, transparent 66%);
 }
 
 [data-theme="dark"] .ant-card {
   background:
-    linear-gradient(135deg, rgba(30, 32, 44, 0.6) 0%, rgba(22, 24, 33, 0.4) 50%, rgba(30, 32, 44, 0.5) 100%),
-    rgba(22, 24, 33, 0.6) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    linear-gradient(135deg, rgba(18, 28, 39, 0.88) 0%, rgba(10, 16, 24, 0.76) 52%, rgba(15, 35, 48, 0.72) 100%),
+    rgba(14, 22, 31, 0.84) !important;
+  border: 1px solid rgba(148, 163, 184, 0.14) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 8px 32px rgba(0, 0, 0, 0.3) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 40px rgba(0, 0, 0, 0.34) !important;
 }
 
 [data-theme="dark"] .ant-card::before {
@@ -293,16 +291,16 @@ body {
 
 [data-theme="dark"] .ant-card:hover {
   background:
-    linear-gradient(135deg, rgba(30, 32, 44, 0.7) 0%, rgba(22, 24, 33, 0.5) 50%, rgba(30, 32, 44, 0.6) 100%),
-    rgba(30, 32, 44, 0.7) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
+    linear-gradient(135deg, rgba(22, 34, 47, 0.92) 0%, rgba(13, 20, 29, 0.82) 52%, rgba(18, 43, 57, 0.80) 100%),
+    rgba(22, 34, 47, 0.88) !important;
+  border-color: rgba(45, 212, 191, 0.22) !important;
 }
 
 [data-theme="dark"] .ant-card-hoverable:hover {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 16px 48px rgba(0, 0, 0, 0.4),
-    0 0 24px rgba(34, 197, 94, 0.08) !important;
+    0 18px 52px rgba(0, 0, 0, 0.44),
+    0 0 24px rgba(45, 212, 191, 0.10) !important;
 }
 
 [data-theme="dark"] ::-webkit-scrollbar-thumb {
@@ -314,29 +312,43 @@ body {
 }
 
 [data-theme="dark"] .ant-layout-sider-trigger {
-  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-  color: #8892a8 !important;
+  border-top: 1px solid var(--ws-glass-border) !important;
+  color: var(--ws-text-secondary) !important;
 }
 
 [data-theme="dark"] .ant-layout-sider-trigger:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: #a5b4fc !important;
+  background: var(--ws-active-bg) !important;
+  color: var(--ws-active-border) !important;
 }
 
 [data-theme="dark"] .ant-dropdown-menu {
-  background: rgba(30, 32, 44, 0.95) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+  background: rgba(13, 20, 29, 0.96) !important;
+  border: 1px solid rgba(148, 163, 184, 0.14) !important;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.48) !important;
 }
 
 [data-theme="dark"] .ant-dropdown-menu-item {
-  color: #e2e8f0 !important;
+  color: var(--color-text-primary) !important;
 }
 
 [data-theme="dark"] .ant-dropdown-menu-item:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: rgba(45, 212, 191, 0.10) !important;
 }
 
 [data-theme="dark"] ::selection {
-  background: rgba(34, 197, 94, 0.3);
+  background: rgba(45, 212, 191, 0.28);
+}
+
+[data-theme="dark"] .skeleton {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.06) 25%, rgba(45, 212, 191, 0.10) 50%, rgba(148, 163, 184, 0.06) 75%);
+  background-size: 200% 100%;
+}
+
+[data-theme="dark"] .ant-table-row-loading td::after {
+  background: linear-gradient(90deg, transparent 25%, rgba(255, 255, 255, 0.04) 50%, transparent 75%);
+}
+
+[data-theme="dark"] .ant-dropdown-menu {
+  backdrop-filter: blur(24px) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.2) !important;
 }

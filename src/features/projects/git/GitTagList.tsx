@@ -73,7 +73,7 @@ export default function GitTagList({ repoPath, onSelect }: GitTagListProps) {
 
   if (!repoPath) {
     return (
-      <div style={{ padding: 16, color: '#9eadc0', fontSize: 13 }}>
+      <div style={{ padding: 16, color: 'var(--color-text-light)', fontSize: 13 }}>
         请先设置项目本地路径
       </div>
     );
@@ -164,7 +164,7 @@ export default function GitTagList({ repoPath, onSelect }: GitTagListProps) {
                 style={{
                   padding: '8px 12px',
                   cursor: 'pointer',
-                  borderBottom: '1px solid rgba(0,0,0,0.06)',
+                  borderBottom: '1px solid var(--color-border-subtle)',
                 }}
                 onClick={() => onSelect?.(tag)}
                 actions={[
@@ -180,20 +180,20 @@ export default function GitTagList({ repoPath, onSelect }: GitTagListProps) {
                       size="small"
                       icon={<DeleteOutlined />}
                       onClick={(e) => e.stopPropagation()}
-                      style={{ color: '#ff4d4f' }}
+                      style={{ color: 'var(--color-status-cancel)' }}
                     />
                   </Popconfirm>,
                 ]}
               >
                 <List.Item.Meta
-                  avatar={<TagOutlined style={{ fontSize: 16, color: '#6366f1' }} />}
+                  avatar={<TagOutlined style={{ fontSize: 16, color: 'var(--color-purple)' }} />}
                   title={
                     <Tag color="blue" style={{ margin: 0 }}>
                       {tag.name}
                     </Tag>
                   }
                   description={
-                    <div style={{ fontSize: 12, color: '#9eadc0' }}>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-light)' }}>
                       <div>{tag.hash}</div>
                       {tag.message && (
                         <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>

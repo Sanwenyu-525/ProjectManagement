@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Typography, Spin, Empty, Button, Space } from 'antd';
 import { ReloadOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
 import { projectsApi, dependenciesApi } from '../../api';
+import { getThemeColors } from '../../lib/themeColors';
+import { useThemeStore } from '../../stores/themeStore';
 
 const { Title } = Typography;
 
@@ -35,6 +37,8 @@ export default function DependencyGraphPage() {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [compact, setCompact] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
+  const mode = useThemeStore(s => s.mode);
+  const tc = useMemo(() => getThemeColors(), [mode]);
 
   const computeLayout = (nodeCount: number, isCompact: boolean) => {
     const cols = Math.ceil(Math.sqrt(nodeCount || 1));
@@ -153,9 +157,9 @@ export default function DependencyGraphPage() {
       </div>
 
       <div style={{
-        background: 'rgba(255,255,255,0.6)',
+        background: 'var(--color-bg-card)',
         borderRadius: 12,
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--color-border)',
         overflow: 'auto',
         padding: 16,
       }}>
@@ -183,7 +187,7 @@ export default function DependencyGraphPage() {
               <g key={i}>
                 <line
                   x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke={isHighlighted ? '#22c55e' : '#d1d5db'}
+                  stroke={isHighlighted ? tc.statusDone : tc.border}
                   strokeWidth={isHighlighted ? 2.5 : 1.5}
                   strokeDasharray={isDimmed ? '4,4' : 'none'}
                   opacity={isDimmed ? 0.2 : 1}
@@ -196,7 +200,7 @@ export default function DependencyGraphPage() {
           {/* Arrow marker */}
           <defs>
             <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="#9eadc0" />
+              <polygon points="0 0, 8 3, 0 6" fill={tc.textLight} />
             </marker>
           </defs>
 
@@ -220,8 +224,8 @@ export default function DependencyGraphPage() {
                   height={nodeHeight}
                   rx={10}
                   ry={10}
-                  fill={isHovered ? '#f0fdf4' : 'white'}
-                  stroke={isHovered ? '#22c55e' : (STATUS_COLORS[node.status] || '#e5e7eb')}
+                  fill={isHovered ? tc.statusDone : tc.bgCard}
+                  stroke={isHovered ? tc.statusDone : (STATUS_COLORS[node.status] || tc.border)}
                   strokeWidth={isHovered ? 2 : 1.5}
                   filter={isHovered ? 'url(#shadow)' : undefined}
                 />
@@ -231,24 +235,24 @@ export default function DependencyGraphPage() {
                   cx={nodeWidth - 12}
                   cy={12}
                   r={5}
-                  fill={STATUS_COLORS[node.status] || '#9eadc0'}
+                  fill={STATUS_COLORS[node.status] || tc.textLight}
                 />
 
                 {/* Icon placeholder */}
-                <text x={12} y={compact ? 28 : 32} fontSize={compact ? 14 : 16} fill="#1a1f36" fontWeight="600">
+                <text x={12} y={compact ? 28 : 32} fontSize={compact ? 14 : 16} fill={tc.text} fontWeight="600">
                   {node.name.length > (compact ? 10 : 16) ? node.name.slice(0, compact ? 10 : 16) + '…' : node.name}
                 </text>
 
                 {/* Tech stack */}
                 {!compact && node.techStack.length > 0 && (
-                  <text x={12} y={55} fontSize={10} fill="#6b7a99">
+                  <text x={12} y={55} fontSize={10} fill={tc.textDescription}>
                     {node.techStack.slice(0, 3).join(', ')}
                   </text>
                 )}
 
                 {/* Depends count */}
                 {node.dependsOn.length > 0 && (
-                  <text x={nodeWidth - 12} y={nodeHeight - 8} fontSize={9} fill="#6b7a99" textAnchor="end">
+                  <text x={nodeWidth - 12} y={nodeHeight - 8} fontSize={9} fill={tc.textDescription} textAnchor="end">
                     → {node.dependsOn.length}
                   </text>
                 )}
@@ -268,7 +272,7 @@ export default function DependencyGraphPage() {
       {/* Legend */}
       <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
         {Object.entries(STATUS_COLORS).map(([status, color]) => (
-          <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#6b7a99' }}>
+          <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-description)' }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
             {status}
           </div>

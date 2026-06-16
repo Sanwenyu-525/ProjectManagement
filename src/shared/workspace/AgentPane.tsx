@@ -111,7 +111,7 @@ export default function AgentPane({ agentId, runtimeId }: Props) {
   if (!runtime) {
     return (
       <div style={styles.fallback}>
-        <span style={{ color: '#ef4444' }}>未知 Agent 运行时: {runtimeId}</span>
+        <span style={{ color: 'var(--color-status-cancel)' }}>未知 Agent 运行时: {runtimeId}</span>
       </div>
     );
   }
@@ -141,7 +141,7 @@ export default function AgentPane({ agentId, runtimeId }: Props) {
           <span style={styles.agentName}>{runtime.name}</span>
           <span style={{
             ...styles.statusDot,
-            background: status === 'running' ? '#22c55e' : status === 'starting' ? '#eab308' : '#6b7280',
+            background: status === 'running' ? '#22c55e' : status === 'starting' ? '#eab308' : 'var(--ws-text-muted, #6b7280)',
             boxShadow: status === 'running' ? `0 0 4px ${runtime.color}66` : 'none',
           }} />
           <span style={styles.statusText}>
@@ -182,7 +182,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     height: 28,
     padding: '0 10px',
-    background: 'rgba(255, 255, 255, 0.03)',
+    background: 'var(--ws-statusbar-bg, rgba(255, 255, 255, 0.03))',
     borderBottom: '1px solid var(--ws-border-subtle)',
     flexShrink: 0,
   },
