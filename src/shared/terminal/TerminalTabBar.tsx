@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import { Terminal, PanePosition } from '../terminalTypes';
 import { TerminalGroup as TerminalGroupType, useTerminalStore } from '../../stores/terminalStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import TerminalGroup from './TerminalGroup';
 import { PlusOutlined, PartitionOutlined } from '@ant-design/icons';
@@ -29,12 +30,12 @@ export default function TerminalTabBar({
   const groups = useTerminalStore(s => s.groups);
   const terminals = useTerminalStore(s => s.terminals);
   const toggleGroupCollapse = useTerminalStore(s => s.toggleGroupCollapse);
-  const splitPaneOpen = useTerminalStore(s => s.splitPaneOpen);
-  const setSplitPaneOpen = useTerminalStore(s => s.setSplitPaneOpen);
-  const splitVerticalOpen = useTerminalStore(s => s.splitVerticalOpen);
-  const setSplitVerticalOpen = useTerminalStore(s => s.setSplitVerticalOpen);
-  const tabBarWidth = useTerminalStore(s => s.tabBarWidth);
-  const setTabBarWidth = useTerminalStore(s => s.setTabBarWidth);
+  const splitPaneOpen = useWorkspaceStore(s => s.splitPaneOpen);
+  const setSplitPaneOpen = useWorkspaceStore(s => s.setSplitPaneOpen);
+  const splitVerticalOpen = useWorkspaceStore(s => s.splitVerticalOpen);
+  const setSplitVerticalOpen = useWorkspaceStore(s => s.setSplitVerticalOpen);
+  const tabBarWidth = useWorkspaceStore(s => s.tabBarWidth);
+  const setTabBarWidth = useWorkspaceStore(s => s.setTabBarWidth);
   const removeGroup = useTerminalStore(s => s.removeGroup);
   const reorderTerminalInGroup = useTerminalStore(s => s.reorderTerminalInGroup);
 

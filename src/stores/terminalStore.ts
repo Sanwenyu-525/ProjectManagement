@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_CWD } from '../lib/constants';
 import { Terminal, TerminalTheme, PanePosition } from '../shared/terminalTypes';
 import { useThemeStore } from './themeStore';
+import { useWorkspaceStore } from './workspaceStore';
 
 export interface LaunchRequest {
   cwd: string;
@@ -16,10 +17,6 @@ export interface TerminalGroup {
   label: string;
   isProjectGroup: boolean;
   isCollapsed: boolean;
-}
-
-interface PaneState {
-  activeId: string | null;
 }
 
 interface TerminalStore {
@@ -39,13 +36,6 @@ interface TerminalStore {
   removeTerminal: (id: string) => void;
   updateTerminal: (id: string, patch: Partial<Terminal>) => void;
 
-  // Pane state
-  leftPane: PaneState;
-  rightPane: PaneState;
-  topPane: PaneState;
-  bottomPane: PaneState;
-  setActiveId: (pane: PanePosition, id: string | null) => void;
-
   // Theme
   theme: TerminalTheme;
   followAppTheme: boolean;
@@ -62,22 +52,7 @@ interface TerminalStore {
   reorderTerminals: (pane: PanePosition, fromIndex: number, toIndex: number) => void;
   reorderTerminalInGroup: (sourceId: string, targetId: string) => void;
 
-  // Split pane - Horizontal
-  splitPaneOpen: boolean;
-  setSplitPaneOpen: (v: boolean) => void;
-  splitRatio: number;
-  setSplitRatio: (r: number) => void;
   moveTerminalToPane: (terminalId: string, targetPane: PanePosition) => void;
-
-  // Split pane - Vertical (for right pane)
-  splitVerticalOpen: boolean;
-  setSplitVerticalOpen: (v: boolean) => void;
-  splitVerticalRatio: number;
-  setSplitVerticalRatio: (r: number) => void;
-
-  // Tab bar width
-  tabBarWidth: number;
-  setTabBarWidth: (w: number) => void;
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
@@ -113,16 +88,6 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   updateTerminal: (id, patch) => set(state => ({
     terminals: state.terminals.map(t => t.id === id ? { ...t, ...patch } : t),
   })),
-
-  // Pane state
-  leftPane: { activeId: null },
-  rightPane: { activeId: null },
-  topPane: { activeId: null },
-  bottomPane: { activeId: null },
-  setActiveId: (pane, id) => set(() => {
-    const paneKey = pane === 'left' ? 'leftPane' : pane === 'right' ? 'rightPane' : pane === 'top' ? 'topPane' : 'bottomPane';
-    return { [paneKey]: { activeId: id } };
-  }),
 
   // Theme
   theme: (() => {
@@ -235,18 +200,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     return { terminals: next };
   }),
 
-  // Split pane
-  splitPaneOpen: false,
-  setSplitPaneOpen: (v) => set({ splitPaneOpen: v }),
-  splitRatio: 0.5,
-  setSplitRatio: (r) => set({ splitRatio: Math.min(Math.max(r, 0.2), 0.8) }),
-
-  // Split pane - Vertical (for right pane)
-  splitVerticalOpen: false,
-  setSplitVerticalOpen: (v) => set({ splitVerticalOpen: v }),
-  splitVerticalRatio: 0.5,
-  setSplitVerticalRatio: (r) => set({ splitVerticalRatio: Math.min(Math.max(r, 0.2), 0.8) }),
-
+  // Move terminal between panes
   moveTerminalToPane: (terminalId, targetPane) => {
     const state = get();
     const terminal = state.terminals.find(t => t.id === terminalId);
@@ -255,31 +209,18 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const sourcePane = terminal.pane;
     const sourceTerminals = state.terminals.filter(t => t.pane === sourcePane && t.id !== terminalId);
 
-    const getPaneKey = (pane: PanePosition) => {
-      if (pane === 'left') return 'leftPane';
-      if (pane === 'right') return 'rightPane';
-      if (pane === 'top') return 'topPane';
-      return 'bottomPane';
-    };
-
+    // Update terminal.pane (in terminalStore)
     set({
       terminals: state.terminals.map(t =>
         t.id === terminalId ? { ...t, pane: targetPane } : t
       ),
-      [getPaneKey(sourcePane)]: {
-        activeId: sourceTerminals.length > 0
-          ? sourceTerminals[sourceTerminals.length - 1].id
-          : null,
-      },
-      [getPaneKey(targetPane)]: {
-        activeId: terminalId,
-      },
     });
-  },
 
-  // Tab bar width
-  tabBarWidth: 200,
-  setTabBarWidth: (w) => set({ tabBarWidth: Math.min(Math.max(w, 140), 400) }),
+    // Update pane activeId (in workspaceStore)
+    const ws = useWorkspaceStore.getState();
+    ws.setActiveId(sourcePane, sourceTerminals.length > 0 ? sourceTerminals[sourceTerminals.length - 1].id : null);
+    ws.setActiveId(targetPane, terminalId);
+  },
 }));
 
 // Auto-sync terminal theme with app theme

@@ -1,9 +1,9 @@
 import { useRef, useCallback } from 'react';
-import { useTerminalStore } from '../../stores/terminalStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 
 export default function SplitDivider() {
-  const splitRatio = useTerminalStore(s => s.splitRatio);
-  const setSplitRatio = useTerminalStore(s => s.setSplitRatio);
+  const splitRatio = useWorkspaceStore(s => s.splitRatio);
+  const setSplitRatio = useWorkspaceStore(s => s.setSplitRatio);
   const dragRef = useRef({ dragging: false, startX: 0, startRatio: 0 });
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {

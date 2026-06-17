@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useTerminalStore } from '../../stores/terminalStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import TerminalInstance from '../TerminalInstance';
 import TerminalTabBar from './TerminalTabBar';
 import { terminalApi } from '../../api';
@@ -13,13 +14,13 @@ interface TerminalPaneProps {
 
 export default function TerminalPane({ pane, onCreateTerminal, onTerminalInput }: TerminalPaneProps) {
   const terminals = useTerminalStore(s => s.terminals);
-  const paneState = useTerminalStore(s => {
+  const paneState = useWorkspaceStore(s => {
     if (pane === 'left') return s.leftPane;
     if (pane === 'right') return s.rightPane;
     if (pane === 'top') return s.topPane;
     return s.bottomPane;
   });
-  const setActiveId = useTerminalStore(s => s.setActiveId);
+  const setActiveId = useWorkspaceStore(s => s.setActiveId);
   const updateTerminal = useTerminalStore(s => s.updateTerminal);
   const removeTerminal = useTerminalStore(s => s.removeTerminal);
   const theme = useTerminalStore(s => s.theme);

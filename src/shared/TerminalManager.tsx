@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { terminalApi, projectsApi } from '../api';
 import { Terminal, TerminalExitEvent, PanePosition } from './terminalTypes';
 import { LaunchRequest, useTerminalStore } from '../stores/terminalStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import TerminalPane from './terminal/TerminalPane';
 import SplitDivider from './terminal/SplitDivider';
 import { DEFAULT_SHELL, SHELL_MAP } from '../lib/constants';
@@ -16,13 +17,13 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
   const terminals = useTerminalStore(s => s.terminals);
   const addTerminal = useTerminalStore(s => s.addTerminal);
   const updateTerminal = useTerminalStore(s => s.updateTerminal);
-  const setActiveId = useTerminalStore(s => s.setActiveId);
+  const setActiveId = useWorkspaceStore(s => s.setActiveId);
   const defaultCwd = useTerminalStore(s => s.defaultCwd);
   const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
-  const splitPaneOpen = useTerminalStore(s => s.splitPaneOpen);
-  const splitRatio = useTerminalStore(s => s.splitRatio);
-  const splitVerticalOpen = useTerminalStore(s => s.splitVerticalOpen);
-  const splitVerticalRatio = useTerminalStore(s => s.splitVerticalRatio);
+  const splitPaneOpen = useWorkspaceStore(s => s.splitPaneOpen);
+  const splitRatio = useWorkspaceStore(s => s.splitRatio);
+  const splitVerticalOpen = useWorkspaceStore(s => s.splitVerticalOpen);
+  const splitVerticalRatio = useWorkspaceStore(s => s.splitVerticalRatio);
   const groups = useTerminalStore(s => s.groups);
   const addGroup = useTerminalStore(s => s.addGroup);
   const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
@@ -92,8 +93,7 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
     let terminalPane: PanePosition = pane || 'left';
     if (!pane) {
       // Auto-assign based on current split state
-      const state = useTerminalStore.getState();
-      if (state.splitPaneOpen) {
+      if (useWorkspaceStore.getState().splitPaneOpen) {
         terminalPane = 'right';
       }
     }
@@ -178,7 +178,7 @@ export default function TerminalManager({ visible, consumeLaunchRequest }: Termi
 
   // Keyboard shortcut for clear screen (Ctrl+L)
   const clearTerminal = useCallback(() => {
-    const state = useTerminalStore.getState();
+    const state = useWorkspaceStore.getState();
     const leftActive = state.leftPane.activeId;
     if (leftActive) {
       terminalApi.input(leftActive, '\x0c').catch(console.error);
