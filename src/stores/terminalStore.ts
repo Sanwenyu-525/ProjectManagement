@@ -19,16 +19,18 @@ export interface TerminalGroup {
   isCollapsed: boolean;
 }
 
+// ─── Launch Queue ───────────────────────────────────────────────────────────
+// requestLaunch, consumeLaunchRequest, LaunchRequest
 interface TerminalStore {
-  // Launch queue
   launchQueue: LaunchRequest[];
   requestLaunch: (req: LaunchRequest) => void;
   consumeLaunchRequest: () => LaunchRequest | null;
 
-  // Config
+  // ─── Config ──────────────────────────────────────────────────────────────
   defaultCwd: string;
 
-  // Terminal instances
+  // ─── Terminal Instances ──────────────────────────────────────────────────
+  // _terminalCounter, terminals, nextTerminalNumber, addTerminal, removeTerminal, updateTerminal
   _terminalCounter: number;
   terminals: Terminal[];
   nextTerminalNumber: () => number;
@@ -36,13 +38,16 @@ interface TerminalStore {
   removeTerminal: (id: string) => void;
   updateTerminal: (id: string, patch: Partial<Terminal>) => void;
 
-  // Theme
+  // ─── Theme ───────────────────────────────────────────────────────────────
+  // theme, followAppTheme, setTheme, setFollowAppTheme (+ auto-sync with themeStore)
   theme: TerminalTheme;
   followAppTheme: boolean;
   setTheme: (t: TerminalTheme) => void;
   setFollowAppTheme: (v: boolean) => void;
 
-  // Groups
+  // ─── Groups ──────────────────────────────────────────────────────────────
+  // groups, addGroup, removeGroup, renameGroup, toggleGroupCollapse,
+  // moveTerminalToGroup, reorderTerminals, reorderTerminalInGroup
   groups: TerminalGroup[];
   addGroup: (label: string, isProjectGroup?: boolean) => string;
   removeGroup: (id: string) => void;
@@ -52,6 +57,8 @@ interface TerminalStore {
   reorderTerminals: (pane: PanePosition, fromIndex: number, toIndex: number) => void;
   reorderTerminalInGroup: (sourceId: string, targetId: string) => void;
 
+  // ─── Cross-Store Coordination ─────────────────────────────────────────────
+  // moveTerminalToPane (coordinates with workspaceStore for pane activeId)
   moveTerminalToPane: (terminalId: string, targetPane: PanePosition) => void;
 }
 
