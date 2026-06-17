@@ -345,6 +345,10 @@ pub async fn terminal_start_agent(
         let mut c = CommandBuilder::new("cmd.exe");
         c.arg("/C");
         c.arg("chcp 65001 >nul 2>&1 &");
+        // .cjs files have no default handler on Windows — invoke via node explicitly
+        if command.ends_with(".cjs") || command.ends_with(".mjs") {
+            c.arg("node");
+        }
         c.arg(&command);
         for arg in &args {
             c.arg(arg);
