@@ -30,9 +30,8 @@ export class ClaudeProvider implements AgentProvider {
 
   async start(options: StartOptions): Promise<string> {
     const terminalId = `claude-${Date.now()}`;
-    const launcherPath = await terminalApi.setupAgentLauncher();
     const workDir = options.cwd || '';
-    await terminalApi.startAgent(terminalId, launcherPath, [], workDir);
+    await terminalApi.startAgent(terminalId, 'claude', ['--dangerously-skip-permissions'], workDir);
     this.terminalId = terminalId;
 
     const unlisten = await listen<TerminalOutputEvent>('terminal-output', (event) => {
