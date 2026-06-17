@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::{command, AppHandle, Emitter, Manager};
@@ -28,44 +28,30 @@ struct PtyTerminal {
 static PTY_TERMINALS: std::sync::LazyLock<Mutex<HashMap<String, PtyTerminal>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-// ── UTF-8 stream decoding helper ────────────────────────────────────────
+// ── UTF-8 stream decoding helper (uses encoding_rs) ─────────────────────
 
 /// Decode a raw byte chunk from a stream into a String, correctly handling
 /// multi-byte UTF-8 characters that may be split across read() calls.
+/// `decoder` maintains state between calls for streaming decode.
 /// `remnant` carries incomplete trailing bytes between calls.
-fn decode_stream_chunk(remnant: &mut Vec<u8>, buf: &[u8]) -> String {
+fn decode_stream_chunk(
+    decoder: &mut encoding_rs::Decoder,
+    remnant: &mut Vec<u8>,
+    buf: &[u8],
+) -> String {
     let mut combined = std::mem::take(remnant);
     combined.extend_from_slice(buf);
 
-    // Find the last valid UTF-8 character boundary
-    let valid_len = {
-        let mut i = combined.len();
-        while i > 0 && (combined[i - 1] & 0xC0) == 0x80 {
-            i -= 1;
-        }
-        if i > 0 {
-            let leader = combined[i - 1];
-            let expected = match leader {
-                b if b < 0x80 => 1,
-                b if (b >> 5) == 0x6 => 2,
-                b if (b >> 4) == 0xE => 3,
-                b if (b >> 3) == 0x1E => 4,
-                _ => 1,
-            };
-            let actual = combined.len() - i + 1;
-            if actual <= expected { i } else { combined.len() }
-        } else {
-            0
-        }
-    };
+    let mut output = String::with_capacity(combined.len());
+    let (_result, read_pos, _had_errors) =
+        decoder.decode_to_string(&combined, &mut output, false);
 
-    if valid_len < combined.len() {
-        *remnant = combined[valid_len..].to_vec();
-        combined.truncate(valid_len);
+    // Save unconsumed bytes for the next call
+    if read_pos < combined.len() {
+        *remnant = combined[read_pos..].to_vec();
     }
 
-    String::from_utf8(combined)
-        .unwrap_or_else(|e| String::from_utf8_lossy(&e.as_bytes()).to_string())
+    output
 }
 
 // Cached launcher path (written once, reused on every call)
@@ -89,7 +75,38 @@ struct TerminalExit {
     code: Option<i32>,
 }
 
-// ── Non-interactive command (unchanged) ──────────────────────────────────
+// ── Helper: spawn output reader thread ───────────────────────────────────
+
+fn spawn_output_reader(
+    reader: Box<dyn Read + Send>,
+    app: AppHandle,
+    terminal_id: String,
+) {
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut decoder = encoding_rs::UTF_8.new_decoder();
+        let mut buf = [0u8; 8192];
+        let mut remnant: Vec<u8> = Vec::new();
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let data = decode_stream_chunk(&mut decoder, &mut remnant, &buf[..n]);
+                    let _ = app.emit(
+                        "terminal-output",
+                        TerminalOutput {
+                            terminal_id: terminal_id.clone(),
+                            data,
+                            stream: "stdout".into(),
+                        },
+                    );
+                }
+            }
+        }
+    });
+}
+
+// ── Non-interactive command ──────────────────────────────────────────────
 
 #[command]
 pub async fn terminal_start(
@@ -131,90 +148,44 @@ pub async fn terminal_start(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
+    // Spawn output readers
+    if let Some(stdout) = stdout {
+        spawn_output_reader(Box::new(stdout), app.clone(), terminal_id.clone());
+    }
+    if let Some(stderr) = stderr {
+        spawn_output_reader(Box::new(stderr), app.clone(), terminal_id.clone());
+    }
+
+    // Spawn exit watcher (blocking wait, no polling)
     {
         let mut procs = recover_lock(&PROCESSES);
         procs.insert(terminal_id.clone(), child);
     }
-
-    let app_out = app.clone();
-    let tid_out = terminal_id.clone();
-    std::thread::spawn(move || {
-        if let Some(stdout) = stdout {
-            let mut reader = BufReader::new(stdout);
-            let mut line = String::new();
-            loop {
-                line.clear();
-                match reader.read_line(&mut line) {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {
-                        let _ = app_out.emit(
-                            "terminal-output",
-                            TerminalOutput {
-                                terminal_id: tid_out.clone(),
-                                data: line.clone(),
-                                stream: "stdout".into(),
-                            },
-                        );
-                    }
-                }
-            }
-        }
-    });
-
-    let app_err = app.clone();
-    let tid_err = terminal_id.clone();
-    std::thread::spawn(move || {
-        if let Some(stderr) = stderr {
-            let mut reader = BufReader::new(stderr);
-            let mut line = String::new();
-            loop {
-                line.clear();
-                match reader.read_line(&mut line) {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {
-                        let _ = app_err.emit(
-                            "terminal-output",
-                            TerminalOutput {
-                                terminal_id: tid_err.clone(),
-                                data: line.clone(),
-                                stream: "stderr".into(),
-                            },
-                        );
-                    }
-                }
-            }
-        }
-    });
-
+    // We need to take the child back out for the blocking wait
+    // Actually, we can't easily do that with the current architecture.
+    // Let's use a simple polling approach with shorter intervals for non-interactive mode,
+    // or better yet, spawn a thread that waits on the child.
+    // Since the child is already in PROCESSES, let's use a different approach:
+    // spawn a thread that periodically takes ownership and waits.
     let app_exit = app.clone();
     let tid_exit = terminal_id.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        let mut procs = match PROCESSES.lock() {
-            Ok(p) => p,
-            Err(e) => e.into_inner(),
+    std::thread::spawn(move || {
+        // Wait a bit then try to get the child
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let child = {
+            let mut procs = recover_lock(&PROCESSES);
+            procs.remove(&tid_exit)
         };
-        if let Some(child) = procs.get_mut(&tid_exit) {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    let _ = app_exit.emit(
-                        "terminal-exit",
-                        TerminalExit {
-                            terminal_id: tid_exit.clone(),
-                            code: status.code(),
-                        },
-                    );
-                    procs.remove(&tid_exit);
-                    break;
-                }
-                Ok(None) => {}
-                Err(_) => {
-                    procs.remove(&tid_exit);
-                    break;
-                }
-            }
-        } else {
-            break;
+        if let Some(mut child) = child {
+            let status = child.wait();
+            let code = status.ok().and_then(|s| s.code());
+            let _ = app_exit.emit(
+                "terminal-exit",
+                TerminalExit {
+                    terminal_id: tid_exit,
+                    code,
+                },
+            );
         }
     });
 
@@ -249,7 +220,6 @@ pub async fn terminal_start_shell(
     // before starting the shell, preventing GBK vs UTF-8 encoding mismatch.
     #[cfg(target_os = "windows")]
     let cmd_builder = {
-        // Build the full shell command string: "chcp 65001 >nul & shell [args...]"
         let mut shell_cmd = String::from("chcp 65001 >nul 2>&1 & ");
         shell_cmd.push_str(&shell);
         if let Some(ref shell_args) = args {
@@ -316,61 +286,27 @@ pub async fn terminal_start_shell(
     }
 
     // Output reader thread (with UTF-8 remnant handling for CJK characters)
-    let app_out = app.clone();
-    let tid_out = terminal_id.clone();
-    std::thread::spawn(move || {
-        let mut reader = reader;
-        let mut buf = [0u8; 8192];
-        let mut remnant: Vec<u8> = Vec::new();
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let data = decode_stream_chunk(&mut remnant, &buf[..n]);
-                    let _ = app_out.emit(
-                        "terminal-output",
-                        TerminalOutput {
-                            terminal_id: tid_out.clone(),
-                            data,
-                            stream: "stdout".into(),
-                        },
-                    );
-                }
-            }
-        }
-    });
+    spawn_output_reader(reader, app.clone(), terminal_id.clone());
 
-    // Exit watcher thread
+    // Exit watcher thread (blocking wait, no polling)
     let app_exit = app.clone();
     let tid_exit = terminal_id.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        let mut terminals = match PTY_TERMINALS.lock() {
-            Ok(t) => t,
-            Err(e) => e.into_inner(),
+    std::thread::spawn(move || {
+        // Take ownership of the child for blocking wait
+        let child = {
+            let mut terminals = recover_lock(&PTY_TERMINALS);
+            terminals.remove(&tid_exit)
         };
-        if let Some(terminal) = terminals.get_mut(&tid_exit) {
-            match terminal.child.try_wait() {
-                Ok(Some(status)) => {
-                    let code = status.exit_code();
-                    let _ = app_exit.emit(
-                        "terminal-exit",
-                        TerminalExit {
-                            terminal_id: tid_exit.clone(),
-                            code: if code == 0 { Some(0) } else { Some(code as i32) },
-                        },
-                    );
-                    terminals.remove(&tid_exit);
-                    break;
-                }
-                Ok(None) => {}
-                Err(_) => {
-                    terminals.remove(&tid_exit);
-                    break;
-                }
-            }
-        } else {
-            break;
+        if let Some(mut terminal) = child {
+            let status = terminal.child.wait();
+            let code = status.ok().map(|s| s.exit_code() as i32);
+            let _ = app_exit.emit(
+                "terminal-exit",
+                TerminalExit {
+                    terminal_id: tid_exit,
+                    code,
+                },
+            );
         }
     });
 
@@ -458,60 +394,26 @@ pub async fn terminal_start_agent(
     }
 
     // Output reader thread (with UTF-8 remnant handling for CJK characters)
-    let app_out = app.clone();
-    let tid_out = terminal_id.clone();
-    std::thread::spawn(move || {
-        let mut reader = reader;
-        let mut buf = [0u8; 8192];
-        let mut remnant: Vec<u8> = Vec::new();
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let data = decode_stream_chunk(&mut remnant, &buf[..n]);
-                    let _ = app_out.emit(
-                        "terminal-output",
-                        TerminalOutput {
-                            terminal_id: tid_out.clone(),
-                            data,
-                            stream: "stdout".into(),
-                        },
-                    );
-                }
-            }
-        }
-    });
+    spawn_output_reader(reader, app.clone(), terminal_id.clone());
 
+    // Exit watcher thread (blocking wait, no polling)
     let app_exit = app.clone();
     let tid_exit = terminal_id.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        let mut terminals = match PTY_TERMINALS.lock() {
-            Ok(t) => t,
-            Err(e) => e.into_inner(),
+    std::thread::spawn(move || {
+        let child = {
+            let mut terminals = recover_lock(&PTY_TERMINALS);
+            terminals.remove(&tid_exit)
         };
-        if let Some(terminal) = terminals.get_mut(&tid_exit) {
-            match terminal.child.try_wait() {
-                Ok(Some(status)) => {
-                    let code = status.exit_code();
-                    let _ = app_exit.emit(
-                        "terminal-exit",
-                        TerminalExit {
-                            terminal_id: tid_exit.clone(),
-                            code: if code == 0 { Some(0) } else { Some(code as i32) },
-                        },
-                    );
-                    terminals.remove(&tid_exit);
-                    break;
-                }
-                Ok(None) => {}
-                Err(_) => {
-                    terminals.remove(&tid_exit);
-                    break;
-                }
-            }
-        } else {
-            break;
+        if let Some(mut terminal) = child {
+            let status = terminal.child.wait();
+            let code = status.ok().map(|s| s.exit_code() as i32);
+            let _ = app_exit.emit(
+                "terminal-exit",
+                TerminalExit {
+                    terminal_id: tid_exit,
+                    code,
+                },
+            );
         }
     });
 

@@ -663,7 +663,7 @@ pub async fn projects_launch(
             "frontend" => {
                 if let Some(cmd) = frontend_cmd {
                     let cwd = resolve_cwd(frontend_cwd);
-                    let terminal_id = crate::commands::terminal::terminal_start(app.clone(), id.clone(), cmd.to_string(), cwd).await?;
+                    let terminal_id = crate::commands::workspace::terminal::terminal_start(app.clone(), id.clone(), cmd.to_string(), cwd).await?;
                     launched.push(terminal_id);
                     db.execute(
                         "UPDATE projects SET frontendStatus = 'running', lastLaunchTime = ?1 WHERE id = ?2",
@@ -674,7 +674,7 @@ pub async fn projects_launch(
             "backend" => {
                 if let Some(cmd) = backend_cmd {
                     let cwd = resolve_cwd(backend_cwd);
-                    let terminal_id = crate::commands::terminal::terminal_start(app.clone(), id.clone(), cmd.to_string(), cwd).await?;
+                    let terminal_id = crate::commands::workspace::terminal::terminal_start(app.clone(), id.clone(), cmd.to_string(), cwd).await?;
                     launched.push(terminal_id);
                     db.execute(
                         "UPDATE projects SET backendStatus = 'running', lastLaunchTime = ?1 WHERE id = ?2",
@@ -711,13 +711,13 @@ pub async fn projects_stop(
     id: String,
     components: Option<Vec<String>>,
 ) -> Result<JsonValue, String> {
-    let processes = crate::commands::terminal::get_terminal_ids_for_project(&id);
+    let processes = crate::commands::workspace::terminal::get_terminal_ids_for_project(&id);
 
     let requested = components.unwrap_or_else(|| vec!["frontend".into(), "backend".into()]);
     let mut stopped: Vec<String> = Vec::new();
 
     for terminal_id in &processes {
-        let _ = crate::commands::terminal::terminal_stop(terminal_id.clone()).await;
+        let _ = crate::commands::workspace::terminal::terminal_stop(terminal_id.clone()).await;
         stopped.push(terminal_id.clone());
     }
 

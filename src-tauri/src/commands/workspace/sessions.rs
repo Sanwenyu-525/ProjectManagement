@@ -85,6 +85,45 @@ pub async fn sessions_messages(
         .and_then(|v| v.as_array().cloned().ok_or("unexpected".into()))
 }
 
+/// Auto-close stale running sessions.
+/// A session is stale if: status='running' AND startedAt is older than `max_minutes` (default 30)
+/// AND the last message (if any) is older than `idle_minutes` (default 10).
+/// Returns the number of sessions closed.
+#[command]
+pub async fn sessions_cleanup_stale(
+    db: State<'_, Database>,
+    max_minutes: Option<i64>,
+    idle_minutes: Option<i64>,
+) -> Result<usize, String> {
+    let max_mins = max_minutes.unwrap_or(30);
+    let idle_mins = idle_minutes.unwrap_or(10);
+
+    // Find stale running sessions:
+    // 1) startedAt older than max_minutes ago, AND
+    // 2) either has no messages, or the last message is older than idle_minutes ago
+    let now = chrono::Utc::now();
+    let cutoff_start = (now - chrono::Duration::minutes(max_mins)).format("%Y-%m-%d %H:%M:%S").to_string();
+    let cutoff_idle = (now - chrono::Duration::minutes(idle_mins)).format("%Y-%m-%d %H:%M:%S").to_string();
+    let ended_at = now.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // Close sessions that started long ago and either have no messages or last message is old
+    let count = db.execute_returning_changes(
+        "UPDATE agent_sessions SET endedAt = ?1, status = 'ended' \
+         WHERE status = 'running' AND startedAt < ?2 \
+         AND ( \
+           id NOT IN (SELECT DISTINCT sessionId FROM agent_messages) \
+           OR id IN ( \
+             SELECT sessionId FROM agent_messages \
+             GROUP BY sessionId \
+             HAVING MAX(timestamp) < ?3 \
+           ) \
+         )",
+        rusqlite::params![ended_at, cutoff_start, cutoff_idle],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(count)
+}
+
 // ── Browser Visits ──
 
 /// Record a browser visit.

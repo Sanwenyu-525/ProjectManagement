@@ -550,3 +550,27 @@ pub fn git_reset_head(repo_path: String, files: Vec<String>) -> Result<String, S
     }
     Ok("已取消暂存".into())
 }
+
+// ── Fetch (sync remote) ─────────────────────────────────────────────────
+
+#[command]
+pub fn git_fetch(repo_path: String) -> Result<String, String> {
+    let output = run_git_checked(&repo_path, &["fetch", "--all"])?;
+    Ok(if output.trim().is_empty() { "已获取远程更新".into() } else { output.trim().to_string() })
+}
+
+// ── Branch create ────────────────────────────────────────────────────────
+
+#[command]
+pub fn git_branch_create(repo_path: String, branch_name: String) -> Result<String, String> {
+    run_git_checked(&repo_path, &["checkout", "-b", &branch_name])?;
+    Ok(format!("分支 '{}' 创建成功", branch_name))
+}
+
+// ── Revert (safe, creates undo commit) ──────────────────────────────────
+
+#[command]
+pub fn git_revert(repo_path: String, hash: String) -> Result<String, String> {
+    run_git_checked(&repo_path, &["revert", &hash, "--no-edit"])?;
+    Ok("已回退".into())
+}
