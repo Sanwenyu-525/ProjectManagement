@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::{command, AppHandle, Emitter, Manager};
+use tauri::{command, AppHandle, Emitter};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
@@ -53,10 +53,6 @@ fn decode_stream_chunk(
 
     output
 }
-
-// Cached launcher path (written once, reused on every call)
-static LAUNCHER_PATH: std::sync::LazyLock<Mutex<Option<String>>> =
-    std::sync::LazyLock::new(|| Mutex::new(None));
 
 // ── Event payloads ───────────────────────────────────────────────────────
 
@@ -537,55 +533,6 @@ pub fn get_terminal_ids_for_project(project_id: &str) -> Vec<String> {
         }
     }
     ids
-}
-
-// ── Setup agent launcher (writes a Node.js wrapper to prevent window popups on Windows) ─
-
-#[command]
-pub async fn terminal_setup_agent_launcher(app: AppHandle) -> Result<String, String> {
-    // Return cached path if already set up AND file still exists
-    {
-        let cache = LAUNCHER_PATH.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref path) = *cache {
-            if std::path::Path::new(path).exists() {
-                return Ok(path.clone());
-            }
-            // File was deleted — clear cache and re-create
-        }
-    }
-
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("获取应用目录失败: {}", e))?;
-    std::fs::create_dir_all(&dir).ok();
-
-    let launcher_path = dir.join("claude-launcher.cjs");
-
-    // Only write if missing or stale
-    let needs_write = !launcher_path.exists()
-        || std::fs::metadata(&launcher_path)
-            .map(|m| m.len() < 200)
-            .unwrap_or(true);
-
-    if needs_write {
-        std::fs::write(
-            &launcher_path,
-            r#"const{spawn:e}=require("child_process"),n=process.platform==="win32"?"claude.cmd":"claude",r=e(n,process.argv.slice(2),{stdio:"inherit",windowsHide:!0,shell:!0});r.on("exit",e=>process.exit(e??1)),r.on("error",e=>{console.error(e.message),process.exit(1)});
-"#,
-        )
-        .map_err(|e| format!("写入 launcher 失败: {}", e))?;
-    }
-
-    let path_str = launcher_path.to_string_lossy().into_owned();
-
-    // Cache for subsequent calls
-    {
-        let mut cache = LAUNCHER_PATH.lock().unwrap_or_else(|e| e.into_inner());
-        *cache = Some(path_str.clone());
-    }
-
-    Ok(path_str)
 }
 
 pub fn cleanup_all() {
