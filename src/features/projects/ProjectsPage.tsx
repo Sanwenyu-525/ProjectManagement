@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Input, Select, Row, Col, Tag, Space, Modal, Form, message, Empty, Spin, Table, InputNumber, Tooltip, Checkbox } from 'antd';
-import { PlusOutlined, SearchOutlined, FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, RocketOutlined } from '@ant-design/icons';
+import { Button, Input, Select, Tag, Modal, Form, message, Empty, Spin, Table, InputNumber, Dropdown } from 'antd';
+import { FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
-import { projectsApi, detectApi, healthApi, workspacesApi } from '../../api';
-import type { CreateProjectInput, ProjectWithStats, ProjectStatus, ProjectPriority, Workspace, DetectedProject, ScanGroup, ProjectHealthResult } from '../../types';
+import { useProjects, useCreateProject, useDeleteProject, useDetectLocal, useDetectGit } from '../../hooks/useProjects';
+import { useAllHealth } from '../../hooks/useHealth';
+import { useWorkspaces } from '../../hooks/useWorkspaces';
+import type { CreateProjectInput, ProjectWithStats, ProjectStatus, ProjectPriority, DetectedProject, ScanGroup, ProjectHealthResult } from '../../types';
 import ProjectIcon from '../../shared/ProjectIcon';
 import QuickLaunchModal from '../../shared/QuickLaunchModal';
 import HealthBadge from '../../shared/HealthBadge';
@@ -14,6 +16,7 @@ import { buildLaunchRequests } from '../../lib/launchUtils';
 import { getProjectPriority, getPriorityLabel, getPriorityColor } from './projectUtils';
 import { useBatchLaunch } from './useBatchLaunch';
 import { useScanProjects } from './useScanProjects';
+import { useThemeStore } from '../../stores/themeStore';
 
 const STATUS_OPTIONS = [...PROJECT_STATUSES];
 const SOURCE_OPTIONS = [
@@ -24,63 +27,41 @@ const SOURCE_OPTIONS = [
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<ProjectWithStats[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
-  const [workspaceFilter, setWorkspaceFilter] = useState<string | undefined>();
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
-  const [detecting, setDetecting] = useState(false);
-  const { requestLaunch } = useTerminalStore();
-  const [healthResults, setHealthResults] = useState<Record<string, ProjectHealthResult>>({});
   const [smartSortEnabled] = useState(true);
   const [quickLaunchModalOpen, setQuickLaunchModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban'>('grid');
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'updated'>('updated');
+  const isDark = useThemeStore(s => s.mode === 'dark');
 
-  // ── Hooks ──
+  // ── Queries ──
+  const projectsParams: Record<string, string | undefined> = {};
+  if (statusFilter) projectsParams.status = statusFilter;
+  const { data: projects = [], isLoading: loading, refetch } = useProjects(
+    Object.keys(projectsParams).length > 0 ? projectsParams : undefined,
+  );
+  const { data: _workspaces = [] } = useWorkspaces();
+  const { data: healthData = [] } = useAllHealth();
+  const healthResults: Record<string, ProjectHealthResult> = {};
+  if (Array.isArray(healthData)) {
+    healthData.forEach((h) => { healthResults[h.projectId] = h; });
+  }
 
-  const loadProjects = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params: Record<string, string | undefined> = {};
-      if (search) params.search = search;
-      if (statusFilter) params.status = statusFilter;
-      if (workspaceFilter) params.workspaceId = workspaceFilter;
-      const data = await projectsApi.list(params);
-      setProjects(data);
-    } catch {
-      message.error('加载项目失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [search, statusFilter, workspaceFilter]);
+  // ── Mutations ──
+  const createProject = useCreateProject();
+  const deleteProject = useDeleteProject();
+  const detectLocal = useDetectLocal();
+  const detectGit = useDetectGit();
 
   const batch = useBatchLaunch({
     projects,
     smartSortEnabled,
-    onLaunchComplete: loadProjects,
+    onLaunchComplete: () => refetch(),
   });
 
-  const scan = useScanProjects({ onImportComplete: loadProjects });
-
-  // ── Data Loading ──
-
-  useEffect(() => { loadProjects(); }, [loadProjects]);
-
-  useEffect(() => {
-    workspacesApi.list().then((data) => setWorkspaces(data as Workspace[])).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    healthApi.getAllLatest().then((healthData) => {
-      const map: Record<string, ProjectHealthResult> = {};
-      if (Array.isArray(healthData)) {
-        healthData.forEach((h) => { map[h.projectId] = h; });
-      }
-      setHealthResults(map);
-    }).catch(() => {});
-  }, []);
+  const scan = useScanProjects({ onImportComplete: () => refetch() });
 
   // ── CRUD Operations ──
 
@@ -93,15 +74,12 @@ export default function ProjectsPage() {
       return;
     }
 
-    setDetecting(true);
-
-
     try {
       let result: DetectedProject;
       if (repoUrl) {
-        result = await detectApi.gitRepo(repoUrl);
+        result = await detectGit.mutateAsync({ repoUrl });
       } else {
-        result = await detectApi.local(localPath);
+        result = await detectLocal.mutateAsync({ path: localPath });
       }
 
       const updates: Record<string, unknown> = {};
@@ -117,8 +95,6 @@ export default function ProjectsPage() {
       message.success(`检测完成，识别到 ${result.techStack?.length || 0} 项技术栈`);
     } catch (err: unknown) {
       message.error(`检测失败: ${String(err)}`);
-    } finally {
-      setDetecting(false);
     }
   };
 
@@ -161,12 +137,10 @@ export default function ProjectsPage() {
         localPath,
         techStack,
       };
-      await projectsApi.create(payload);
+      await createProject.mutateAsync(payload);
       message.success('项目创建成功');
       setModalOpen(false);
       form.resetFields();
-  
-      loadProjects();
     } catch (e: unknown) {
       message.error(`创建失败: ${String(e)}`);
     }
@@ -184,37 +158,45 @@ export default function ProjectsPage() {
         onCancel: () => resolve(false),
       });
     });
-
     if (confirmed) {
       try {
-        await projectsApi.delete(id);
+        await deleteProject.mutateAsync(id);
         message.success('项目已删除');
-        loadProjects();
       } catch (e: unknown) {
         message.error(`删除失败: ${String(e)}`);
       }
     }
   };
 
-  const handleRefreshProject = async (project: ProjectWithStats) => {
-    if (!project.localPath) {
-      message.warning('项目没有本地路径，无法检测');
-      return;
-    }
-    try {
-      const updated = await projectsApi.refresh(project.id);
-      setProjects(prev => prev.map(p => p.id === project.id ? { ...p, ...updated } : p));
-      message.success(`${project.name} 信息已更新`);
-    } catch (e: unknown) {
-      message.warning(String(e) || '刷新失败');
-    }
-  };
-
-  const openModal = () => {
-
-    form.resetFields();
-    setModalOpen(true);
-  };
+  const getCardMenuItems = (project: ProjectWithStats) => [
+    {
+      key: 'launch',
+      icon: <PlayCircleOutlined />,
+      label: '启动项目',
+      onClick: () => handleLaunchProject(project),
+    },
+    {
+      key: 'terminal',
+      icon: <CodeOutlined />,
+      label: '打开终端',
+      onClick: () => {
+        if (project.localPath) {
+          useTerminalStore.getState().requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id });
+          navigate('/');
+        } else {
+          message.warning('项目没有本地路径');
+        }
+      },
+    },
+    { type: 'divider' as const },
+    {
+      key: 'delete',
+      icon: <DeleteOutlined style={{ color: 'var(--md-error)' }} />,
+      label: <span style={{ color: 'var(--md-error)' }}>删除项目</span>,
+      danger: true,
+      onClick: () => handleDelete(project.id),
+    },
+  ];
 
   const handleBrowseFolder = async () => {
     try {
@@ -297,7 +279,7 @@ export default function ProjectsPage() {
         successCount: 1,
         failedCount: 0,
       });
-      loadProjects();
+      refetch();
     } catch (e: unknown) {
       message.error(`启动失败: ${String(e)}`);
     }
@@ -310,259 +292,527 @@ export default function ProjectsPage() {
     }
   };
 
+  // ── Sorted projects ──
+  const sortedProjects = [...projects].sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name);
+    if (sortBy === 'status') return a.status.localeCompare(b.status);
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
+
+  // ── Relative time helper ──
+  const formatRelativeTime = (iso?: string) => {
+    if (!iso) return '';
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return '刚刚';
+    if (mins < 60) return `${mins}分钟前`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}小时前`;
+    const days = Math.floor(hours / 24);
+    return `${days}天前`;
+  };
+
+  // ── Status color CSS variable ──
+  const getStatusColorVar = (status: string) => {
+    const mapped = STATUS_COLORS[status];
+    if (mapped === 'green') return 'var(--md-tertiary)';
+    if (mapped === 'purple') return 'var(--md-secondary)';
+    if (mapped === 'orange') return 'var(--md-primary)';
+    return 'var(--md-outline)';
+  };
+
   // ── Render ──
 
   return (
-    <div style={{ padding: 24 }}>
-      {/* Header */}
+    <div style={{ padding: 'var(--layout-container-padding)', maxWidth: 1600, margin: '0 auto' }}>
+      {/* ── Page Header ── */}
       <div style={{
         display: 'flex',
+        alignItems: 'flex-end',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 24,
+        gap: 16,
         paddingBottom: 16,
-        borderBottom: '1px solid var(--color-border-subtle)',
+        borderBottom: `1px solid ${isDark ? 'rgba(187, 202, 198, 0.15)' : 'rgba(187, 202, 198, 0.4)'}`,
+        marginBottom: 24,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>项目管理</h2>
-          {batch.selectedProjectIds.size > 0 && (
-            <Tag color="success" style={{ fontSize: 12 }}>
-              已选中 {batch.selectedProjectIds.size} 个项目
-            </Tag>
-          )}
+        <div>
+          <h1 style={{
+            fontSize: 32,
+            fontWeight: 600,
+            color: 'var(--md-on-surface)',
+            lineHeight: '40px',
+            letterSpacing: '-0.02em',
+            margin: 0,
+          }}>
+            项目管理
+          </h1>
+          <p style={{
+            fontSize: 14,
+            color: 'var(--md-on-surface-variant)',
+            marginTop: 4,
+            marginBottom: 0,
+          }}>
+            管理工作区、智能体和部署。
+          </p>
         </div>
-        <Space>
-          {batch.selectedProjectIds.size > 0 && (
-            <Button
-              type="primary"
-              icon={<PlayCircleOutlined />}
-              loading={batch.batchLaunching}
-              onClick={batch.handleBatchLaunch}
-              size="large"
-              style={{
-                background: 'linear-gradient(135deg, var(--color-status-done) 0%, color-mix(in srgb, var(--color-status-done) 80%, black) 100%)',
-                border: 'none',
-                boxShadow: '0 4px 12px color-mix(in srgb, var(--color-status-done) 30%, transparent)',
-              }}
-            >
-              启动选中 ({batch.selectedProjectIds.size})
-            </Button>
-          )}
-          <Button
-            icon={<RocketOutlined />}
-            onClick={() => setQuickLaunchModalOpen(true)}
-            size="large"
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Filter/Sort group */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            background: isDark ? 'var(--md-surface-container-lowest)' : '#ffffff',
+            border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+            borderRadius: 8,
+            padding: '2px 4px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+            gap: 2,
+          }}>
+            <Select
+              placeholder="筛选"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              allowClear
+              style={{ width: 110 }}
+              size="small"
+              variant="borderless"
+              suffixIcon={<span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-on-surface-variant)' }}>filter_list</span>}
+              options={PROJECT_STATUSES.map(s => ({ value: s, label: s }))}
+            />
+            <div style={{ width: 1, height: 16, background: isDark ? 'var(--md-outline-variant)' : '#E2E8F0' }} />
+            <Select
+              value={sortBy}
+              onChange={setSortBy}
+              style={{ width: 110 }}
+              size="small"
+              variant="borderless"
+              suffixIcon={<span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-on-surface-variant)' }}>sort</span>}
+              options={[
+                { value: 'updated', label: '最近' },
+                { value: 'name', label: '名称' },
+                { value: 'status', label: '状态' },
+              ]}
+            />
+          </div>
+
+          {/* View switcher group */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            background: isDark ? 'var(--md-surface-container-lowest)' : '#ffffff',
+            border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+            borderRadius: 8,
+            padding: 4,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+          }}>
+            {(['grid', 'list', 'kanban'] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 32, height: 32, borderRadius: 6, border: 'none',
+                  background: viewMode === mode
+                    ? (isDark ? 'var(--md-primary-container)' : 'rgba(0, 107, 95, 0.10)')
+                    : 'transparent',
+                  color: viewMode === mode ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                  cursor: 'pointer', transition: 'all 0.15s ease',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                  {mode === 'grid' ? 'grid_view' : mode === 'list' ? 'view_list' : 'view_column'}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* New Project button */}
+          <button
+            onClick={() => navigate('/projects/new')}
             style={{
-              background: 'linear-gradient(135deg, var(--color-info) 0%, var(--color-info) 100%)',
-              color: 'white',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 16px', borderRadius: 8, border: 'none',
+              background: 'var(--md-primary)', color: '#ffffff',
+              cursor: 'pointer', fontFamily: 'var(--font-label)',
+              fontSize: 12, fontWeight: 500, letterSpacing: '0.02em',
+              boxShadow: '0 2px 8px rgba(0, 107, 95, 0.22)',
+              transition: 'all 0.15s ease',
             }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
           >
-            快速启动
-          </Button>
-          <Button
-            icon={<ScanOutlined />}
-            onClick={() => scan.setScanModalOpen(true)}
-            size="large"
-          >
-            扫描
-          </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={openModal}
-            size="large"
-          >
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>add</span>
             新建项目
-          </Button>
-        </Space>
+          </button>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        marginBottom: 20,
-        padding: '12px 16px',
-        background: 'var(--color-bg-surface)',
-        borderRadius: 8,
-      }}>
-        <Input
-          placeholder="搜索项目..."
-          prefix={<SearchOutlined style={{ color: 'var(--color-text-placeholder)' }} />}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width: 280, borderRadius: 6 }}
-          allowClear
-          size="large"
-        />
-        <Select
-          placeholder="按状态筛选"
-          value={statusFilter}
-          onChange={setStatusFilter}
-          allowClear
-          style={{ width: 160 }}
-          size="large"
-          options={STATUS_OPTIONS.map(s => ({ value: s, label: s }))}
-        />
-        {workspaces.length > 0 && (
-          <Select
-            placeholder="按工作区筛选"
-            value={workspaceFilter}
-            onChange={setWorkspaceFilter}
-            allowClear
-            style={{ width: 160 }}
-            size="large"
-            options={[
-              { value: 'none', label: '未分组' },
-              ...workspaces.map((w: Workspace) => ({ value: w.id, label: w.name })),
-            ]}
-          />
-        )}
-        <div style={{ flex: 1 }} />
-        {projects.length > 0 && (
-          <Checkbox
-            checked={batch.selectedProjectIds.size === projects.length}
-            indeterminate={batch.selectedProjectIds.size > 0 && batch.selectedProjectIds.size < projects.length}
-            onChange={batch.handleSelectAll}
-          >
-            全选 ({batch.selectedProjectIds.size}/{projects.length})
-          </Checkbox>
-        )}
-      </div>
-
+      {/* ── Project Grid ── */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>
       ) : projects.length === 0 ? (
         <Empty description="暂无项目" />
-      ) : (
-        <Row gutter={[20, 20]}>
-          {projects.map(project => {
-            const isSelected = batch.selectedProjectIds.has(project.id);
+      ) : viewMode === 'grid' ? (
+        /* ── Grid View ── */
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+          gap: 16,
+        }}>
+          {sortedProjects.map(project => {
+            const statusColor = getStatusColorVar(project.status);
+            const hasHealth = !!healthResults[project.id];
+
             return (
-              <Col key={project.id} xs={24} sm={12} md={8} lg={6}>
-                <Card
-                  hoverable
-                  onClick={() => navigate(`/projects/${project.id}`)}
-                  style={{
-                    borderRadius: 12,
-                    height: 220,
-                    position: 'relative',
-                    border: isSelected ? '2px solid var(--color-status-done)' : '1px solid var(--color-border-subtle)',
-                    boxShadow: isSelected
-                      ? '0 8px 24px rgba(34, 197, 94, 0.15)'
-                      : '0 2px 8px rgba(0,0,0,0.04)',
-                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                    cursor: 'pointer',
-                  }}
-                  styles={{ body: {
-                    padding: 16,
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                  } }}
-                >
-                  {/* Selection checkbox */}
-                  <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1 }}>
-                    <Checkbox
-                      checked={isSelected}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        batch.handleToggleSelection(project.id, e as unknown as React.SyntheticEvent);
-                      }}
-                    />
-                  </div>
+              <div
+                key={project.id}
+                onClick={() => navigate(`/projects/${project.id}`)}
+                style={{
+                  background: isDark ? 'var(--md-surface-container-lowest)' : '#ffffff',
+                  borderRadius: 12,
+                  border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  overflow: 'hidden',
+                  position: 'relative',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.08)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                {/* Top accent bar */}
+                <div style={{ height: 3, background: statusColor }} />
 
-                  {/* Action buttons */}
-                  <div style={{
-                    position: 'absolute', top: 12, right: 12,
-                    display: 'flex', gap: 4, zIndex: 1,
-                  }}>
-                    <Tooltip title="刷新检测">
-                      <Button type="text" size="small" icon={<ReloadOutlined />}
-                        onClick={(e) => { e.stopPropagation(); handleRefreshProject(project); }}
-                        style={{ color: 'var(--color-text-placeholder)' }}
-                      />
-                    </Tooltip>
-                    <Tooltip title="启动项目">
-                      <Button type="text" size="small" icon={<PlayCircleOutlined />}
-                        onClick={(e) => { e.stopPropagation(); handleLaunchProject(project); }}
-                        style={{ color: 'var(--color-status-done)' }}
-                      />
-                    </Tooltip>
-                    <Tooltip title="打开终端">
-                      <Button type="text" size="small" icon={<CodeOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (project.localPath) {
-                            requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id });
-                            navigate('/');
-                          }
-                        }}
-                        style={{ color: 'var(--color-text-placeholder)' }}
-                      />
-                    </Tooltip>
-                    <Tooltip title="删除项目">
-                      <Button type="text" size="small" icon={<DeleteOutlined />}
-                        onClick={(e) => { e.stopPropagation(); handleDelete(project.id); }}
-                        style={{ color: 'var(--color-status-cancel)' }}
-                      />
-                    </Tooltip>
-                  </div>
-
-                  {/* Project icon & name */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, marginTop: 4 }}>
-                    <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={32} />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {project.name}
+                <div style={{ padding: '20px 20px 16px' }}>
+                  {/* Header: Icon + Name + Menu */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 8,
+                        background: isDark ? 'var(--md-surface-container)' : 'var(--md-surface-container)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.5)'}`,
+                        flexShrink: 0,
+                        overflow: 'hidden',
+                      }}>
+                        <ProjectIcon
+                          name={project.name}
+                          techStack={project.techStack}
+                          iconType={project.iconType}
+                          iconUrl={project.iconUrl}
+                          iconColor={project.iconColor}
+                          size={40}
+                        />
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--color-text-placeholder)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Tag color={STATUS_COLORS[project.status]} style={{ margin: 0, fontSize: 10, padding: '0 4px', lineHeight: '16px' }}>
-                          {project.status}
-                        </Tag>
-                        {project.repoCount > 0 && (
-                          <Tag color="blue" style={{ margin: 0, fontSize: 10, padding: '0 4px', lineHeight: '16px' }}>
-                            {project.repoCount} 仓库
-                          </Tag>
-                        )}
+                      <div>
+                        <div style={{
+                          fontWeight: 600,
+                          fontSize: 18,
+                          lineHeight: '24px',
+                          letterSpacing: '-0.01em',
+                          color: 'var(--md-on-surface)',
+                          transition: 'color 0.15s ease',
+                        }}>
+                          {project.name}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                          <span style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            background: statusColor,
+                            flexShrink: 0,
+                          }} />
+                          <span style={{
+                            fontFamily: 'var(--font-label)',
+                            fontSize: 12,
+                            fontWeight: 500,
+                            letterSpacing: '0.02em',
+                            color: 'var(--md-on-surface-variant)',
+                          }}>
+                            {project.status}
+                          </span>
+                        </div>
                       </div>
                     </div>
+                    <Dropdown
+                      menu={{ items: getCardMenuItems(project) }}
+                      trigger={['click']}
+                      placement="bottomRight"
+                    >
+                      <button
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          width: 28, height: 28, borderRadius: 6, border: 'none',
+                          background: 'transparent', color: 'var(--md-outline)',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; e.currentTarget.style.color = 'var(--md-on-surface)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--md-outline)'; }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 20 }}>more_vert</span>
+                      </button>
+                    </Dropdown>
                   </div>
+
+                  {/* Description */}
+                  {project.description && (
+                    <p style={{
+                      fontSize: 13,
+                      lineHeight: '18px',
+                      color: 'var(--md-on-surface-variant)',
+                      margin: '0 0 12px 0',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}>
+                      {project.description}
+                    </p>
+                  )}
 
                   {/* Tech stack */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 'auto', paddingTop: 4 }}>
                     {project.techStack?.slice(0, 3).map(tech => (
-                      <Tag key={tech} style={{ fontSize: 10, padding: '0 4px', borderRadius: 4, background: 'var(--color-purple-light)', color: 'var(--color-purple)', border: 'none' }}>
+                      <span key={tech} style={{
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        background: isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)',
+                        color: 'var(--md-on-surface-variant)',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 12,
+                        fontWeight: 450,
+                        lineHeight: '16px',
+                        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.3)'}`,
+                      }}>
                         {tech}
-                      </Tag>
+                      </span>
                     ))}
                     {(project.techStack?.length || 0) > 3 && (
-                      <Tag style={{ fontSize: 10, padding: '0 4px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: 'var(--color-text-placeholder)', border: 'none' }}>
+                      <span style={{
+                        padding: '4px 6px',
+                        fontSize: 12,
+                        color: 'var(--md-on-surface-variant)',
+                        fontFamily: 'var(--font-mono)',
+                      }}>
                         +{project.techStack.length - 3}
-                      </Tag>
+                      </span>
                     )}
                   </div>
 
-                  {/* Bottom: priority + health */}
-                  <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    {smartSortEnabled && (
-                      <Tag color={getPriorityColor(getProjectPriority(project))} style={{ fontSize: 10, margin: 0 }}>
-                        {getPriorityLabel(getProjectPriority(project))}
-                      </Tag>
-                    )}
-                    {healthResults[project.id] && (
-                      <HealthBadge result={healthResults[project.id]} />
-                    )}
+                  {/* Footer stats */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingTop: 16,
+                    marginTop: 12,
+                    borderTop: `1px solid ${isDark ? 'rgba(187, 202, 198, 0.12)' : 'rgba(187, 202, 198, 0.4)'}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--md-on-surface-variant)' }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>folder_open</span>
+                        <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500, letterSpacing: '0.02em' }}>
+                          {project.repoCount}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--md-on-surface-variant)' }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>smart_toy</span>
+                        <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500, letterSpacing: '0.02em' }}>
+                          {project.taskCount}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {hasHealth ? (
+                        <HealthBadge result={healthResults[project.id]} />
+                      ) : (
+                        <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-tertiary)' }}>
+                          check_circle
+                        </span>
+                      )}
+                      <span style={{ fontSize: 13, color: 'var(--md-on-surface-variant)' }}>
+                        {formatRelativeTime(project.updatedAt)}
+                      </span>
+                    </div>
                   </div>
-                </Card>
-              </Col>
+                </div>
+              </div>
             );
           })}
-        </Row>
+        </div>
+      ) : viewMode === 'list' ? (
+        /* ── List View ── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {sortedProjects.map(project => {
+            const statusColor = getStatusColorVar(project.status);
+            return (
+              <div
+                key={project.id}
+                onClick={() => navigate(`/projects/${project.id}`)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  padding: '12px 16px',
+                  borderRadius: 10,
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+              >
+                <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={28} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 500, fontSize: 14, color: 'var(--md-on-surface)' }}>{project.name}</div>
+                  {project.description && (
+                    <div style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {project.description}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {project.techStack?.slice(0, 2).map(tech => (
+                    <span key={tech} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)', color: 'var(--md-on-surface-variant)', fontFamily: 'var(--font-mono)' }}>
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--md-on-surface-variant)' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>folder_open</span>
+                  <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500 }}>{project.repoCount}</span>
+                  <span style={{ width: 1, height: 16, background: isDark ? 'var(--md-outline-variant)' : '#E2E8F0', margin: '0 4px' }} />
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>smart_toy</span>
+                  <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500 }}>{project.taskCount}</span>
+                </div>
+                <span style={{ fontSize: 13, color: 'var(--md-on-surface-variant)' }}>
+                  {formatRelativeTime(project.updatedAt)}
+                </span>
+                <div style={{ display: 'flex', gap: 2 }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleLaunchProject(project); }}
+                    style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                    title="启动"
+                  >
+                    <PlayCircleOutlined style={{ fontSize: 14 }} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (project.localPath) {
+                        useTerminalStore.getState().requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id });
+                        navigate('/');
+                      }
+                    }}
+                    style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                    title="终端"
+                  >
+                    <CodeOutlined style={{ fontSize: 14 }} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(project.id); }}
+                    style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; e.currentTarget.style.color = 'var(--md-error)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--md-on-surface-variant)'; }}
+                    title="删除"
+                  >
+                    <DeleteOutlined style={{ fontSize: 14 }} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* ── Kanban View (placeholder) ── */
+        <div style={{ display: 'flex', gap: 16 }}>
+          {[
+            { key: 'Development', label: '开发中' },
+            { key: 'Testing', label: '测试中' },
+            { key: 'Deployed', label: '已部署' },
+            { key: 'Archived', label: '已归档' },
+          ].map(({ key, label }) => {
+            const filtered = sortedProjects.filter(p => p.status === key);
+            return (
+              <div key={key} style={{ flex: 1, minWidth: 220 }}>
+                <div style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--md-on-surface)',
+                  padding: '8px 12px',
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}>
+                  <span style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: key === 'Development' ? 'var(--md-primary)' : key === 'Testing' ? 'var(--md-secondary)' : key === 'Deployed' ? 'var(--md-tertiary)' : 'var(--md-outline)',
+                  }} />
+                  {label}
+                  <span style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', fontWeight: 400 }}>
+                    ({filtered.length})
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {filtered.map(project => (
+                    <div
+                      key={project.id}
+                      onClick={() => navigate(`/projects/${project.id}`)}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        background: isDark ? 'var(--md-surface-container)' : '#ffffff',
+                        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
+                    >
+                      <div style={{ fontWeight: 500, fontSize: 13, color: 'var(--md-on-surface)' }}>{project.name}</div>
+                      {project.description && (
+                        <div style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {project.description}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+                        {project.techStack?.slice(0, 2).map(tech => (
+                          <span key={tech} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)', color: 'var(--md-on-surface-variant)' }}>
+                            {tech}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {/* Create Project Modal */}
@@ -617,7 +867,7 @@ export default function ProjectsPage() {
           </Form.Item>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <Button onClick={() => { setModalOpen(false); form.resetFields(); }}>取消</Button>
-            <Button onClick={handleDetect} loading={detecting} icon={<ScanOutlined />}>检测</Button>
+            <Button onClick={handleDetect} loading={detectLocal.isPending || detectGit.isPending} icon={<ScanOutlined />}>检测</Button>
             <Button type="primary" htmlType="submit">创建</Button>
           </div>
         </Form>
@@ -703,8 +953,7 @@ export default function ProjectsPage() {
               pagination={false}
               size="small"
             />
-            <div style={{ marginTop: 12, textAlign: 'right' }}>
-              <Space>
+            <div style={{ marginTop: 12, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
                 <span style={{ color: 'var(--color-text-light)' }}>
                   已选择 {scan.selectedKeys.length} / {scan.scanResults.length} 项
                 </span>
@@ -716,7 +965,6 @@ export default function ProjectsPage() {
                 >
                   导入选中项目
                 </Button>
-              </Space>
             </div>
           </>
         )}
@@ -770,7 +1018,7 @@ export default function ProjectsPage() {
                   </div>
                 </div>
 
-                <Space>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                   {progress.status === 'failed' && (
                     <Button size="small" icon={<ReloadOutlined />} onClick={() => batch.handleRetryProject(projectId)} style={{ borderRadius: 6 }}>
                       重试
@@ -785,7 +1033,7 @@ export default function ProjectsPage() {
                     {progress.status === 'success' && '成功'}
                     {progress.status === 'failed' && '失败'}
                   </Tag>
-                </Space>
+                </div>
               </div>
             );
           })}

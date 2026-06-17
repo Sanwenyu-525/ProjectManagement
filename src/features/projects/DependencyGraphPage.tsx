@@ -1,7 +1,10 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Typography, Spin, Empty, Button, Space } from 'antd';
 import { ReloadOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
-import { projectsApi, dependenciesApi } from '../../api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useProjects } from '../../hooks/useProjects';
+import { dependenciesApi } from '../../api';
+import { queryKeys } from '../../api/queryKeys';
 import { getThemeColors } from '../../lib/themeColors';
 import { useThemeStore } from '../../stores/themeStore';
 
@@ -30,90 +33,76 @@ const STATUS_COLORS: Record<string, string> = {
   Archived: '#9eadc0',
 };
 
+const computeLayout = (nodeCount: number, isCompact: boolean) => {
+  const cols = Math.ceil(Math.sqrt(nodeCount || 1));
+  const nodeWidth = isCompact ? 120 : 180;
+  const nodeHeight = isCompact ? 60 : 80;
+  const gapX = isCompact ? 40 : 60;
+  const gapY = isCompact ? 40 : 60;
+  const svgWidth = Math.max(600, cols * (nodeWidth + gapX) + 120);
+  const svgHeight = Math.max(400, Math.ceil(nodeCount / cols) * (nodeHeight + gapY) + 120);
+  return { cols, nodeWidth, nodeHeight, gapX, gapY, svgWidth, svgHeight };
+};
+
 export default function DependencyGraphPage() {
-  const [loading, setLoading] = useState(true);
-  const [nodes, setNodes] = useState<GraphNode[]>([]);
-  const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [compact, setCompact] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const mode = useThemeStore(s => s.mode);
   const tc = useMemo(() => getThemeColors(), [mode]);
+  const queryClient = useQueryClient();
 
-  const computeLayout = (nodeCount: number, isCompact: boolean) => {
-    const cols = Math.ceil(Math.sqrt(nodeCount || 1));
-    const nodeWidth = isCompact ? 120 : 180;
-    const nodeHeight = isCompact ? 60 : 80;
-    const gapX = isCompact ? 40 : 60;
-    const gapY = isCompact ? 40 : 60;
-    const svgWidth = Math.max(600, cols * (nodeWidth + gapX) + 120);
-    const svgHeight = Math.max(400, Math.ceil(nodeCount / cols) * (nodeHeight + gapY) + 120);
-    return { cols, nodeWidth, nodeHeight, gapX, gapY, svgWidth, svgHeight };
-  };
+  const { data: projects = [], isLoading: projectsLoading } = useProjects();
 
-  const loadGraph = useCallback(async () => {
-    setLoading(true);
-    try {
-      const projects = await projectsApi.list();
-      if (projects.length === 0) {
-        setNodes([]);
-        setEdges([]);
-        return;
-      }
+  const projectIds = useMemo(() => projects.map(p => p.id), [projects]);
 
-      // Try to detect dependencies
-      let detectedEdges: GraphEdge[] = [];
-      try {
-        const depGraph = await dependenciesApi.detect(projects.map(p => p.id)) as { edges?: Array<{ from: string; to: string }> } | null;
-        if (depGraph?.edges) {
-          detectedEdges = depGraph.edges.map((e) => ({ from: e.from, to: e.to }));
-        }
-      } catch {
-        // Dependencies detection not available — use tech stack similarity
-      }
+  const { data: depGraph } = useQuery({
+    queryKey: queryKeys.dependencies.graph(projectIds),
+    queryFn: () => dependenciesApi.detect(projectIds),
+    enabled: projectIds.length > 0,
+  });
 
-      // Fallback: infer edges from shared tech stack and path proximity
-      if (detectedEdges.length === 0) {
-        for (let i = 0; i < projects.length; i++) {
-          for (let j = i + 1; j < projects.length; j++) {
-            const a = projects[i];
-            const b = projects[j];
-            // Same parent directory → likely related
-            if (a.localPath && b.localPath) {
-              const parentA = a.localPath.replace(/[\\/][^/\\]+$/, '');
-              const parentB = b.localPath.replace(/[\\/][^/\\]+$/, '');
-              if (parentA === parentB && a.localPath !== b.localPath) {
-                detectedEdges.push({ from: a.id, to: b.id });
-              }
+  const { nodes, edges } = useMemo(() => {
+    if (projects.length === 0) return { nodes: [], edges: [] };
+
+    let detectedEdges: GraphEdge[] = [];
+    const dep = depGraph as { edges?: Array<{ from: string; to: string }> } | null;
+    if (dep?.edges) {
+      detectedEdges = dep.edges.map((e) => ({ from: e.from, to: e.to }));
+    }
+
+    // Fallback: infer edges from shared tech stack and path proximity
+    if (detectedEdges.length === 0) {
+      for (let i = 0; i < projects.length; i++) {
+        for (let j = i + 1; j < projects.length; j++) {
+          const a = projects[i];
+          const b = projects[j];
+          // Same parent directory → likely related
+          if (a.localPath && b.localPath) {
+            const parentA = a.localPath.replace(/[\\/][^/\\]+$/, '');
+            const parentB = b.localPath.replace(/[\\/][^/\\]+$/, '');
+            if (parentA === parentB && a.localPath !== b.localPath) {
+              detectedEdges.push({ from: a.id, to: b.id });
             }
           }
         }
       }
-
-      // Layout: simple grid
-      const lyt = computeLayout(projects.length, compact);
-      const graphNodes: GraphNode[] = projects.map((p, i) => ({
-        id: p.id,
-        name: p.name,
-        x: (i % lyt.cols) * (lyt.nodeWidth + lyt.gapX) + 60,
-        y: Math.floor(i / lyt.cols) * (lyt.nodeHeight + lyt.gapY) + 60,
-        techStack: p.techStack || [],
-        status: p.status || 'Idea',
-        dependsOn: detectedEdges.filter(e => e.from === p.id).map(e => e.to),
-      }));
-
-      setNodes(graphNodes);
-      setEdges(detectedEdges);
-    } catch (err) {
-      console.error('Failed to load dependency graph:', err);
-    } finally {
-      setLoading(false);
     }
-  }, [compact]);
 
-  useEffect(() => {
-    loadGraph();
-  }, [loadGraph]);
+    // Layout: simple grid
+    const lyt = computeLayout(projects.length, compact);
+    const graphNodes: GraphNode[] = projects.map((p, i) => ({
+      id: p.id,
+      name: p.name,
+      x: (i % lyt.cols) * (lyt.nodeWidth + lyt.gapX) + 60,
+      y: Math.floor(i / lyt.cols) * (lyt.nodeHeight + lyt.gapY) + 60,
+      techStack: p.techStack || [],
+      status: p.status || 'Idea',
+      dependsOn: detectedEdges.filter(e => e.from === p.id).map(e => e.to),
+    }));
+
+    return { nodes: graphNodes, edges: detectedEdges };
+  }, [projects, depGraph, compact]);
 
   const { nodeWidth, nodeHeight, svgWidth, svgHeight } = computeLayout(nodes.length, compact);
 
@@ -129,7 +118,7 @@ export default function DependencyGraphPage() {
 
   const connectedIds = hoveredNode ? getConnectedIds(hoveredNode) : null;
 
-  if (loading) {
+  if (projectsLoading) {
     return (
       <div style={{ padding: 40, textAlign: 'center' }}>
         <Spin size="large" />
@@ -146,7 +135,7 @@ export default function DependencyGraphPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <Title level={4} style={{ margin: 0 }}>项目关系图</Title>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={loadGraph}>刷新</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => { queryClient.invalidateQueries({ queryKey: queryKeys.projects.all }); queryClient.invalidateQueries({ queryKey: queryKeys.dependencies.graph(projectIds) }); }}>刷新</Button>
           <Button
             icon={compact ? <ExpandOutlined /> : <CompressOutlined />}
             onClick={() => setCompact(!compact)}
@@ -271,12 +260,17 @@ export default function DependencyGraphPage() {
 
       {/* Legend */}
       <div style={{ display: 'flex', gap: 16, marginTop: 16, flexWrap: 'wrap' }}>
-        {Object.entries(STATUS_COLORS).map(([status, color]) => (
-          <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-description)' }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-            {status}
-          </div>
-        ))}
+        {Object.entries(STATUS_COLORS).map(([status, color]) => {
+          const labelMap: Record<string, string> = {
+            Idea: '构思', Planning: '规划中', Active: '进行中', Completed: '已完成', Archived: '已归档',
+          };
+          return (
+            <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-description)' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+              {labelMap[status] || status}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

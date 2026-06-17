@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useXtermTerminal } from './workspace/useXtermTerminal';
+import { useXtermTerminal } from '../features/workspace/components/useXtermTerminal';
 import { getThemeColors } from './terminalThemes';
 import type { Terminal as TerminalType, TerminalTheme } from './terminalTypes';
 

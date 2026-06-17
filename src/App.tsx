@@ -3,37 +3,41 @@ import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import ErrorBoundary from './shared/ErrorBoundary';
 import MainLayout from './shared/MainLayout';
 import ProjectsPage from './features/projects/ProjectsPage';
+import NewProjectWizard from './features/projects/NewProjectWizard';
 
-// Lazy-load heavy/rarely-visited pages to reduce initial bundle
 const ProjectDetailPage = lazy(() => import('./features/projects/ProjectDetailPage'));
 const DependencyGraphPage = lazy(() => import('./features/projects/DependencyGraphPage'));
-const GitDashboardPage = lazy(() => import('./features/git/GitDashboardPage'));
-const DataScreenPage = lazy(() => import('./features/data-screen/DataScreenPage'));
-const TimelinePage = lazy(() => import('./features/timeline/TimelinePage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
+const TimelinePage = lazy(() => import('./features/workspace/timeline/TimelinePage'));
+const DataScreenPage = lazy(() => import('./features/workspace/data-screen/DataScreenPage'));
 
-const PageFallback = (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.5 }}>
-    <div className="skeleton" style={{ width: 200, height: 24 }} />
-  </div>
-);
+function PageFallback() {
+  return (
+    <div style={{ padding: 48, textAlign: 'center' }}>
+      <div style={{ width: 200, height: 20, background: '#e5e7eb', borderRadius: 4, margin: '0 auto 12px' }} />
+      <div style={{ width: 140, height: 16, background: '#e5e7eb', borderRadius: 4, margin: '0 auto' }} />
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <ErrorBoundary>
       <Routes>
         <Route path="/" element={<MainLayout />}>
+          <Route index element={<Navigate to="/workspace" replace />} />
+          <Route path="workspace" element={null} />
           <Route path="projects" element={<ProjectsPage />} />
-          <Route element={<Suspense fallback={PageFallback}><Outlet /></Suspense>}>
+          <Route path="projects/new" element={<NewProjectWizard />} />
+          <Route element={<Suspense fallback={<PageFallback />}><Outlet /></Suspense>}>
             <Route path="projects/:id" element={<ProjectDetailPage />} />
             <Route path="graph" element={<DependencyGraphPage />} />
-            <Route path="git" element={<GitDashboardPage />} />
             <Route path="timeline" element={<TimelinePage />} />
             <Route path="data-screen" element={<DataScreenPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ErrorBoundary>
   );
