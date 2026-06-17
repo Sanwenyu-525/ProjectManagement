@@ -1,33 +1,144 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTerminalStore } from '../../stores/terminalStore';
-import type { PaneNode, PaneLeaf } from './types';
 import { usePreviewStore } from '../../stores/previewStore';
-import { terminalApi } from '../../api';
+import { useAgentStore } from '../../stores/agentStore';
+import { terminalApi, sessionsApi } from '../../api';
 import { TerminalExitEvent, TerminalOutputEvent } from '../terminalTypes';
-import WorkspaceToolbar from './WorkspaceToolbar';
-import WorkspaceNavigator from './WorkspaceNavigator';
-import WorkspacePane from './WorkspacePane';
+import WorkspaceHeader from './WorkspaceHeader';
+import AgentSelector from './AgentSelector';
+import type { AgentWithSession } from './AgentSelector';
+import AgentChat from './AgentChat';
+import BottomPanel from './BottomPanel';
+import AgentRightPanel from './AgentRightPanel';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
-import { useWorkspaceShortcuts } from './WorkspaceShortcuts';
 import { folderName } from './terminalFactory';
-import AutomationRouter from './AutomationRouter';
-import AgentSessionRecorder from './AgentSessionRecorder';
+import { getProviders, getProvider } from '../../features/workspace/agent/providers';
+import type { AgentProvider } from '../../features/workspace/agent/AgentProvider';
 
 // Regex patterns for detecting dev server URLs in terminal output
 const URL_PATTERNS = [
-  /Local:\s+(https?:\/\/[^\s]+)/,           // Vite: "Local:   http://localhost:5173/"
-  /- Local:\s+(https?:\/\/[^\s]+)/,         // Next.js: "- Local:        http://localhost:3000"
-  /Network:\s+(https?:\/\/[^\s]+)/,         // Vite/Next network URLs
-  /(https?:\/\/localhost:\d+[^\s]*)/,       // Generic: any localhost URL
+  /Local:\s+(https?:\/\/[^\s]+)/,
+  /- Local:\s+(https?:\/\/[^\s]+)/,
+  /Network:\s+(https?:\/\/[^\s]+)/,
+  /(https?:\/\/localhost:\d+[^\s]*)/,
 ];
+
+// Build agent list from provider registry
+const allProviders = getProviders();
 
 export default function WorkspacePage() {
   const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
+  const activeProviderId = useAgentStore(s => s.activeProviderId);
+  const setActiveProvider = useAgentStore(s => s.setActiveProvider);
 
-  useWorkspaceShortcuts();
+  const [agent, setAgent] = useState<AgentWithSession>({
+    id: allProviders[0]?.id ?? '',
+    name: allProviders[0]?.name ?? 'Agent',
+    icon: allProviders[0]?.icon ?? 'smart_toy',
+    session: null,
+  });
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const defaultCwd = useTerminalStore(s => s.defaultCwd);
+  const providerRef = useRef<AgentProvider | null>(null);
 
-  // Process launch queue — when requestLaunch is called from project pages
+  // Load recent sessions to restore state
+  useEffect(() => {
+    sessionsApi.list(5).then(sessions => {
+      const running = sessions.find(s => s.status === 'running' && s.cwd);
+      if (running) {
+        const provider = getProvider(running.runtimeId);
+        if (provider) {
+          providerRef.current = provider;
+          setActiveProvider(provider.id);
+        }
+        setAgent(prev => ({ ...prev, session: running }));
+        setActiveSessionId(running.id);
+      }
+    }).catch(() => {});
+  }, [setActiveProvider]);
+
+  // Start agent using provider
+  const handleStartAgent = useCallback(async (providerId?: string, cwd?: string) => {
+    const pid = providerId || allProviders[0]?.id;
+    if (!pid) return;
+    const provider = getProvider(pid);
+    if (!provider) return;
+    const workDir = cwd || defaultCwd;
+
+    const sessionId = await sessionsApi.start(provider.id, provider.id, undefined, workDir);
+    const connectionId = await provider.start({ sessionId, cwd: workDir });
+    setActiveProvider(provider.id);
+    providerRef.current = provider;
+
+    setAgent({
+      id: provider.id,
+      name: provider.name,
+      icon: provider.icon,
+      session: {
+        id: sessionId,
+        agentTabId: connectionId,
+        runtimeId: provider.id,
+        startedAt: new Date().toISOString(),
+        status: 'running',
+      },
+    });
+    setActiveSessionId(sessionId);
+  }, [defaultCwd, setActiveProvider]);
+
+  // Stop agent via provider
+  const handleStopAgent = useCallback(async () => {
+    if (providerRef.current) {
+      try {
+        await providerRef.current.stop();
+      } catch { /* ignore */ }
+      providerRef.current = null;
+    }
+    setActiveProvider(null);
+    if (activeSessionId) {
+      try {
+        await sessionsApi.end(activeSessionId);
+      } catch { /* ignore */ }
+    }
+    setAgent(prev => ({ ...prev, session: null }));
+    setActiveSessionId(null);
+  }, [activeSessionId, setActiveProvider]);
+
+  // Handle "New Chat" — stop existing and start fresh
+  const handleNewChat = useCallback(async () => {
+    const providerId = providerRef.current?.id || allProviders[0]?.id;
+    await handleStopAgent();
+    setTimeout(() => handleStartAgent(providerId), 200);
+  }, [handleStopAgent, handleStartAgent]);
+
+  // Handle agent selection
+  const handleSelectAgent = useCallback((selected: AgentWithSession) => {
+    if (!agent.session) {
+      handleStartAgent(selected.id);
+    }
+  }, [agent.session, handleStartAgent]);
+
+  // Listen for PTY exit (agent terminal)
+  useEffect(() => {
+    if (!providerRef.current) return;
+    const connectionId = providerRef.current.connectionId;
+    if (!connectionId) return;
+
+    const unlisten = listen<TerminalExitEvent>('terminal-exit', (event) => {
+      if (event.payload.terminalId === connectionId) {
+        setActiveProvider(null);
+        providerRef.current = null;
+        if (activeSessionId) {
+          sessionsApi.end(activeSessionId).catch(() => {});
+        }
+        setAgent(prev => ({ ...prev, session: null }));
+        setActiveSessionId(null);
+      }
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, [activeProviderId, activeSessionId, setActiveProvider]);
+
+  // Process launch queue from project pages
   const processingRef = useRef(false);
   useEffect(() => {
     if (launchQueueLength === 0) return;
@@ -60,28 +171,6 @@ export default function WorkspacePage() {
           await terminalApi.startShell(id, cfg.shell, newTerminal.cwd, cfg.args);
           state.addTerminal(newTerminal);
 
-          // Add to first leaf
-          const { useWorkspaceStore } = await import('../../stores/workspaceStore');
-          const wsState = useWorkspaceStore.getState();
-          const leaves = (() => {
-            const walk = (n: PaneNode): PaneLeaf[] => {
-              if (n.type === 'leaf') return [n];
-              return n.children?.flatMap(walk) ?? [];
-            };
-            return walk(wsState.root);
-          })();
-          if (leaves[0]) {
-            wsState.addTab(leaves[0].id, {
-              id,
-              label: newTerminal.label,
-              contentType: 'terminal',
-              status: 'running',
-              shell: cfg.shell,
-              cwd: newTerminal.cwd,
-              namePinned: !!req.label,
-            });
-          }
-
           if (req.command) {
             await terminalApi.input(id, req.command + '\r');
           }
@@ -97,25 +186,28 @@ export default function WorkspacePage() {
     process();
   }, [launchQueueLength]);
 
-  // Listen for terminal exit events and update store
+  // Listen for terminal exit events (non-agent terminals)
+  const agentConnectionId = providerRef.current?.connectionId ?? null;
   useEffect(() => {
     const unlisten = listen<TerminalExitEvent>('terminal-exit', (event) => {
       const { terminalId, code } = event.payload;
-      useTerminalStore.getState().updateTerminal(terminalId, { status: code === 0 ? 'exited' : 'error' });
-      usePreviewStore.getState().removePreviewsByTerminal(terminalId);
+      if (terminalId !== agentConnectionId) {
+        useTerminalStore.getState().updateTerminal(terminalId, { status: code === 0 ? 'exited' : 'error' });
+        usePreviewStore.getState().removePreviewsByTerminal(terminalId);
+      }
     });
     return () => { unlisten.then(fn => fn()); };
-  }, []);
+  }, [agentConnectionId]);
 
-  // Listen for terminal output and detect localhost URLs (preview auto-discovery)
+  // Listen for terminal output and detect localhost URLs
   useEffect(() => {
     const unlisten = listen<TerminalOutputEvent>('terminal-output', (event) => {
-      const { terminalId, data } = event.payload;
+      const { data } = event.payload;
       for (const pattern of URL_PATTERNS) {
         const match = data.match(pattern);
         if (match) {
           const url = match[1] || match[0];
-          usePreviewStore.getState().addPreview(url, terminalId);
+          usePreviewStore.getState().addPreview(url, event.payload.terminalId);
           break;
         }
       }
@@ -123,63 +215,40 @@ export default function WorkspacePage() {
     return () => { unlisten.then(fn => fn()); };
   }, []);
 
-  // Sidebar resize
-  const [sidebarWidth, setSidebarWidth] = useState(200);
-  const sidebarWidthRef = useRef(200);
-  const isDraggingRef = useRef(false);
-
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isDraggingRef.current = true;
-    const startX = e.clientX;
-    const startWidth = sidebarWidthRef.current;
-
-    const onMove = (ev: MouseEvent) => {
-      if (!isDraggingRef.current) return;
-      const delta = ev.clientX - startX;
-      const newWidth = Math.max(120, Math.min(400, startWidth + delta));
-      sidebarWidthRef.current = newWidth;
-      setSidebarWidth(newWidth);
-    };
-
-    const onUp = () => {
-      isDraggingRef.current = false;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }, []);
-
   return (
     <div style={styles.container}>
-      <AutomationRouter />
-      <AgentSessionRecorder />
-      {/* Top: workspace toolbar */}
-      <WorkspaceToolbar />
-
-      {/* Middle: navigator + pane tree */}
-      <div style={styles.body}>
-        <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden' }}>
-          <WorkspaceNavigator />
-        </div>
-        <div
-          onMouseDown={handleResizeStart}
-          style={{
-            width: 1,
-            cursor: 'col-resize',
-            flexShrink: 0,
-          }}
+      {/* Center: Header + AgentSelector + Chat + Bottom Panel */}
+      <div style={styles.center}>
+        <WorkspaceHeader
+          isRunning={!!activeProviderId}
+          onNewChat={handleNewChat}
+          onStart={() => handleStartAgent()}
+          onStop={handleStopAgent}
         />
-        <div style={styles.paneArea}>
-          <WorkspacePane />
+
+        <AgentSelector
+          agents={allProviders.map(p => ({
+            id: p.id,
+            name: p.name,
+            icon: p.icon,
+            session: p.id === agent.id ? agent.session : null,
+          }))}
+          activeAgentId={agent.id}
+          onSelect={handleSelectAgent}
+        />
+
+        <div style={styles.chatArea}>
+          <AgentChat
+            provider={providerRef.current}
+            activeSessionId={activeSessionId}
+          />
         </div>
+
+        <BottomPanel />
       </div>
+
+      {/* Right: Task/Plan Panel */}
+      <AgentRightPanel sessionId={activeSessionId} />
     </div>
   );
 }
@@ -187,20 +256,25 @@ export default function WorkspacePage() {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
-    flexDirection: 'column',
     width: '100%',
     height: '100%',
-    background: 'var(--ws-bg)',
+    gap: 8,
+    padding: 8,
+    background: 'var(--md-surface-container-lowest)',
     overflow: 'hidden',
   },
-  body: {
+  center: {
     display: 'flex',
+    flexDirection: 'column',
     flex: 1,
-    overflow: 'hidden',
+    gap: 0,
+    minWidth: 0,
   },
-  paneArea: {
-    flex: 1,
-    overflow: 'hidden',
+  chatArea: {
     display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
   },
 };
