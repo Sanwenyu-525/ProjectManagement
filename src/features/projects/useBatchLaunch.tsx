@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Modal, message } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
 import { terminalApi } from '../../api';
@@ -26,7 +26,7 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
   const [batchLaunching, setBatchLaunching] = useState(false);
   const [batchLaunchProgress, setBatchLaunchProgress] = useState<Map<string, BatchLaunchProgress>>(new Map());
   const [batchLaunchModalOpen, setBatchLaunchModalOpen] = useState(false);
-  const [batchLaunchCancelled, setBatchLaunchCancelled] = useState(false);
+  const cancelledRef = useRef(false);
 
   const handleToggleSelection = useCallback((projectId: string, e?: React.SyntheticEvent) => {
     e?.stopPropagation();
@@ -159,7 +159,7 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
 
     // Start batch launch
     setBatchLaunching(true);
-    setBatchLaunchCancelled(false);
+    cancelledRef.current = false;
     setBatchLaunchModalOpen(true);
 
     const initialProgress = new Map<string, BatchLaunchProgress>();
@@ -170,7 +170,7 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
     let failedCount = 0;
 
     for (const project of sortedForDisplay) {
-      if (batchLaunchCancelled) break;
+      if (cancelledRef.current) break;
 
       setBatchLaunchProgress(prev => {
         const next = new Map(prev);
@@ -227,7 +227,7 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
 
     setSelectedProjectIds(new Set());
     onLaunchComplete?.();
-  }, [projects, selectedProjectIds, smartSortEnabled, batchLaunchCancelled, showPortConflictDialog, onLaunchComplete]);
+  }, [projects, selectedProjectIds, smartSortEnabled, showPortConflictDialog, onLaunchComplete]);
 
   const handleRetryProject = useCallback(async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
@@ -290,6 +290,6 @@ export function useBatchLaunch({ projects, smartSortEnabled, onLaunchComplete }:
     handleBatchLaunch,
     handleRetryProject,
     handleStopAll,
-    setBatchLaunchCancelled,
+    setBatchLaunchCancelled: useCallback((v: boolean) => { cancelledRef.current = v; }, []),
   };
 }

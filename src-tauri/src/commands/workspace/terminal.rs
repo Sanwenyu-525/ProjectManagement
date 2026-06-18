@@ -152,33 +152,39 @@ pub async fn terminal_start(
         spawn_output_reader(Box::new(stderr), app.clone(), terminal_id.clone());
     }
 
-    // Spawn exit watcher (blocking wait, no polling)
+    // Register process in registry
     {
         let mut procs = recover_lock(&PROCESSES);
         procs.insert(terminal_id.clone(), child);
     }
-    // We need to take the child back out for the blocking wait
-    // Actually, we can't easily do that with the current architecture.
-    // Let's use a simple polling approach with shorter intervals for non-interactive mode,
-    // or better yet, spawn a thread that waits on the child.
-    // Since the child is already in PROCESSES, let's use a different approach:
-    // spawn a thread that periodically takes ownership and waits.
+
+    // Exit watcher thread (polling with try_wait, keeps registry entry alive
+    // so terminal_stop/input can still reach the process while running)
     let app_exit = app.clone();
     let tid_exit = terminal_id.clone();
     std::thread::spawn(move || {
-        // Wait a bit then try to get the child
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let child = {
-            let mut procs = recover_lock(&PROCESSES);
-            procs.remove(&tid_exit)
-        };
-        if let Some(mut child) = child {
-            let status = child.wait();
-            let code = status.ok().and_then(|s| s.code());
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let exited = {
+                let mut procs = recover_lock(&PROCESSES);
+                match procs.get_mut(&tid_exit) {
+                    Some(child) => child.try_wait().ok().flatten().is_some(),
+                    None => break,
+                }
+            };
+            if !exited {
+                continue;
+            }
+            let code = {
+                let mut procs = recover_lock(&PROCESSES);
+                procs.remove(&tid_exit).and_then(|mut c| {
+                    c.try_wait().ok().flatten().and_then(|s| s.code())
+                })
+            };
             let _ = app_exit.emit(
                 "terminal-exit",
                 TerminalExit {
-                    terminal_id: tid_exit,
+                    terminal_id: tid_exit.clone(),
                     code,
                 },
             );
@@ -284,25 +290,36 @@ pub async fn terminal_start_shell(
     // Output reader thread (with UTF-8 remnant handling for CJK characters)
     spawn_output_reader(reader, app.clone(), terminal_id.clone());
 
-    // Exit watcher thread (blocking wait, no polling)
+    // Exit watcher thread (polling with try_wait, keeps registry entry alive)
     let app_exit = app.clone();
     let tid_exit = terminal_id.clone();
     std::thread::spawn(move || {
-        // Take ownership of the child for blocking wait
-        let child = {
-            let mut terminals = recover_lock(&PTY_TERMINALS);
-            terminals.remove(&tid_exit)
-        };
-        if let Some(mut terminal) = child {
-            let status = terminal.child.wait();
-            let code = status.ok().map(|s| s.exit_code() as i32);
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let exited = {
+                let mut terminals = recover_lock(&PTY_TERMINALS);
+                match terminals.get_mut(&tid_exit) {
+                    Some(terminal) => terminal.child.try_wait().ok().flatten().is_some(),
+                    None => break,
+                }
+            };
+            if !exited {
+                continue;
+            }
+            let code = {
+                let mut terminals = recover_lock(&PTY_TERMINALS);
+                terminals.remove(&tid_exit).and_then(|mut t| {
+                    t.child.try_wait().ok().flatten().map(|s| s.exit_code() as i32)
+                })
+            };
             let _ = app_exit.emit(
                 "terminal-exit",
                 TerminalExit {
-                    terminal_id: tid_exit,
+                    terminal_id: tid_exit.clone(),
                     code,
                 },
             );
+            break;
         }
     });
 
@@ -396,24 +413,38 @@ pub async fn terminal_start_agent(
     // Output reader thread (with UTF-8 remnant handling for CJK characters)
     spawn_output_reader(reader, app.clone(), terminal_id.clone());
 
-    // Exit watcher thread (blocking wait, no polling)
+    // Exit watcher thread (polling with try_wait, keeps registry entry alive
+    // so terminal_stop/input/resize can still reach the process while running)
     let app_exit = app.clone();
     let tid_exit = terminal_id.clone();
     std::thread::spawn(move || {
-        let child = {
-            let mut terminals = recover_lock(&PTY_TERMINALS);
-            terminals.remove(&tid_exit)
-        };
-        if let Some(mut terminal) = child {
-            let status = terminal.child.wait();
-            let code = status.ok().map(|s| s.exit_code() as i32);
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let exited = {
+                let mut terminals = recover_lock(&PTY_TERMINALS);
+                match terminals.get_mut(&tid_exit) {
+                    Some(terminal) => terminal.child.try_wait().ok().flatten().is_some(),
+                    None => break, // removed externally (e.g. terminal_stop)
+                }
+            };
+            if !exited {
+                continue;
+            }
+            // Process exited — remove from registry and emit exit event
+            let code = {
+                let mut terminals = recover_lock(&PTY_TERMINALS);
+                terminals.remove(&tid_exit).and_then(|mut t| {
+                    t.child.try_wait().ok().flatten().map(|s| s.exit_code() as i32)
+                })
+            };
             let _ = app_exit.emit(
                 "terminal-exit",
                 TerminalExit {
-                    terminal_id: tid_exit,
+                    terminal_id: tid_exit.clone(),
                     code,
                 },
             );
+            break;
         }
     });
 

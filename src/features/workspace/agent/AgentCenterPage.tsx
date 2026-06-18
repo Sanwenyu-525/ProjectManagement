@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Empty } from 'antd';
 import { useThemeStore } from '../../../stores/themeStore';
 import { sessionsApi } from '../../../api';
+import { stripAnsi } from '../../../lib/stripAnsi';
 import { useSessions, useEndSession } from '../../../hooks/useSessions';
 import { useTemplates } from '../../../hooks/useBuilds';
 import type { AgentSession, AgentMessage, Template } from '../../../types';
@@ -29,16 +30,11 @@ interface AgentVM {
 
 /* ---------- ANSI / control-char stripping ---------- */
 
-const ANSI_RE = /\x1b(?:\[[^\x1b\x07]*?[A-Za-z~]|\][^\x07]*(?:\x07|\x1b\\)|[\s\S])/g;
-const CTRL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
-
-function stripAnsi(s: string): string {
-  return s.replace(ANSI_RE, '').replace(CTRL_RE, '').replace(/\r/g, '');
-}
+// stripAnsi imported from src/lib/stripAnsi.ts
 
 function sessionToVM(session: AgentSession, messages: AgentMessage[]): AgentVM {
   const meta = RUNTIME_META[session.runtimeId] ?? { name: session.runtimeId, icon: 'smart_toy', color: '#6b7280' };
-  const outputMsgs = messages.filter(m => m.role === 'output');
+  const outputMsgs = messages.filter(m => m.role === 'assistant' || m.role === 'output');
   const lastMsg = outputMsgs[outputMsgs.length - 1];
   const cleanContent = lastMsg ? stripAnsi(lastMsg.content).trim() : '';
   const task = cleanContent
@@ -200,7 +196,7 @@ export default function AgentCenterPage() {
         if (!session) return [];
         const meta = RUNTIME_META[session.runtimeId] ?? { name: session.runtimeId, color: '#6b7280' };
         return msgs
-          .filter(m => m.role === 'output')
+          .filter(m => m.role === 'assistant' || m.role === 'output')
           .slice(-50)
           .map(m => ({
             time: formatTimestamp(m.timestamp),

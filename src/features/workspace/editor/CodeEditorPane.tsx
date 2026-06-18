@@ -19,7 +19,11 @@ interface EditorFile {
   isBinary: boolean;
 }
 
-export default function CodeEditorPane() {
+interface CodeEditorPaneProps {
+  onEmpty?: () => void;
+}
+
+export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
   const projectRoot = useTerminalStore(s => s.defaultCwd);
   const isDark = useThemeStore(s => s.mode === 'dark');
   const [files, setFiles] = useState<EditorFile[]>([]);
@@ -93,9 +97,13 @@ export default function CodeEditorPane() {
         const idx = prev.findIndex(f => f.id === id);
         setActiveId(next[Math.min(idx, next.length - 1)]?.id ?? null);
       }
+      if (next.length === 0) {
+        // Defer onEmpty to avoid setState-during-render
+        setTimeout(() => onEmpty?.(), 0);
+      }
       return next;
     });
-  }, []);
+  }, [onEmpty]);
 
   const handleCreateEditor = useCallback((view: EditorView) => {
     viewRef.current = view;

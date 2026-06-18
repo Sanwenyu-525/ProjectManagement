@@ -4,6 +4,17 @@ use tauri::{command, State};
 
 use crate::db::Database;
 
+const VALID_STATUSES: &[&str] = &["pending", "in_progress", "completed", "cancelled"];
+const VALID_PRIORITIES: &[&str] = &["low", "medium", "high", "urgent"];
+
+fn validate_status(s: &str) -> Result<(), String> {
+    if VALID_STATUSES.contains(&s) { Ok(()) } else { Err(format!("invalid status '{}': must be one of {:?}", s, VALID_STATUSES)) }
+}
+
+fn validate_priority(s: &str) -> Result<(), String> {
+    if VALID_PRIORITIES.contains(&s) { Ok(()) } else { Err(format!("invalid priority '{}': must be one of {:?}", s, VALID_PRIORITIES)) }
+}
+
 #[command]
 pub async fn agent_tasks_list(
     db: State<'_, Database>,
@@ -31,6 +42,9 @@ pub async fn agent_tasks_create(
     session_id: String,
     data: CreateAgentTaskInput,
 ) -> Result<JsonValue, String> {
+    let priority = data.priority.unwrap_or_else(|| "medium".into());
+    validate_priority(&priority)?;
+
     let id = crate::db::new_id();
     let now = crate::db::now_str();
 
@@ -42,7 +56,7 @@ pub async fn agent_tasks_create(
             session_id,
             data.parent_id,
             data.title,
-            data.priority.unwrap_or_else(|| "medium".into()),
+            priority,
             data.sort_order.unwrap_or(0),
             now,
         ],
@@ -88,8 +102,20 @@ pub async fn agent_tasks_update(
         }
 
         add_field!(title, "title");
-        add_field!(status, "status");
-        add_field!(priority, "priority");
+
+        if let Some(ref v) = data.status {
+            validate_status(v)?;
+            sets.push(format!("status = ?{}", idx));
+            param_values.push(Box::new(v.clone()));
+            idx += 1;
+        }
+
+        if let Some(ref v) = data.priority {
+            validate_priority(v)?;
+            sets.push(format!("priority = ?{}", idx));
+            param_values.push(Box::new(v.clone()));
+            idx += 1;
+        }
 
         if let Some(v) = data.sort_order {
             sets.push(format!("sortOrder = ?{}", idx));

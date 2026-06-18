@@ -131,3 +131,16 @@ pub async fn workspaces_load_layout(db: State<'_, Database>, id: String) -> Resu
         _ => Ok(None),
     }
 }
+
+#[command]
+pub async fn workspaces_stats(db: State<'_, Database>) -> Result<JsonValue, String> {
+    db.query_one_json(
+        "SELECT
+            (SELECT COUNT(*) FROM tasks) as tasks,
+            (SELECT COUNT(*) FROM tasks WHERE status != 'Done' AND status != 'Completed') as issues,
+            (SELECT COUNT(*) FROM documents) as docs",
+        rusqlite::params![],
+    )
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Failed to get stats".into())
+}

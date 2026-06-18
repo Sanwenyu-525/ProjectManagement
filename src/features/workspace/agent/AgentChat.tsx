@@ -1,9 +1,18 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import { sessionsApi } from '../../../api';
-import type { AgentMessage } from '../../../types';
 import { useAgentStore } from '../../../stores/agentStore';
+import { open } from '@tauri-apps/plugin-dialog';
 import type { AgentProvider, AgentStreamEvent } from './AgentProvider';
+
+/** Detect terminal-formatted content (box drawing, ASCII art, CLI tables) */
+function isTerminalFormatted(text: string): boolean {
+  if (text.indexOf('\n') === -1) return false;
+  if (/[╭╮╰╯┌┐└┘╔╗╚╝║═]/.test(text)) return true;
+  if (/^.*─{4,}.*$/m.test(text) && /\|.*\|/.test(text)) return true;
+  if (/^.*──{4,}.*$/m.test(text)) return true;
+  return false;
+}
 
 interface AgentChatProps {
   provider: AgentProvider | null;
@@ -16,21 +25,37 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
   const appendToken = useAgentStore(s => s.appendToken);
   const startStreaming = useAgentStore(s => s.startStreaming);
   const finishStreaming = useAgentStore(s => s.finishStreaming);
+  const messages = useAgentStore(s => s.messages);
+  const appendMessage = useAgentStore(s => s.appendMessage);
+  const loadMessages = useAgentStore(s => s.loadMessages);
+  const toolEvents = useAgentStore(s => s.toolEvents);
 
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load messages when active session changes
+  const currentMessages = useMemo(
+    () => activeSessionId ? messages[activeSessionId] || [] : [],
+    [activeSessionId, messages]
+  );
+  const currentStreamingText = activeSessionId ? streamingText[activeSessionId] || '' : '';
+  const isStreaming = streamingSessionId === activeSessionId;
+  const currentToolEvents = useMemo(
+    () => activeSessionId ? toolEvents[activeSessionId] || [] : [],
+    [activeSessionId, toolEvents]
+  );
+
+  // Hydrate messages from DB when session changes
   useEffect(() => {
-    if (!activeSessionId) {
-      setMessages([]);
-      return;
-    }
-    sessionsApi.messages(activeSessionId).then(setMessages).catch(() => {});
-  }, [activeSessionId]);
+    if (!activeSessionId) return;
+    // Only hydrate if store is empty for this session (avoid overwriting streaming state)
+    if (messages[activeSessionId] && messages[activeSessionId].length > 0) return;
+    sessionsApi.messages(activeSessionId).then(dbMsgs => {
+      if (dbMsgs.length > 0) loadMessages(activeSessionId, dbMsgs);
+    }).catch(() => {});
+  }, [activeSessionId, messages, loadMessages]);
 
   // Listen for provider stream events
   useEffect(() => {
@@ -39,26 +64,40 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
     const unsub = provider.onStream((event: AgentStreamEvent) => {
       if (event.type === 'token') {
         appendToken(activeSessionId, event.text);
+      } else if (event.type === 'tool_use') {
+        useAgentStore.getState().appendToolEvent(activeSessionId, {
+          id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          toolName: event.toolName,
+          description: event.description,
+          timestamp: Date.now(),
+        });
       } else if (event.type === 'done') {
         const text = useAgentStore.getState().streamingText[activeSessionId] || '';
         if (text.trim()) {
-          sessionsApi.appendMessage(activeSessionId, 'assistant', text);
+          appendMessage(activeSessionId, 'assistant', text);
+          sessionsApi.appendMessage(activeSessionId, 'assistant', text).catch(() => {});
         }
         finishStreaming(activeSessionId);
         setSending(false);
       } else if (event.type === 'error') {
+        // Show error in chat flow as a system message
+        appendMessage(activeSessionId, 'error', `⚠ ${event.error}`);
+        const text = useAgentStore.getState().streamingText[activeSessionId] || '';
+        if (text.trim()) {
+          appendMessage(activeSessionId, 'assistant', text);
+        }
         finishStreaming(activeSessionId);
         setSending(false);
       }
     });
 
     return () => { unsub(); };
-  }, [provider, activeSessionId, appendToken, finishStreaming]);
+  }, [provider, activeSessionId, appendToken, finishStreaming, appendMessage]);
 
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingText]);
+  }, [currentMessages, currentStreamingText, currentToolEvents]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -77,40 +116,56 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
   }, [activeSessionId, provider]);
 
   const handleSend = useCallback(async () => {
-    const content = input.trim();
-    if (!content || !activeSessionId || !provider || sending) return;
+    const text = input.trim();
+    if ((!text && attachments.length === 0) || !activeSessionId || !provider || sending) return;
+    const content = attachments.length > 0
+      ? [...attachments.map(p => `@${p}`), text].filter(Boolean).join('\n')
+      : text;
     setInput('');
+    setAttachments([]);
     setSending(true);
 
-    const userMsg: AgentMessage = {
-      id: Date.now(),
-      sessionId: activeSessionId,
-      role: 'user',
-      content,
-      timestamp: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, userMsg]);
-    await sessionsApi.appendMessage(activeSessionId, 'user', content);
-    startStreaming(activeSessionId);
+    // Add user message to store and persist
+    appendMessage(activeSessionId, 'user', content);
+    sessionsApi.appendMessage(activeSessionId, 'user', content).catch(() => {});
 
+    // Start streaming and send to provider
+    startStreaming(activeSessionId);
     try {
       await provider.send(content);
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      appendMessage(activeSessionId, 'error', `⚠ Failed to send: ${msg}`);
       finishStreaming(activeSessionId);
       setSending(false);
     }
-  }, [input, activeSessionId, provider, sending, startStreaming, finishStreaming]);
+  }, [input, attachments, activeSessionId, provider, sending, startStreaming, finishStreaming, appendMessage]);
 
   const handleAbort = useCallback(async () => {
     if (!provider || !activeSessionId) return;
-    await provider.abort();
+    try {
+      await provider.abort();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      appendMessage(activeSessionId, 'error', `⚠ Abort failed: ${msg}`);
+    }
     const text = useAgentStore.getState().streamingText[activeSessionId] || '';
     if (text.trim()) {
-      await sessionsApi.appendMessage(activeSessionId, 'assistant', text);
+      appendMessage(activeSessionId, 'assistant', text);
+      sessionsApi.appendMessage(activeSessionId, 'assistant', text).catch(() => {});
     }
     finishStreaming(activeSessionId);
     setSending(false);
-  }, [provider, activeSessionId, finishStreaming]);
+  }, [provider, activeSessionId, finishStreaming, appendMessage]);
+
+  const handleAttachFile = useCallback(async () => {
+    try {
+      const selected = await open({ multiple: true, title: '选择文件' });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      setAttachments(prev => [...prev, ...paths]);
+    } catch { /* ignore */ }
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -118,9 +173,6 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
       handleSend();
     }
   };
-
-  const isStreaming = streamingSessionId !== null;
-  const currentStreamingText = activeSessionId ? streamingText[activeSessionId] || '' : '';
 
   // Empty state — no session
   if (!activeSessionId) {
@@ -143,7 +195,7 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
     <div style={styles.container}>
       {/* Messages */}
       <div style={styles.messages}>
-        {messages.length === 0 && !isStreaming && (
+        {currentMessages.length === 0 && !isStreaming && (
           <div style={styles.emptyHint}>
             <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--md-outline-variant)', marginBottom: 8 }}>
               chat
@@ -156,10 +208,21 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
           </div>
         )}
 
-        {messages.map(msg => {
-          const isUser = msg.role === 'user' || msg.role === 'input';
+        {/* Rendered conversation messages */}
+        {currentMessages.map((msg, idx) => {
+          if (msg.role === 'error') {
+            return (
+              <div key={idx} style={styles.errorRow}>
+                <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-error)' }}>
+                  error
+                </span>
+                <span style={styles.errorText}>{msg.content}</span>
+              </div>
+            );
+          }
+          const isUser = msg.role === 'user';
           return (
-            <div key={msg.id} style={{
+            <div key={idx} style={{
               ...styles.messageRow,
               justifyContent: isUser ? 'flex-end' : 'flex-start',
             }}>
@@ -176,6 +239,8 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
               }}>
                 {isUser ? (
                   <span style={styles.userText}>{msg.content}</span>
+                ) : isTerminalFormatted(msg.content) ? (
+                  <pre style={styles.terminalContent}>{msg.content}</pre>
                 ) : (
                   <div style={styles.markdownBody}>
                     <Markdown>{msg.content}</Markdown>
@@ -186,6 +251,18 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
           );
         })}
 
+        {/* Tool events during current streaming */}
+        {isStreaming && currentToolEvents.slice(-5).map(tool => (
+          <div key={tool.id} style={styles.toolEventRow}>
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-primary)' }}>
+              build
+            </span>
+            <span style={styles.toolEventText}>
+              {tool.toolName}: {tool.description}
+            </span>
+          </div>
+        ))}
+
         {/* Streaming response */}
         {isStreaming && currentStreamingText && (
           <div style={styles.messageRow}>
@@ -195,15 +272,19 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
               </span>
             </div>
             <div style={{ ...styles.bubble, ...styles.aiBubble }}>
-              <div style={styles.markdownBody}>
-                <Markdown>{currentStreamingText}</Markdown>
-                <span style={styles.cursor}>|</span>
-              </div>
+              {isTerminalFormatted(currentStreamingText) ? (
+                <pre style={styles.terminalContent}>{currentStreamingText}<span style={styles.cursor}>|</span></pre>
+              ) : (
+                <div style={styles.markdownBody}>
+                  <Markdown>{currentStreamingText}</Markdown>
+                  <span style={styles.cursor}>|</span>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Thinking indicator */}
+        {/* Thinking indicator (streaming started but no text yet) */}
         {isStreaming && !currentStreamingText && (
           <div style={styles.messageRow}>
             <div style={styles.avatar}>
@@ -233,9 +314,29 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
             disabled={!provider}
             style={styles.textarea}
           />
+          {attachments.length > 0 && (
+            <div style={styles.attachmentList}>
+              {attachments.map((path, i) => {
+                const name = path.split(/[/\\]/).pop() || path;
+                return (
+                  <span key={i} style={styles.attachmentChip}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 13 }}>description</span>
+                    <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                    <button
+                      onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                      style={styles.attachmentRemove}
+                      title="移除"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 12 }}>close</span>
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
           <div style={styles.inputActions}>
             <div style={styles.attachBtns}>
-              <button style={styles.attachBtn} title="Attach file">
+              <button style={styles.attachBtn} title="Attach file" onClick={handleAttachFile}>
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>attach_file</span>
               </button>
               <button style={styles.attachBtn} title="Code snippet">
@@ -249,10 +350,10 @@ export default function AgentChat({ activeSessionId, provider }: AgentChatProps)
             ) : (
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || sending || !provider}
+                disabled={(!input.trim() && attachments.length === 0) || sending || !provider}
                 style={{
                   ...styles.sendBtn,
-                  opacity: input.trim() && !sending && provider ? 1 : 0.4,
+                  opacity: (input.trim() || attachments.length > 0) && !sending && provider ? 1 : 0.4,
                 }}
                 title="Send"
               >
@@ -354,6 +455,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     lineHeight: '1.5',
   },
+  terminalContent: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+    lineHeight: '1.5',
+    whiteSpace: 'pre',
+    overflowX: 'auto',
+    margin: 0,
+    padding: 0,
+    background: 'transparent',
+    border: 'none',
+    color: 'inherit',
+    wordBreak: 'normal',
+  } as React.CSSProperties,
   cursor: {
     display: 'inline-block',
     animation: 'blink 1s step-end infinite',
@@ -368,6 +482,34 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontStyle: 'italic',
     animation: 'blink 1.5s ease-in-out infinite',
+  },
+  toolEventRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 38,
+    fontSize: 12,
+    color: 'var(--md-on-surface-variant)',
+  },
+  toolEventText: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11,
+    opacity: 0.8,
+  },
+  errorRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 38,
+    fontSize: 12,
+    color: 'var(--md-error)',
+    fontFamily: 'var(--font-mono)',
+  },
+  errorText: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+    lineHeight: '1.5',
+    wordBreak: 'break-word',
   },
   inputSection: {
     padding: '8px 16px 12px',
@@ -442,5 +584,37 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'var(--md-error)',
     color: '#ffffff',
     cursor: 'pointer',
+  },
+  attachmentList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 4,
+    padding: '4px 10px',
+  },
+  attachmentChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 11,
+    fontFamily: 'var(--font-mono)',
+    color: 'var(--md-on-surface)',
+    background: 'var(--md-surface-container-high)',
+    border: '1px solid var(--md-outline-variant)',
+    borderRadius: 6,
+    padding: '2px 6px 2px 4px',
+    lineHeight: '18px',
+  },
+  attachmentRemove: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 16,
+    height: 16,
+    borderRadius: '50%',
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--md-outline)',
+    cursor: 'pointer',
+    padding: 0,
   },
 };

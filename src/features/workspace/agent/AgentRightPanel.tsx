@@ -3,13 +3,13 @@ import { useAgentWorkspaceStore } from '../../../stores/agentWorkspaceStore';
 import { useTerminalStore } from '../../../stores/terminalStore';
 import AgentPlanPanel from './AgentPlanPanel';
 import AgentGitTab from './AgentGitTab';
+import AgentContextPanel from './AgentContextPanel';
 
-type RightTab = 'plan' | 'git' | 'files' | 'context';
+type RightTab = 'plan' | 'git' | 'context';
 
 const TABS: { key: RightTab; label: string; icon: string }[] = [
   { key: 'plan', label: 'Plan', icon: 'description' },
   { key: 'git', label: 'Git', icon: 'account_tree' },
-  { key: 'files', label: 'Files', icon: 'folder' },
   { key: 'context', label: 'Context', icon: 'psychology' },
 ];
 
@@ -75,26 +75,7 @@ export default function AgentRightPanel({ sessionId }: AgentRightPanelProps) {
       <div style={styles.content}>
         {activeTab === 'plan' && <AgentPlanPanel sessionId={sessionId} />}
         {activeTab === 'git' && <AgentGitTab repoPath={repoPath} />}
-        {activeTab === 'files' && (
-          <div style={styles.placeholder}>
-            <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)' }}>
-              folder
-            </span>
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--md-on-surface-variant)' }}>
-              File explorer will appear here.
-            </p>
-          </div>
-        )}
-        {activeTab === 'context' && (
-          <div style={styles.placeholder}>
-            <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)' }}>
-              psychology
-            </span>
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--md-on-surface-variant)' }}>
-              Context usage will appear here.
-            </p>
-          </div>
-        )}
+        {activeTab === 'context' && <AgentContextPanel sessionId={sessionId} />}
       </div>
     </div>
   );

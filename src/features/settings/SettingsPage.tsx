@@ -1,11 +1,14 @@
-import { useState } from 'react';
-import { Form, Input, Button, message, Modal, Select, Tag } from 'antd';
-import { SaveOutlined, KeyOutlined, FolderOutlined, UndoOutlined, CheckCircleOutlined } from '@ant-design/icons';
-import { useIntegrations, useCreateIntegration, useUpdateIntegration } from '../../hooks/useBuilds';
+import { useState, useEffect, useCallback } from 'react';
+import { Form, Input, Button, message, Select, Table, Modal, Space, Popconfirm, InputNumber, Tag } from 'antd';
+import { SaveOutlined, FolderOutlined, UndoOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { open } from '@tauri-apps/plugin-dialog';
 import { DEFAULT_SHELL, DEFAULT_CWD, SHELL_OPTIONS } from '../../lib/constants';
+import IntegrationSettings from './IntegrationSettings';
+import { GlassCard, CardHeader, InfoRow, ToggleRow } from './settingsComponents';
+import { providersApi, agentConfigsApi } from '../../api';
+import type { ModelProvider, AgentConfig } from '../../types';
 
 // ── Sub-navigation structure ──
 const navGroups: Array<{
@@ -24,6 +27,7 @@ const navGroups: Array<{
   {
     title: 'AI 与智能体',
     items: [
+      { key: 'agent-configs', icon: 'smart_toy', label: 'Agent 配置' },
       { key: 'mcp-servers', icon: 'dns', label: 'MCP 服务器', badge: '测试版' },
     ],
   },
@@ -50,7 +54,6 @@ function GeneralSettings() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Profile info */}
       <GlassCard isDark={isDark}>
         <CardHeader title="应用信息" />
         <div style={{ padding: '16px 24px 20px' }}>
@@ -62,13 +65,11 @@ function GeneralSettings() {
         </div>
       </GlassCard>
 
-      {/* Platform integrations */}
       <GlassCard isDark={isDark}>
         <CardHeader title="平台集成" />
         <IntegrationSettings />
       </GlassCard>
 
-      {/* Preferences */}
       <GlassCard isDark={isDark}>
         <CardHeader title="偏好设置" />
         <div style={{ padding: '16px 24px 20px' }}>
@@ -87,135 +88,11 @@ function GeneralSettings() {
         </div>
       </GlassCard>
 
-      {/* Save bar */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
         <Button icon={<UndoOutlined />}>重置默认</Button>
         <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>保存设置</Button>
       </div>
     </div>
-  );
-}
-
-const PLATFORM_META = [
-  { name: 'GitHub', description: '同步 GitHub 仓库、提交、PR', color: '#333' },
-  { name: 'GitLab', description: '同步 GitLab 仓库、MR、Pipeline', color: '#FC6D26' },
-  { name: 'Gitee', description: '同步 Gitee 仓库、提交、PR', color: '#C71D23' },
-];
-
-function IntegrationSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedPlatform, setSelectedPlatform] = useState('');
-  const [form] = Form.useForm();
-
-  const { data: integrations = [], isFetching: loading } = useIntegrations();
-  const createIntegration = useCreateIntegration();
-  const updateIntegration = useUpdateIntegration();
-
-  const findIntegration = (platform: string) =>
-    integrations.find(i => i.platform.toLowerCase() === platform.toLowerCase());
-
-  const handleConnect = (platform: string) => {
-    setSelectedPlatform(platform);
-    const existing = findIntegration(platform);
-    if (existing) {
-      form.setFieldsValue({ accessToken: '', username: existing.username || '' });
-    } else {
-      form.resetFields();
-    }
-    setModalOpen(true);
-  };
-
-  const handleSave = async () => {
-    try {
-      const values = await form.validateFields();
-      const existing = findIntegration(selectedPlatform);
-      if (existing) {
-        await updateIntegration.mutateAsync({
-          id: existing.id,
-          data: {
-            accessToken: values.accessToken || undefined,
-            username: values.username || undefined,
-          },
-        });
-      } else {
-        await createIntegration.mutateAsync({
-          platform: selectedPlatform,
-          accessToken: values.accessToken,
-          username: values.username || undefined,
-        });
-      }
-      message.success(`${selectedPlatform} 集成已保存`);
-      setModalOpen(false);
-      form.resetFields();
-    } catch {
-      message.error('保存失败，请重试');
-    }
-  };
-
-  return (
-    <>
-      <div style={{ padding: '16px 24px 20px', display: 'grid', gap: 12 }}>
-        {PLATFORM_META.map(p => {
-          const connected = findIntegration(p.name);
-          return (
-            <div key={p.name} style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '12px 16px',
-              borderRadius: 8,
-              border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
-              background: isDark ? 'var(--md-surface-container-low)' : 'rgba(255,255,255,0.5)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: p.color }} />
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--md-on-surface)' }}>
-                    {p.name}
-                    {connected && (
-                      <Tag
-                        icon={<CheckCircleOutlined />}
-                        color="success"
-                        style={{ marginLeft: 8, fontSize: 12 }}
-                      >
-                        已连接
-                      </Tag>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--md-on-surface-variant)' }}>{p.description}</div>
-                </div>
-              </div>
-              <Button size="small" icon={<KeyOutlined />} onClick={() => handleConnect(p.name)} loading={loading}>
-                {connected ? '更新 Token' : '配置 Token'}
-              </Button>
-            </div>
-          );
-        })}
-      </div>
-
-      <Modal
-        title={`配置 ${selectedPlatform}`}
-        open={modalOpen}
-        onCancel={() => { setModalOpen(false); form.resetFields(); }}
-        onOk={() => form.submit()}
-        okText="保存"
-      >
-        <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="accessToken" label="Personal Access Token" rules={[{ required: !findIntegration(selectedPlatform), message: '请输入 Token' }]}>
-            <Input.Password placeholder={findIntegration(selectedPlatform) ? '留空则保持原有 Token 不变' : '粘贴你的 Token'} />
-          </Form.Item>
-          <Form.Item name="username" label="用户名（可选）">
-            <Input placeholder="用于验证 Token 有效性" />
-          </Form.Item>
-          <div style={{ background: 'rgba(34, 197, 94, 0.06)', padding: 12, borderRadius: 6, fontSize: 13, color: 'var(--md-on-surface-variant)' }}>
-            {selectedPlatform === 'GitHub' && '前往 GitHub → Settings → Developer settings → Personal access tokens 生成 Token，需要 repo 权限。'}
-            {selectedPlatform === 'GitLab' && '前往 GitLab → User Settings → Access Tokens 生成 Token，需要 api 权限。'}
-            {selectedPlatform === 'Gitee' && '前往 Gitee → 设置 → 私人令牌 生成 Token，需要 projects 权限。'}
-          </div>
-        </Form>
-      </Modal>
-    </>
   );
 }
 
@@ -398,110 +275,315 @@ function DataManagementSettings() {
   );
 }
 
-// ── Reusable sub-components ──
+// ── Agent Configs Settings ──
 
-function GlassCard({ children, isDark }: { children: React.ReactNode; isDark: boolean }) {
-  return (
-    <div style={{
-      background: isDark ? 'var(--md-surface-container)' : '#ffffff',
-      borderRadius: 12,
-      border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
-      boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-      overflow: 'hidden',
-    }}>
-      {children}
-    </div>
-  );
-}
+const PROVIDER_TYPE_OPTIONS = [
+  { value: 'claude', label: 'Claude Code' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'openai-compatible', label: 'OpenAI Compatible' },
+];
 
-function CardHeader({ title, badge }: { title: string; badge?: string }) {
+function AgentConfigsSettings() {
   const isDark = useThemeStore(s => s.mode === 'dark');
-  return (
-    <div style={{
-      padding: '14px 24px',
-      borderBottom: `1px solid ${isDark ? 'rgba(187, 202, 198, 0.15)' : 'rgba(187, 202, 198, 0.3)'}`,
-      background: isDark ? 'var(--md-surface-container-lowest)' : 'rgba(255,255,255,0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-    }}>
-      <h3 style={{
-        fontSize: 16,
-        fontWeight: 600,
-        color: 'var(--md-on-surface)',
-        lineHeight: '24px',
-        letterSpacing: '-0.01em',
-        margin: 0,
-      }}>
-        {title}
-      </h3>
-      {badge && (
-        <span style={{
-          background: 'var(--md-primary)',
-          color: 'var(--md-on-primary)',
-          fontFamily: 'var(--font-label)',
-          fontSize: 10,
-          fontWeight: 500,
-          padding: '2px 8px',
-          borderRadius: 4,
-          letterSpacing: '0.02em',
-        }}>
-          {badge}
-        </span>
-      )}
-    </div>
-  );
-}
+  const [providers, setProviders] = useState<ModelProvider[]>([]);
+  const [configs, setConfigs] = useState<AgentConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [providerModalOpen, setProviderModalOpen] = useState(false);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<ModelProvider | null>(null);
+  const [editingConfig, setEditingConfig] = useState<AgentConfig | null>(null);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [providerForm] = Form.useForm();
+  const [configForm] = Form.useForm();
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: 14, color: 'var(--md-on-surface-variant)' }}>{label}</span>
-      <span style={{ fontSize: 14, color: 'var(--md-on-surface)' }}>{value}</span>
-    </div>
-  );
-}
+  const loadData = useCallback(async () => {
+    try {
+      const [p, c] = await Promise.all([providersApi.list(), agentConfigsApi.list()]);
+      setProviders(p);
+      setConfigs(c);
+    } catch {
+      message.error('加载配置失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-function ToggleRow({ label, description, checked, onChange }: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: () => void;
-}) {
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSaveProvider = async () => {
+    try {
+      const values = await providerForm.validateFields();
+      if (editingProvider) {
+        await providersApi.update(editingProvider.id, {
+          name: values.name,
+          apiKey: values.apiKey,
+          baseUrl: values.baseUrl || null,
+        });
+        message.success('Provider 已更新');
+      } else {
+        await providersApi.create({
+          name: values.name,
+          type: values.type,
+          apiKey: values.apiKey,
+          baseUrl: values.baseUrl || undefined,
+        });
+        message.success('Provider 已创建');
+      }
+      setProviderModalOpen(false);
+      providerForm.resetFields();
+      setEditingProvider(null);
+      loadData();
+    } catch {
+      // validation or API error
+    }
+  };
+
+  const handleDeleteProvider = async (id: string) => {
+    try {
+      await providersApi.delete(id);
+      message.success('Provider 已删除');
+      loadData();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    try {
+      const values = await configForm.validateFields();
+      if (editingConfig) {
+        await agentConfigsApi.update(editingConfig.id, {
+          name: values.name,
+          icon: values.icon,
+          model: values.model,
+          systemPrompt: values.systemPrompt,
+          temperature: values.temperature,
+          maxTokens: values.maxTokens,
+        });
+        message.success('Agent 配置已更新');
+      } else {
+        await agentConfigsApi.create({
+          name: values.name,
+          icon: values.icon || 'smart_toy',
+          providerId: values.providerId,
+          model: values.model,
+          systemPrompt: values.systemPrompt || '',
+          temperature: values.temperature ?? 0.7,
+          maxTokens: values.maxTokens ?? 4096,
+        });
+        message.success('Agent 配置已创建');
+      }
+      setConfigModalOpen(false);
+      configForm.resetFields();
+      setEditingConfig(null);
+      loadData();
+    } catch {
+      // validation or API error
+    }
+  };
+
+  const handleDeleteConfig = async (id: string) => {
+    try {
+      await agentConfigsApi.delete(id);
+      message.success('Agent 配置已删除');
+      loadData();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const providerColumns = [
+    { title: '名称', dataIndex: 'name', key: 'name' },
+    {
+      title: '类型',
+      dataIndex: 'type',
+      key: 'type',
+      render: (t: string) => <Tag>{PROVIDER_TYPE_OPTIONS.find(o => o.value === t)?.label ?? t}</Tag>,
+    },
+    {
+      title: 'API Key',
+      dataIndex: 'apiKey',
+      key: 'apiKey',
+      render: (k: string) => k ? '••••••••' : <span style={{ color: 'var(--md-on-surface-variant)' }}>未设置</span>,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 100,
+      render: (_: unknown, record: ModelProvider) => (
+        <Space size="small">
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => {
+              setEditingProvider(record);
+              providerForm.setFieldsValue({ name: record.name, type: record.type, apiKey: record.apiKey, baseUrl: record.baseUrl });
+              setProviderModalOpen(true);
+            }}
+          />
+          <Popconfirm title="删除此 Provider？关联的 Agent 配置也会被删除。" onConfirm={() => handleDeleteProvider(record.id)}>
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  const configColumns = [
+    { title: '名称', dataIndex: 'name', key: 'name' },
+    { title: '模型', dataIndex: 'model', key: 'model' },
+    {
+      title: 'Provider',
+      dataIndex: 'providerId',
+      key: 'providerId',
+      render: (pid: string) => providers.find(p => p.id === pid)?.name ?? pid,
+    },
+    { title: '温度', dataIndex: 'temperature', key: 'temperature', width: 70 },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 100,
+      render: (_: unknown, record: AgentConfig) => (
+        <Space size="small">
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => {
+              setEditingConfig(record);
+              configForm.setFieldsValue(record);
+              setConfigModalOpen(true);
+            }}
+          />
+          <Popconfirm title="删除此 Agent 配置？" onConfirm={() => handleDeleteConfig(record.id)}>
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  const filteredConfigs = selectedProviderId
+    ? configs.filter(c => c.providerId === selectedProviderId)
+    : configs;
+
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div>
-        <div style={{ fontSize: 14, color: 'var(--md-on-surface)' }}>{label}</div>
-        <div style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', marginTop: 2 }}>{description}</div>
-      </div>
-      <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onChange}
-          style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
-        />
-        <div style={{
-          width: 36,
-          height: 20,
-          borderRadius: 10,
-          background: checked ? 'var(--md-primary)' : 'rgba(187, 202, 198, 0.5)',
-          position: 'relative',
-          transition: 'background 0.2s ease',
-        }}>
-          <div style={{
-            width: 16,
-            height: 16,
-            borderRadius: '50%',
-            background: '#ffffff',
-            border: '1px solid var(--md-outline-variant)',
-            position: 'absolute',
-            top: 1,
-            left: checked ? 17 : 1,
-            transition: 'left 0.2s ease',
-          }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <GlassCard isDark={isDark}>
+        <CardHeader title="Model Providers" />
+        <div style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <Button
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => { setEditingProvider(null); providerForm.resetFields(); setProviderModalOpen(true); }}
+            >
+              添加 Provider
+            </Button>
+          </div>
+          <Table
+            dataSource={providers}
+            columns={providerColumns}
+            rowKey="id"
+            size="small"
+            loading={loading}
+            pagination={false}
+            locale={{ emptyText: '暂无 Provider，点击上方按钮添加' }}
+            onRow={(record) => ({
+              onClick: () => setSelectedProviderId(selectedProviderId === record.id ? null : record.id),
+              style: { cursor: 'pointer', background: selectedProviderId === record.id ? 'rgba(20,184,166,0.06)' : undefined },
+            })}
+          />
         </div>
-      </label>
+      </GlassCard>
+
+      <GlassCard isDark={isDark}>
+        <CardHeader title={selectedProviderId ? `Agent 配置 — ${providers.find(p => p.id === selectedProviderId)?.name ?? ''}` : 'Agent 配置'} />
+        <div style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <Button
+              size="small"
+              icon={<PlusOutlined />}
+              disabled={providers.length === 0}
+              onClick={() => { setEditingConfig(null); configForm.resetFields(); if (selectedProviderId) configForm.setFieldsValue({ providerId: selectedProviderId }); setConfigModalOpen(true); }}
+            >
+              添加 Agent 配置
+            </Button>
+          </div>
+          <Table
+            dataSource={filteredConfigs}
+            columns={configColumns}
+            rowKey="id"
+            size="small"
+            loading={loading}
+            pagination={false}
+            locale={{ emptyText: providers.length === 0 ? '请先添加 Provider' : '暂无 Agent 配置' }}
+          />
+        </div>
+      </GlassCard>
+
+      {/* Provider modal */}
+      <Modal
+        title={editingProvider ? '编辑 Provider' : '添加 Provider'}
+        open={providerModalOpen}
+        onOk={handleSaveProvider}
+        onCancel={() => { setProviderModalOpen(false); setEditingProvider(null); }}
+        destroyOnClose
+      >
+        <Form form={providerForm} layout="vertical" preserve={false}>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input placeholder="My Claude" />
+          </Form.Item>
+          <Form.Item name="type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
+            <Select options={PROVIDER_TYPE_OPTIONS} placeholder="选择 Provider 类型" disabled={!!editingProvider} />
+          </Form.Item>
+          <Form.Item name="apiKey" label="API Key" rules={[{ required: true, message: '请输入 API Key' }]}>
+            <Input.Password placeholder="sk-ant-..." />
+          </Form.Item>
+          <Form.Item name="baseUrl" label="Base URL（可选）">
+            <Input placeholder="https://api.example.com" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Config modal */}
+      <Modal
+        title={editingConfig ? '编辑 Agent 配置' : '添加 Agent 配置'}
+        open={configModalOpen}
+        onOk={handleSaveConfig}
+        onCancel={() => { setConfigModalOpen(false); setEditingConfig(null); }}
+        destroyOnClose
+        width={520}
+      >
+        <Form form={configForm} layout="vertical" preserve={false}>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input placeholder="Claude Sonnet" />
+          </Form.Item>
+          <Form.Item name="providerId" label="Provider" rules={[{ required: true, message: '请选择 Provider' }]}>
+            <Select
+              options={providers.map(p => ({ value: p.id, label: p.name }))}
+              placeholder="选择 Provider"
+              disabled={!!editingConfig}
+            />
+          </Form.Item>
+          <Form.Item name="model" label="模型" rules={[{ required: true, message: '请输入模型名称' }]}>
+            <Input placeholder="claude-sonnet-4-20250514" />
+          </Form.Item>
+          <Form.Item name="systemPrompt" label="系统提示词">
+            <Input.TextArea rows={3} placeholder="You are a helpful assistant..." />
+          </Form.Item>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Form.Item name="temperature" label="温度" style={{ flex: 1 }}>
+              <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="maxTokens" label="最大 Token" style={{ flex: 1 }}>
+              <InputNumber min={256} max={128000} step={256} style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
+        </Form>
+      </Modal>
     </div>
   );
 }
@@ -512,6 +594,7 @@ const panels: Record<string, React.FC> = {
   integrations: IntegrationSettings,
   appearance: AppearanceSettings,
   'workspace-nav': WorkspaceSettings,
+  'agent-configs': AgentConfigsSettings,
   'mcp-servers': McpServersSettings,
   terminal: TerminalSettings,
   'git-tools': GitToolsSettings,

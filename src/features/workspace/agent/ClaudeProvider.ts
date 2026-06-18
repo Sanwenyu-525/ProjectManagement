@@ -1,21 +1,18 @@
 import { listen } from '@tauri-apps/api/event';
 import { terminalApi } from '../../../api';
-import type { TerminalOutputEvent } from '../../../shared/terminalTypes';
+import { stripAnsi } from '../../../lib/stripAnsi';
+import type { TerminalOutputEvent, TerminalExitEvent } from '../../../shared/terminalTypes';
 import type { AgentProvider, AgentStreamEvent, StartOptions } from './AgentProvider';
 
-function stripAnsi(str: string): string {
-  return str
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '')
-    .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '')
-    .replace(/\r/g, '')
-    .replace(/\x00/g, '')
-    .replace(/\x08/g, '')
-    .replace(/\x1b\(B/g, '')
-    .replace(/\x1b[=>]/g, '')
-    .trim();
-}
-
+/**
+ * ClaudeProvider — launches `claude --dangerously-skip-permissions` as a
+ * persistent PTY session and communicates via stdin/stdout.
+ *
+ * Each send() writes the message to the process's stdin. The response is
+ * captured from terminal-output events, stripped of ANSI codes, and emitted
+ * as token events. Response completion is detected by a silence timer
+ * (no new output for ~2s) or a prompt pattern reappearing.
+ */
 export class ClaudeProvider implements AgentProvider {
   readonly id = 'claude';
   readonly name = 'Claude Code';
@@ -23,62 +20,167 @@ export class ClaudeProvider implements AgentProvider {
 
   private terminalId: string | null = null;
   private listeners = new Set<(e: AgentStreamEvent) => void>();
-  private unlistenTauri: (() => void) | null = null;
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private unlistenOutput: (() => void) | null = null;
+  private unlistenExit: (() => void) | null = null;
+
+  /** Buffer for the current response being collected */
+  private responseBuffer = '';
+  /** Timer for detecting response completion via silence */
+  private silenceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Whether we're currently waiting for a response */
+  private awaitingResponse = false;
+  /** Whether the PTY process is running */
+  private processRunning = false;
 
   constructor(_config?: { runtimeId?: string }) {}
 
   async start(options: StartOptions): Promise<string> {
-    const terminalId = `claude-${Date.now()}`;
-    const workDir = options.cwd || '';
-    await terminalApi.startAgent(terminalId, 'claude', ['--dangerously-skip-permissions'], workDir);
-    this.terminalId = terminalId;
+    this.terminalId = `claude-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-    const unlisten = await listen<TerminalOutputEvent>('terminal-output', (event) => {
+    // Register listeners BEFORE spawning
+    this.unlistenOutput = await listen<TerminalOutputEvent>('terminal-output', (event) => {
       if (event.payload.terminalId !== this.terminalId) return;
-      const cleaned = stripAnsi(event.payload.data);
-      if (!cleaned) return;
-
-      this.emit({ type: 'token', text: cleaned });
-
-      if (this.idleTimer) clearTimeout(this.idleTimer);
-      this.idleTimer = setTimeout(() => {
-        this.emit({ type: 'done' });
-      }, 1500);
+      this.handleOutput(event.payload.data);
     });
-    this.unlistenTauri = unlisten;
 
-    return terminalId;
+    this.unlistenExit = await listen<TerminalExitEvent>('terminal-exit', (event) => {
+      if (event.payload.terminalId !== this.terminalId) return;
+      this.processRunning = false;
+      // Flush any remaining response
+      if (this.awaitingResponse && this.responseBuffer.trim()) {
+        this.emitToken(this.responseBuffer);
+        this.responseBuffer = '';
+        this.emitDone();
+      }
+      this.cleanupListeners();
+    });
+
+    // Spawn `claude --dangerously-skip-permissions` in persistent mode
+    const cwd = options.cwd || '';
+    await terminalApi.startAgent(this.terminalId, 'claude', ['--dangerously-skip-permissions'], cwd);
+    this.processRunning = true;
+
+    return this.terminalId;
   }
 
   async send(message: string): Promise<void> {
-    if (!this.terminalId) throw new Error('Provider not started');
+    if (!this.terminalId || !this.processRunning) {
+      throw new Error('Claude process not running. Please restart.');
+    }
+
+    // Reset response state
+    this.responseBuffer = '';
+    this.awaitingResponse = true;
+    this.clearSilenceTimer();
+
+    // Send message to stdin (append newline to submit)
     await terminalApi.input(this.terminalId, message + '\n');
   }
 
   async abort(): Promise<void> {
-    if (!this.terminalId) return;
-    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
-    await terminalApi.input(this.terminalId, '\x03');
+    if (this.terminalId) {
+      await terminalApi.stop(this.terminalId);
+    }
+    this.clearSilenceTimer();
   }
 
   async stop(): Promise<void> {
-    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
-    if (this.unlistenTauri) { this.unlistenTauri(); this.unlistenTauri = null; }
-    if (this.terminalId) { await terminalApi.stop(this.terminalId); this.terminalId = null; }
+    this.clearSilenceTimer();
+    if (this.terminalId && this.processRunning) {
+      try {
+        await terminalApi.stop(this.terminalId);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!msg.includes('不存在') && !msg.includes('已退出')) {
+          throw e;
+        }
+      }
+      this.processRunning = false;
+    }
+    this.cleanupListeners();
+    this.terminalId = null;
   }
 
   isActive(): boolean {
-    return this.terminalId !== null;
+    return this.processRunning;
   }
 
   get connectionId(): string | null {
     return this.terminalId;
   }
 
-  onStream(callback: (event: AgentStreamEvent) => void): () => void {
+  onStream(callback: (e: AgentStreamEvent) => void): () => void {
     this.listeners.add(callback);
     return () => { this.listeners.delete(callback); };
+  }
+
+  // ── Terminal Output Processing ────────────────────────────────
+
+  private handleOutput(rawData: string): void {
+    if (!this.awaitingResponse) return;
+
+    const cleaned = stripAnsi(rawData)
+      .replace(/\r/g, '')
+      // Remove terminal control sequences that slip through
+      .replace(/\x00/g, '');
+
+    if (!cleaned) return;
+
+    // Detect prompt patterns (Claude waiting for input)
+    // Common prompts: ">" at line start, "claude>" etc.
+    const isPrompt = /^[>❯]\s*$/m.test(cleaned) || /claude\s*[>❯]/i.test(cleaned);
+
+    if (isPrompt) {
+      // Prompt appeared = response is complete
+      this.clearSilenceTimer();
+      if (this.responseBuffer.trim()) {
+        this.emitToken(this.responseBuffer);
+        this.responseBuffer = '';
+      }
+      this.emitDone();
+      this.awaitingResponse = false;
+      return;
+    }
+
+    // Accumulate response text
+    this.responseBuffer += cleaned;
+
+    // Emit incremental tokens for real-time streaming feel
+    // Debounce: emit every chunk but also reset the silence timer
+    this.emitToken(cleaned);
+
+    // Reset silence timer — if no output for 2s, consider response complete
+    this.clearSilenceTimer();
+    this.silenceTimer = setTimeout(() => {
+      if (this.awaitingResponse && this.responseBuffer.trim()) {
+        // Don't emit the buffer again — tokens were already emitted incrementally
+        this.responseBuffer = '';
+        this.emitDone();
+        this.awaitingResponse = false;
+      }
+    }, 2000);
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────
+
+  private clearSilenceTimer(): void {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+  }
+
+  private emitToken(text: string): void {
+    this.emit({ type: 'token', text });
+  }
+
+  private emitDone(): void {
+    this.emit({ type: 'done' });
+  }
+
+  private cleanupListeners(): void {
+    if (this.unlistenOutput) { this.unlistenOutput(); this.unlistenOutput = null; }
+    if (this.unlistenExit) { this.unlistenExit(); this.unlistenExit = null; }
   }
 
   private emit(event: AgentStreamEvent): void {

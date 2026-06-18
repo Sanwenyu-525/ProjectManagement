@@ -4,10 +4,8 @@ import { getThemeColors } from './themeColors';
 export const STATUS_COLORS: Record<string, string> = {
   Idea: 'default',
   Planning: 'blue',
-  Development: 'orange',
-  Testing: 'purple',
-  Deployed: 'green',
-  Maintained: 'cyan',
+  Active: 'orange',
+  Completed: 'green',
   Archived: 'default',
 };
 
@@ -17,16 +15,14 @@ export function getStatusHexColors(): Record<string, string> {
   return {
     Idea: '#d9d9d9',
     Planning: c.info,
-    Development: c.amber,
-    Testing: c.purple,
-    Deployed: c.statusDone,
-    Maintained: '#13c2c2',
+    Active: c.amber,
+    Completed: c.statusDone,
     Archived: '#8c8c8c',
   };
 }
 
 /** All project statuses */
-export const PROJECT_STATUSES = ['Idea', 'Planning', 'Development', 'Testing', 'Deployed', 'Maintained', 'Archived'] as const;
+export const PROJECT_STATUSES = ['Idea', 'Planning', 'Active', 'Completed', 'Archived'] as const;
 
 /** Priority options */
 export const PRIORITY_OPTIONS = ['Low', 'Medium', 'High', 'Critical'] as const;

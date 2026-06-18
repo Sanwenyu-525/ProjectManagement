@@ -1,12 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Dropdown, notification } from 'antd';
-import {
-  SettingOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-} from '@ant-design/icons';
-import WorkspacePage from '../features/workspace/WorkspacePage';
+import { SettingOutlined } from '@ant-design/icons';
 import FileExplorer from './FileExplorer';
 import SearchBox from './components/SearchBox';
 import CommandPalette from './components/CommandPalette';
@@ -15,21 +10,20 @@ import { healthApi } from '../api';
 import { formatHealthIssues, isHealthUrgent } from '../lib/healthUtils';
 import { useThemeStore } from '../stores/themeStore';
 
-const navItems = [
-  { key: '/workspace', icon: 'space_dashboard', label: '工作区' },
-  { key: '/projects', icon: 'folder_open', label: '项目' },
-  { key: '/settings', icon: 'settings', label: '设置' },
-];
+const WorkspacePage = lazy(() => import('../features/workspace/WorkspacePage'));
 
-const footerItems = [
-  { icon: 'description', label: '文档', href: 'https://docs.devhub.ai' },
-  { icon: 'help', label: '支持', href: 'https://support.devhub.ai' },
+const navItems = [
+  { key: '/workspace', icon: 'smart_toy', label: '工作区' },
+  { key: '/projects', icon: 'folder_open', label: '项目' },
+  { key: '/graph', icon: 'schema', label: '图谱' },
+  { key: '/timeline', icon: 'calendar_month', label: '时间线' },
+  { key: '/data-screen', icon: 'monitoring', label: '数据大屏' },
 ];
 
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [filePanelOpen, setFilePanelOpen] = useState(false);
   const [notifApi, contextHolder] = notification.useNotification();
   const isDark = useThemeStore(s => s.mode === 'dark');
   const { open: paletteOpen, openPalette, closePalette } = useCommandPalette();
@@ -77,7 +71,10 @@ export default function MainLayout() {
     { key: 'settings', icon: <SettingOutlined />, label: '设置', onClick: () => navigate('/settings') },
   ];
 
-  const sidebarW = sidebarCollapsed ? 64 : 260;
+  const railW = 52;
+  const panelW = 220;
+  const filePanelW = filePanelOpen ? panelW : 0;
+  const headerLeft = railW + filePanelW;
 
   return (
     <div style={{
@@ -89,317 +86,210 @@ export default function MainLayout() {
     }}>
       {contextHolder}
 
-      {/* ── Sidebar ── */}
+      {/* ── Icon Rail ── */}
       <nav
-        aria-label="侧栏导航"
+        aria-label="主导航"
         style={{
           position: 'fixed',
           top: 0,
           left: 0,
-          width: sidebarW,
+          width: railW,
           height: '100vh',
           zIndex: 50,
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '16px 8px',
-          background: isDark ? 'rgba(7, 11, 18, 0.92)' : 'rgba(255, 255, 255, 0.70)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderRight: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'var(--color-border)'}`,
-          transition: 'width 0.2s ease',
+          alignItems: 'center',
+          padding: '10px 0',
+          gap: 6,
+          background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+          flexShrink: 0,
         }}
       >
-        {/* Top section */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minHeight: 0 }}>
-          {/* Logo + collapse toggle */}
-          <div style={{
+        {/* Logo */}
+        <div
+          onClick={() => navigate('/workspace')}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            background: 'linear-gradient(135deg, var(--color-primary), var(--md-primary-container))',
             display: 'flex',
-            flexDirection: sidebarCollapsed ? 'column' : 'row',
             alignItems: 'center',
-            gap: sidebarCollapsed ? 4 : 10,
-            padding: sidebarCollapsed ? '8px 0' : '8px 12px',
-            marginBottom: 12,
-          }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                background: 'var(--md-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                boxShadow: '0 2px 8px rgba(0, 107, 95, 0.22)',
-              }}
-              onClick={() => navigate('/workspace')}
-              role="button"
-              title="返回首页"
-            >
-              <img src="/icon.png" alt="D" style={{ width: 20, height: 20, borderRadius: 4 }} />
-            </div>
-            {!sidebarCollapsed && (
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: 'var(--md-on-surface)',
-                  lineHeight: '20px',
-                }}>
-                  DevHub
-                </div>
-                <span style={{
-                  fontSize: 12,
-                  fontFamily: 'var(--font-label)',
-                  color: 'var(--md-on-surface-variant)',
-                  opacity: 0.7,
-                }}>
-                  v1.0.4
-                </span>
-              </div>
-            )}
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--md-on-surface-variant)',
-                cursor: 'pointer',
-                flexShrink: 0,
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = 'var(--md-surface-container-high)';
-                e.currentTarget.style.color = 'var(--md-on-surface)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--md-on-surface-variant)';
-              }}
-              title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
-            >
-              {sidebarCollapsed ? <MenuUnfoldOutlined style={{ fontSize: 14 }} /> : <MenuFoldOutlined style={{ fontSize: 14 }} />}
-            </button>
-          </div>
-
-          {/* New Project CTA */}
-          {!sidebarCollapsed && (
-            <div style={{ padding: '0 8px', marginBottom: 12 }}>
-              <button
-                onClick={() => navigate('/projects')}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  background: 'var(--md-primary)',
-                  color: 'var(--md-on-primary)',
-                  fontFamily: 'var(--font-label)',
-                  fontSize: 12,
-                  fontWeight: 500,
-                  letterSpacing: '0.02em',
-                  padding: '8px 16px',
-                  borderRadius: 8,
-                  border: 'none',
-                  boxShadow: '0 2px 8px rgba(0, 107, 95, 0.22)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
-                新建项目
-              </button>
-            </div>
-          )}
-
-          {/* Navigation links */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {navItems.map(item => {
-              const isActive = activeKey === item.key;
-              const handleClick = () => {
-                navigate(item.key);
-              };
-
-              return (
-                <button
-                  key={item.key}
-                  onClick={handleClick}
-                  title={sidebarCollapsed ? item.label : undefined}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: sidebarCollapsed ? '8px 4px' : '8px 12px',
-                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                    border: 'none',
-                    borderRadius: isActive ? '0 8px 8px 0' : 8,
-                    borderLeft: isActive ? '2px solid var(--md-primary)' : '2px solid transparent',
-                    background: isActive
-                      ? 'rgba(20, 184, 166, 0.10)'
-                      : 'transparent',
-                    color: isActive ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: 14,
-                    textAlign: 'left',
-                    width: '100%',
-                  }}
-                  onMouseEnter={e => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)';
-                      e.currentTarget.style.color = 'var(--md-on-surface)';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = 'var(--md-on-surface-variant)';
-                    }
-                  }}
-                >
-                  <span className="material-symbols-outlined" style={{
-                    fontSize: 20,
-                    color: isActive ? 'var(--md-primary)' : undefined,
-                    transition: 'color 0.2s',
-                  }}>
-                    {item.icon}
-                  </span>
-                  {!sidebarCollapsed && (
-                    <span style={{ fontWeight: isActive ? 500 : 400 }}>
-                      {item.label}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-
-          </div>
-
-          {/* ── Explorer file tree ── */}
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable' }}>
-            <FileExplorer collapsed={sidebarCollapsed} />
-          </div>
+            justifyContent: 'center',
+            marginBottom: 10,
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+          title="DevHub"
+        >
+          <img src="/icon.png" alt="D" style={{ width: 18, height: 18, borderRadius: 4 }} />
         </div>
 
-        {/* Footer links */}
-        <div style={{
-          borderTop: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.3)'}`,
-          paddingTop: 12,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-        }}>
-          {footerItems.map(item => (
-            <button
-              key={item.label}
-              onClick={() => window.open(item.href, '_blank')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: sidebarCollapsed ? '8px 0' : '8px 12px',
-                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                border: 'none',
-                borderRadius: 8,
-                background: 'transparent',
-                color: 'var(--md-on-surface-variant)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                fontFamily: 'var(--font-sans)',
-                fontSize: 14,
-                textAlign: 'left',
-                width: '100%',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)';
-                e.currentTarget.style.color = 'var(--md-on-surface)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--md-on-surface-variant)';
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>{item.icon}</span>
-              {!sidebarCollapsed && <span>{item.label}</span>}
-            </button>
-          ))}
-
-          {/* User Profile */}
-          {!sidebarCollapsed && (
+        {/* Navigation items */}
+        {navItems.map(item => {
+          const isActive = activeKey === item.key;
+          return (
             <div
+              key={item.key}
+              onClick={() => navigate(item.key)}
+              title={item.label}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: '8px 12px',
-                marginTop: 16,
+                width: 36,
+                height: 36,
                 borderRadius: 8,
-                border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : 'rgba(187,202,198,0.30)'}`,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                background: 'var(--md-secondary-container)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--md-on-secondary-container)',
-                fontSize: 12,
-                fontWeight: 700,
-                flexShrink: 0,
-              }}>JD</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 13,
-                  color: 'var(--md-on-surface)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>用户名</div>
-                <div style={{
-                  fontSize: 12,
-                  fontFamily: 'var(--font-label)',
-                  color: 'var(--md-on-surface-variant)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>user@example.com</div>
-              </div>
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                background: isActive ? 'var(--color-primary-light)' : 'transparent',
+                borderLeft: isActive ? '2px solid var(--color-primary)' : '2px solid transparent',
+              }}
+              onMouseEnter={e => {
+                if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+              }}
+              onMouseLeave={e => {
+                if (!isActive) e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <span className="material-symbols-outlined" style={{
+                fontSize: 18,
+                color: isActive ? 'var(--color-primary)' : 'rgba(255,255,255,0.5)',
+                transition: 'color 0.15s',
+              }}>
+                {item.icon}
+              </span>
             </div>
-          )}
+          );
+        })}
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* File explorer toggle */}
+        <div
+          onClick={() => setFilePanelOpen(!filePanelOpen)}
+          title="文件浏览器"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            background: filePanelOpen ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
+            border: filePanelOpen ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid transparent',
+          }}
+          onMouseEnter={e => {
+            if (!filePanelOpen) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+          }}
+          onMouseLeave={e => {
+            if (!filePanelOpen) e.currentTarget.style.background = filePanelOpen ? 'rgba(245, 158, 11, 0.2)' : 'transparent';
+          }}
+        >
+          <span className="material-symbols-outlined" style={{
+            fontSize: 18,
+            color: filePanelOpen ? '#fbbf24' : 'rgba(255,255,255,0.5)',
+          }}>
+            {filePanelOpen ? 'folder_open' : 'folder'}
+          </span>
+        </div>
+
+        {/* Settings */}
+        <div
+          onClick={() => navigate('/settings')}
+          title="设置"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            marginTop: 4,
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+        >
+          <span className="material-symbols-outlined" style={{
+            fontSize: 18,
+            color: activeKey === '/settings' ? 'var(--color-primary)' : 'rgba(255,255,255,0.5)',
+          }}>
+            settings
+          </span>
         </div>
       </nav>
 
-      {/* ── Main area (offset by sidebar width) ── */}
+      {/* ── File Panel ── */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: railW,
+        width: panelW,
+        height: '100vh',
+        zIndex: 45,
+        background: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderRight: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : 'rgba(187, 202, 198, 0.3)'}`,
+        transition: 'transform 0.2s ease, opacity 0.2s ease',
+        transform: filePanelOpen ? 'translateX(0)' : `translateX(-${panelW}px)`,
+        opacity: filePanelOpen ? 1 : 0,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+        {/* Panel header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 12px 8px',
+          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : 'rgba(187, 202, 198, 0.2)'}`,
+          flexShrink: 0,
+        }}>
+          <span style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.7)',
+          }}>
+            Explorer
+          </span>
+          <span
+            className="material-symbols-outlined"
+            onClick={() => setFilePanelOpen(false)}
+            style={{
+              fontSize: 16,
+              color: isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)',
+              cursor: 'pointer',
+              padding: 2,
+              borderRadius: 4,
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-on-surface)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)'; }}
+          >close</span>
+        </div>
+        {/* File tree */}
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarGutter: 'stable' }}>
+          <FileExplorer collapsed={false} />
+        </div>
+      </div>
+
+      {/* ── Main area ── */}
       <div style={{
         flex: 1,
-        marginLeft: sidebarW,
+        marginLeft: headerLeft,
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
         overflow: 'hidden',
-        background: 'transparent',
         transition: 'margin-left 0.2s ease',
       }}>
 
@@ -408,65 +298,37 @@ export default function MainLayout() {
           position: 'fixed',
           top: 0,
           right: 0,
-          left: sidebarW,
-          height: 56,
+          left: headerLeft,
+          height: 'var(--layout-topbar-height)',
           zIndex: 40,
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '0 24px',
-          background: isDark ? 'rgba(7, 11, 18, 0.90)' : 'rgba(255, 255, 255, 0.70)',
+          padding: '0 16px',
+          gap: 12,
+          background: isDark ? 'rgba(15, 23, 42, 0.90)' : 'rgba(255, 255, 255, 0.80)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          borderBottom: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'var(--color-border)'}`,
+          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : 'rgba(187, 202, 198, 0.3)'}`,
           transition: 'left 0.2s ease',
         }}>
-          {/* Left: nav links */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 0, height: '100%' }}>
-            {['最近', '收藏'].map(label => (
-              <button
-                key={label}
-                style={{
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: 14,
-                  color: 'var(--md-on-surface-variant)',
-                  cursor: 'pointer',
-                  padding: '0 12px',
-                  borderRadius: 0,
-                  border: 'none',
-                  background: 'transparent',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)';
-                  e.currentTarget.style.color = 'var(--md-on-surface)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = 'var(--md-on-surface-variant)';
-                }}
-              >{label}</button>
-            ))}
-          </div>
-
-          {/* Center: search (command palette) */}
-          <div style={{ flex: 1, maxWidth: 672, margin: '0 32px', display: 'flex', alignItems: 'center' }}>
+          {/* Left: Command Palette input */}
+          <div style={{ flex: 1, maxWidth: 400 }}>
             <SearchBox onOpenCommandPalette={openPalette} />
           </div>
 
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
+
           {/* Right: actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {/* Deploy */}
             <button
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
-                padding: '6px 16px',
-                borderRadius: 8,
+                gap: 6,
+                padding: '5px 14px',
+                borderRadius: 6,
                 border: 'none',
                 background: 'var(--md-primary)',
                 color: 'var(--md-on-primary)',
@@ -476,82 +338,82 @@ export default function MainLayout() {
                 fontWeight: 500,
                 letterSpacing: '0.02em',
                 transition: 'all 0.15s ease',
-                boxShadow: '0 2px 8px rgba(0, 107, 95, 0.22)',
+                boxShadow: 'var(--shadow-sm)',
               }}
               onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; }}
               onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
             >
               部署
-              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>rocket_launch</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>rocket_launch</span>
+            </button>
+
+            {/* Notifications */}
+            <button
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 36, height: 36, borderRadius: 6, border: 'none',
+                background: 'transparent',
+                color: isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.6)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'var(--md-surface-container-high)';
+                e.currentTarget.style.color = 'var(--md-on-surface)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.6)';
+              }}
+              title="通知"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>notifications</span>
+            </button>
+
+            {/* Theme toggle */}
+            <button
+              onClick={useThemeStore.getState().toggle}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 36, height: 36, borderRadius: 6, border: 'none',
+                background: 'transparent',
+                color: isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.6)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'var(--md-surface-container-high)';
+                e.currentTarget.style.color = 'var(--md-on-surface)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.6)';
+              }}
+              title={isDark ? '浅色模式' : '深色模式'}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                {isDark ? 'light_mode' : 'dark_mode'}
+              </span>
             </button>
 
             {/* Divider */}
             <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              borderLeft: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.50)'}`,
-              paddingLeft: 16,
-            }}>
-              {/* Notifications */}
-              <button
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: 32, height: 32, borderRadius: 8, border: 'none',
-                  background: 'transparent', color: 'var(--md-on-surface-variant)',
-                  cursor: 'pointer', transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)';
-                  e.currentTarget.style.color = 'var(--md-on-surface)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = 'var(--md-on-surface-variant)';
-                }}
-                title="通知"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 20 }}>notifications</span>
-              </button>
-
-              {/* Theme toggle */}
-              <button
-                onClick={useThemeStore.getState().toggle}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: 32, height: 32, borderRadius: 8, border: 'none',
-                  background: 'transparent', color: 'var(--md-on-surface-variant)',
-                  cursor: 'pointer', transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)';
-                  e.currentTarget.style.color = 'var(--md-on-surface)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = 'var(--md-on-surface-variant)';
-                }}
-                title={isDark ? '浅色模式' : '深色模式'}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
-                  {isDark ? 'light_mode' : 'dark_mode'}
-                </span>
-              </button>
-            </div>
+              width: 1,
+              height: 20,
+              background: isDark ? 'rgba(148,163,184,0.15)' : 'rgba(187, 202, 198, 0.4)',
+              margin: '0 4px',
+            }} />
 
             {/* User avatar */}
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
               <button
                 style={{
-                  marginLeft: 8,
-                  width: 32, height: 32, borderRadius: '50%', overflow: 'hidden',
-                  border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'var(--color-border)'}`,
+                  width: 36, height: 36, borderRadius: '50%', overflow: 'hidden',
+                  border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : 'rgba(187, 202, 198, 0.4)'}`,
                   cursor: 'pointer',
                   padding: 0,
                   background: 'transparent',
                   transition: 'box-shadow 0.15s ease',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 0 0 2px rgba(0, 107, 95, 0.20)`; }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 0 0 2px var(--color-primary-light)'; }}
                 onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
                 title="用户资料"
               >
@@ -559,7 +421,7 @@ export default function MainLayout() {
                   width: '100%', height: '100%',
                   background: 'linear-gradient(135deg, var(--md-primary), var(--md-primary-container))',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#fff', fontSize: 12, fontWeight: 700,
+                  color: '#fff', fontSize: 11, fontWeight: 700,
                 }}>D</div>
               </button>
             </Dropdown>
@@ -569,11 +431,11 @@ export default function MainLayout() {
         {/* ── Content area ── */}
         <main style={{
           flex: 1,
-          marginTop: 56,
-          overflow: location.pathname.startsWith('/workspace') ? 'hidden' : 'auto',
+          marginTop: 'var(--layout-topbar-height)',
+          overflow: 'auto',
           position: 'relative',
         }}>
-          {location.pathname.startsWith('/workspace') ? <WorkspacePage /> : <Outlet />}
+          {location.pathname.startsWith('/workspace') ? <Suspense fallback={null}><WorkspacePage /></Suspense> : <Outlet />}
         </main>
       </div>
 

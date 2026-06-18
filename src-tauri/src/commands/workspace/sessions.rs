@@ -12,13 +12,14 @@ pub async fn sessions_start(
     runtime_id: String,
     project_id: Option<String>,
     cwd: Option<String>,
+    permission_mode: Option<String>,
 ) -> Result<String, String> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     db.execute(
-        "INSERT INTO agent_sessions (id, agentTabId, runtimeId, startedAt, status, projectId, cwd) VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?6)",
-        rusqlite::params![id, agent_tab_id, runtime_id, now, project_id, cwd],
+        "INSERT INTO agent_sessions (id, agentTabId, runtimeId, startedAt, status, projectId, cwd, permissionMode) VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?6, ?7)",
+        rusqlite::params![id, agent_tab_id, runtime_id, now, project_id, cwd, permission_mode.unwrap_or_else(|| "default".into())],
     ).map_err(|e| e.to_string())?;
 
     Ok(id)
@@ -51,10 +52,49 @@ pub async fn sessions_end(
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     db.execute(
-        "UPDATE agent_sessions SET endedAt = ?1, status = 'ended' WHERE id = ?2",
+        "UPDATE agent_sessions SET endedAt = ?1, status = 'ended', updatedAt = ?1 WHERE id = ?2",
         rusqlite::params![now, session_id],
     ).map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+/// Update agent session metadata (providerSessionId, lastError, exitCode).
+#[command]
+pub async fn sessions_update(
+    db: State<'_, Database>,
+    session_id: String,
+    provider_session_id: Option<String>,
+    last_error: Option<String>,
+    exit_code: Option<i32>,
+) -> Result<(), String> {
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let mut sets = vec!["updatedAt = ?1".to_string()];
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(now)];
+    let mut idx = 2u32;
+
+    if let Some(v) = provider_session_id {
+        sets.push(format!("providerSessionId = ?{}", idx));
+        params.push(Box::new(v));
+        idx += 1;
+    }
+    if let Some(v) = last_error {
+        sets.push(format!("lastError = ?{}", idx));
+        params.push(Box::new(v));
+        idx += 1;
+    }
+    if let Some(v) = exit_code {
+        sets.push(format!("exitCode = ?{}", idx));
+        params.push(Box::new(v));
+        idx += 1;
+    }
+
+    if sets.len() > 1 {
+        let sql = format!("UPDATE agent_sessions SET {} WHERE id = ?{}", sets.join(", "), idx);
+        params.push(Box::new(session_id));
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        db.execute(&sql, &refs).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

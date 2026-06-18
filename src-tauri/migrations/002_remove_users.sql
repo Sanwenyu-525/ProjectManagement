@@ -1,11 +1,5 @@
 -- Migration 002: Remove users table (single-user, no auth needed)
 
--- Drop foreign key constraints referencing users
-ALTER TABLE "projects" DROP CONSTRAINT IF EXISTS "projects_ownerId_fkey";
-ALTER TABLE "remote_repos" DROP CONSTRAINT IF EXISTS "remote_repos_integrationId_fkey";
-ALTER TABLE "integrations" DROP CONSTRAINT IF EXISTS "integrations_userId_fkey";
-ALTER TABLE "tags" DROP CONSTRAINT IF EXISTS "tags_userId_fkey";
-
 -- Drop indexes on users table
 DROP INDEX IF EXISTS "users_username_key";
 DROP INDEX IF EXISTS "users_email_key";
@@ -57,12 +51,6 @@ FROM "projects";
 DROP TABLE IF EXISTS "projects";
 ALTER TABLE "projects_new" RENAME TO "projects";
 CREATE INDEX IF NOT EXISTS "projects_status_idx" ON "projects"("status");
-
--- Remove userId column from integrations
-ALTER TABLE "integrations" DROP COLUMN IF EXISTS "userId";
-
--- Remove userId column from tags
-ALTER TABLE "tags" DROP COLUMN IF EXISTS "userId";
 
 -- Drop users table
 DROP TABLE IF EXISTS "users";

@@ -4,7 +4,7 @@ import { getThemeColors as getAppThemeColors } from '../lib/themeColors';
 const modernTheme: TerminalThemeConfig = {
   name: '现代深灰',
   colors: {
-    background: '#1e1e1e',
+    background: '#0F172A',
     foreground: '#d4d4d4',
     cursor: '#ffffff',
     cursorAccent: '#1e1e1e',
@@ -64,9 +64,9 @@ function buildDarkTheme(): TerminalThemeConfig {
     colors: {
       background: '#0f1722',
       foreground: '#d9e5ef',
-      cursor: tc.accent || '#5eead4',
+      cursor: tc.accent || '#4fdbc8',
       cursorAccent: '#0f1722',
-      selectionBackground: tc.primaryLight || 'rgba(45, 212, 191, 0.24)',
+      selectionBackground: tc.primaryLight || 'rgba(79, 219, 200, 0.24)',
       selectionForeground: tc.text || '#e5edf5',
       black: '#0b1117',
       red: tc.statusCancel || '#f87171',
@@ -74,7 +74,7 @@ function buildDarkTheme(): TerminalThemeConfig {
       yellow: tc.statusProgress || '#f59e0b',
       blue: tc.info || '#38bdf8',
       magenta: tc.purple || '#a78bfa',
-      cyan: tc.primary || '#2dd4bf',
+      cyan: tc.primary || '#4fdbc8',
       white: '#d9e5ef',
       brightBlack: tc.textSecondary || '#526174',
       brightRed: '#fca5a5',
@@ -82,7 +82,7 @@ function buildDarkTheme(): TerminalThemeConfig {
       brightYellow: '#fbbf24',
       brightBlue: '#7dd3fc',
       brightMagenta: '#c4b5fd',
-      brightCyan: tc.accent || '#5eead4',
+      brightCyan: tc.accent || '#4fdbc8',
       brightWhite: '#f8fbff',
     },
   };
@@ -95,9 +95,9 @@ function buildLightTheme(): TerminalThemeConfig {
     colors: {
       background: '#f7fcff',
       foreground: tc.text || '#172033',
-      cursor: tc.primaryDark || '#0f766e',
+      cursor: tc.primaryDark || '#00423b',
       cursorAccent: 'transparent',
-      selectionBackground: tc.primaryLight || 'rgba(20, 184, 166, 0.22)',
+      selectionBackground: tc.primaryLight || 'rgba(0, 107, 95, 0.22)',
       selectionForeground: tc.text || '#172033',
       black: tc.text || '#172033',
       red: tc.statusCancel || '#dc2626',
@@ -105,7 +105,7 @@ function buildLightTheme(): TerminalThemeConfig {
       yellow: tc.statusProgress || '#d97706',
       blue: tc.info || '#0ea5e9',
       magenta: tc.purple || '#7c3aed',
-      cyan: tc.primary || '#0f766e',
+      cyan: tc.primary || '#006b5f',
       white: '#b7c5d3',
       brightBlack: tc.textTertiary || '#748198',
       brightRed: '#ef4444',
@@ -113,7 +113,7 @@ function buildLightTheme(): TerminalThemeConfig {
       brightYellow: '#eab308',
       brightBlue: '#38bdf8',
       brightMagenta: '#8b5cf6',
-      brightCyan: tc.accent || '#14b8a6',
+      brightCyan: tc.accent || '#006b5f',
       brightWhite: '#ffffff',
     },
   };

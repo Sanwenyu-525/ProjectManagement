@@ -172,10 +172,9 @@ export default function HealthTab({ projectId }: { projectId: string }) {
                 title: '状态',
                 key: 'status',
                 render: (_: unknown, r: HealthRecord) => {
-                  const ok = r.dirtyFileCount === 0 && r.aheadCount === 0 && r.behindCount === 0 && r.outdatedDepCount === 0;
-                  return ok
-                    ? <Tag color="success">正常</Tag>
-                    : <Tag color="warning">有变化</Tag>;
+                  return hasHealthIssues(r)
+                    ? <Tag color="warning">有变化</Tag>
+                    : <Tag color="success">正常</Tag>;
                 },
               },
               { title: '未提交', dataIndex: 'dirtyFileCount', key: 'dirty' },

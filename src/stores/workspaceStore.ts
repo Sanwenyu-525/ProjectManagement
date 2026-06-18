@@ -32,6 +32,10 @@ interface WorkspaceStore {
   // File explorer selection
   selectedFile: string | null;
   selectFile: (path: string | null) => void;
+
+  // Editor panel visibility
+  editorOpen: boolean;
+  setEditorOpen: (v: boolean) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
@@ -59,4 +63,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
 
   selectedFile: null,
   selectFile: (path) => set({ selectedFile: path ?? null }),
+
+  editorOpen: false,
+  setEditorOpen: (v) => set({ editorOpen: v }),
 }));

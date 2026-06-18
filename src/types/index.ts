@@ -477,14 +477,58 @@ export interface AgentSession {
   status: 'running' | 'ended';
   projectId?: string;
   cwd?: string;
+  providerSessionId?: string;
+  permissionMode?: string;
+  lastError?: string;
+  exitCode?: number;
+  updatedAt?: string;
 }
 
 export interface AgentMessage {
   id: number;
   sessionId: string;
-  role: 'input' | 'output';
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'event' | 'input' | 'output';
   content: string;
   timestamp: string;
+}
+
+// ==================== Agent Tasks ====================
+
+export interface AgentTask {
+  id: string;
+  sessionId: string;
+  parentId: string | null;
+  title: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  priority: 'high' | 'medium' | 'low';
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==================== Model Providers & Agent Configs ====================
+
+export interface ModelProvider {
+  id: string;
+  name: string;
+  type: string;
+  apiKey: string;
+  baseUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentConfig {
+  id: string;
+  name: string;
+  icon: string;
+  providerId: string;
+  model: string;
+  systemPrompt: string;
+  temperature: number;
+  maxTokens: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ==================== Browser Memory ====================
@@ -497,4 +541,95 @@ export interface BrowserVisit {
   visitedAt: string;
   domAnalysis?: string;
   projectId?: string;
+}
+
+// ==================== Builds ====================
+
+export type BuildStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled';
+
+export interface Build {
+  id: string;
+  projectId?: string;
+  commitSha?: string;
+  commitMessage?: string;
+  branch?: string;
+  status: BuildStatus;
+  duration?: number;
+  triggeredBy?: string;
+  platforms: string;
+  artifacts: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BuildLog {
+  id: number;
+  buildId: string;
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+export interface CreateBuildInput {
+  projectId?: string;
+  commitSha?: string;
+  commitMessage?: string;
+  branch?: string;
+  triggeredBy?: string;
+  platforms?: string;
+}
+
+export interface UpdateBuildInput {
+  status?: BuildStatus;
+  duration?: number;
+  platforms?: string;
+  artifacts?: string;
+}
+
+// ==================== Templates ====================
+
+export interface Template {
+  id: string;
+  name: string;
+  description?: string;
+  category: string;
+  icon?: string;
+  tags: string;
+  data: string;
+  createdAt: string;
+}
+
+export interface CreateTemplateInput {
+  name: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  tags?: string;
+  data?: string;
+}
+
+// ==================== Integrations ====================
+
+export interface Integration {
+  id: string;
+  platform: string;
+  accessToken?: string;
+  username?: string;
+  settings: string;
+  connectedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateIntegrationInput {
+  platform: string;
+  accessToken?: string;
+  username?: string;
+  settings?: string;
+}
+
+export interface UpdateIntegrationInput {
+  accessToken?: string;
+  username?: string;
+  settings?: string;
 }

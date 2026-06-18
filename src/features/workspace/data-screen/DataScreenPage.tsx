@@ -143,7 +143,7 @@ export default function DataScreenPage() {
   const healthScores = useMemo(() => {
     if (projects.length === 0) return null;
     const activeRate = projects.filter(p => !['Archived', 'Idea'].includes(p.status)).length / projects.length;
-    const deployedRate = projects.filter(p => ['Deployed', 'Maintained'].includes(p.status)).length / projects.length;
+    const deployedRate = projects.filter(p => p.status === 'Completed').length / projects.length;
     const repoRate = projects.filter(p => (p.remoteRepos?.length || 0) > 0).length / projects.length;
     const docRate = projects.filter(p => (p._count?.documents || 0) > 0).length / projects.length;
     const taskRate = projects.filter(p => (p._count?.tasks || 0) > 0).length / projects.length;
@@ -174,7 +174,7 @@ export default function DataScreenPage() {
         {[
           { label: '项目总数', value: projects.length, color: 'var(--color-purple)' },
           { label: '进行中', value: projects.filter(p => !['Archived', 'Idea'].includes(p.status)).length, color: 'var(--color-amber)' },
-          { label: '已部署', value: projects.filter(p => ['Deployed', 'Maintained'].includes(p.status)).length, color: 'var(--color-status-done)' },
+          { label: '已部署', value: projects.filter(p => p.status === 'Completed').length, color: 'var(--color-status-done)' },
           { label: '远程仓库', value: repoCount, color: 'var(--color-info)' },
           { label: '前端运行中', value: runtimeStats.frontendRunning, color: 'var(--color-status-done)' },
           { label: '平均健康分', value: avgHealthScore ?? '—', color: avgHealthScore != null ? (avgHealthScore >= 80 ? 'var(--color-status-done)' : avgHealthScore >= 50 ? 'var(--color-status-progress)' : 'var(--color-status-cancel)') : 'var(--color-text-light)' },

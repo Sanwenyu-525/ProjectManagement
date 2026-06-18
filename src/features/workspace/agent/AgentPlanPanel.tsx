@@ -35,16 +35,18 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroupTitle, setNewGroupTitle] = useState('');
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { groups, childrenOf } = groupAgentTasks(tasks);
 
   // Focus input when adding
   useEffect(() => {
-    if (addingToGroup || showNewGroup) {
+    if (addingToGroup || showNewGroup || editingGroupId) {
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [addingToGroup, showNewGroup]);
+  }, [addingToGroup, showNewGroup, editingGroupId]);
 
   // Compute overall progress
   const totalTasks = tasks.filter(t => t.parentId !== null).length;
@@ -96,6 +98,21 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
     if (!sessionId) return;
     await deleteTask.mutateAsync({ sessionId, id: taskId });
   }, [sessionId, deleteTask]);
+
+  const handleRenameGroup = useCallback(async (group: AgentTask) => {
+    if (!sessionId || !editingTitle.trim()) {
+      setEditingGroupId(null);
+      return;
+    }
+    if (editingTitle.trim() !== group.title) {
+      await updateTask.mutateAsync({
+        sessionId,
+        id: group.id,
+        data: { title: editingTitle.trim() },
+      });
+    }
+    setEditingGroupId(null);
+  }, [sessionId, editingTitle, updateTask]);
 
   if (!sessionId) {
     return (
@@ -168,21 +185,69 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
           return (
             <div key={group.id} style={styles.group}>
               {/* Group header */}
-              <div
-                style={styles.groupHeader}
-                onClick={() => toggleGroup(group.id)}
-              >
-                <span className="material-symbols-outlined" style={{
-                  fontSize: 18,
-                  color: allDone ? 'var(--md-tertiary)' : 'var(--md-primary)',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s',
-                  transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-                }}>
+              <div style={styles.groupHeader}>
+                <span
+                  className="material-symbols-outlined"
+                  style={{
+                    fontSize: 18,
+                    color: allDone ? 'var(--md-tertiary)' : 'var(--md-primary)',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s',
+                    transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    flexShrink: 0,
+                  }}
+                  onClick={() => toggleGroup(group.id)}
+                >
                   expand_more
                 </span>
-                <span style={styles.groupName}>{group.title}</span>
+                {editingGroupId === group.id ? (
+                  <input
+                    ref={inputRef}
+                    value={editingTitle}
+                    onChange={e => setEditingTitle(e.target.value)}
+                    onBlur={() => handleRenameGroup(group)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleRenameGroup(group);
+                      if (e.key === 'Escape') setEditingGroupId(null);
+                    }}
+                    style={styles.groupNameInput}
+                    onClick={e => e.stopPropagation()}
+                  />
+                ) : (
+                  <span
+                    style={styles.groupName}
+                    onClick={() => toggleGroup(group.id)}
+                    onDoubleClick={e => {
+                      e.stopPropagation();
+                      setEditingGroupId(group.id);
+                      setEditingTitle(group.title);
+                    }}
+                  >
+                    {group.title}
+                  </span>
+                )}
                 <span style={styles.groupCount}>{doneCount}/{children.length}</span>
+                <button
+                  style={styles.groupActionBtn}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setEditingGroupId(group.id);
+                    setEditingTitle(group.title);
+                  }}
+                  title="Rename"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>edit</span>
+                </button>
+                <button
+                  style={styles.groupActionBtn}
+                  onClick={e => {
+                    e.stopPropagation();
+                    handleDelete(group.id);
+                  }}
+                  title="Delete group"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-error)' }}>delete</span>
+                </button>
               </div>
 
               {/* Children */}
@@ -419,11 +484,40 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-sans)',
     color: 'var(--md-on-surface)',
   },
+  groupNameInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: 600,
+    fontFamily: 'var(--font-sans)',
+    color: 'var(--md-on-surface)',
+    background: 'var(--md-surface-container-low)',
+    border: '1px solid var(--md-outline-variant)',
+    borderRadius: 4,
+    padding: '1px 4px',
+    outline: 'none',
+    lineHeight: '18px',
+    minWidth: 0,
+  },
   groupCount: {
     fontSize: 11,
     fontWeight: 500,
     color: 'var(--md-on-surface-variant)',
     fontFamily: 'var(--font-mono)',
+  },
+  groupActionBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    padding: 0,
+    opacity: 0.5,
+    flexShrink: 0,
+    transition: 'opacity 0.15s',
   },
   childrenList: {
     display: 'flex',

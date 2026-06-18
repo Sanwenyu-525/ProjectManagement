@@ -1,19 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { useQuery } from '@tanstack/react-query';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { usePreviewStore } from '../../stores/previewStore';
 import { useAgentStore } from '../../stores/agentStore';
-import { terminalApi, sessionsApi } from '../../api';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { terminalApi, sessionsApi, gitApi, workspacesApi } from '../../api';
+import { queryKeys } from '../../api/queryKeys';
 import { TerminalExitEvent, TerminalOutputEvent } from '../../shared/terminalTypes';
-import WorkspaceHeader from './components/WorkspaceHeader';
-import AgentSelector from './agent/AgentSelector';
-import type { AgentWithSession } from './agent/AgentSelector';
 import AgentChat from './agent/AgentChat';
+import AgentIdleState from './agent/AgentIdleState';
+import CodeEditorPane from './editor/CodeEditorPane';
 import BottomPanel from './terminal/BottomPanel';
 import AgentRightPanel from './agent/AgentRightPanel';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { folderName } from './components/terminalFactory';
-import { getProviders, getProvider } from './agent/providers';
+import { ClaudeProvider } from './agent/ClaudeProvider';
 import type { AgentProvider } from './agent/AgentProvider';
 
 // Regex patterns for detecting dev server URLs in terminal output
@@ -24,119 +26,88 @@ const URL_PATTERNS = [
   /(https?:\/\/localhost:\d+[^\s]*)/,
 ];
 
-// Build agent list from provider registry
-const allProviders = getProviders();
-
 export default function WorkspacePage() {
   const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
   const activeProviderId = useAgentStore(s => s.activeProviderId);
   const setActiveProvider = useAgentStore(s => s.setActiveProvider);
 
-  const [agent, setAgent] = useState<AgentWithSession>({
-    id: allProviders[0]?.id ?? '',
-    name: allProviders[0]?.name ?? 'Agent',
-    icon: allProviders[0]?.icon ?? 'smart_toy',
-    session: null,
+  // Recent sessions for idle state
+  const { data: recentSessions = [] } = useQuery({
+    queryKey: queryKeys.sessions.all,
+    queryFn: () => sessionsApi.list(5),
+    staleTime: 30_000,
   });
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+
+  // Workspace stats (tasks, issues, docs)
+  const { data: stats } = useQuery({
+    queryKey: ['workspaceStats'] as const,
+    queryFn: workspacesApi.stats,
+    staleTime: 30_000,
+  });
+
+  const [activeSessionId, _setActiveSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const setActiveSessionId = useCallback((id: string | null) => {
+    sessionIdRef.current = id;
+    _setActiveSessionId(id);
+  }, []);
   const defaultCwd = useTerminalStore(s => s.defaultCwd);
   const providerRef = useRef<AgentProvider | null>(null);
 
-  // Load recent sessions to restore state
+  // Git log for last commit time
+  const { data: gitLog } = useQuery({
+    queryKey: queryKeys.git.log(defaultCwd),
+    queryFn: () => gitApi.log(defaultCwd, 1),
+    staleTime: 60_000,
+  });
+
+  const lastCommitTime = (() => {
+    const commits = gitLog as { date?: string }[] | null;
+    if (!commits?.[0]?.date) return null;
+    const diff = Date.now() - new Date(commits[0].date).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  })();
+
+  const projectName = folderName(defaultCwd);
+
+  // Terminal expand/collapse state
+  const [terminalExpanded, setTerminalExpanded] = useState(false);
+
+  // On mount, clean up stale sessions
   useEffect(() => {
+    sessionsApi.cleanupStale(60, 30).catch(() => {});
     sessionsApi.list(5).then(sessions => {
-      const running = sessions.find(s => s.status === 'running' && s.cwd);
-      if (running) {
-        const provider = getProvider(running.runtimeId);
-        if (provider) {
-          providerRef.current = provider;
-          setActiveProvider(provider.id);
-        }
-        setAgent(prev => ({ ...prev, session: running }));
-        setActiveSessionId(running.id);
+      const staleRunning = sessions.filter(s => s.status === 'running');
+      for (const s of staleRunning) {
+        sessionsApi.end(s.id).catch(() => {});
       }
     }).catch(() => {});
-  }, [setActiveProvider]);
+  }, []);
 
-  // Start agent using provider
-  const handleStartAgent = useCallback(async (providerId?: string, cwd?: string) => {
-    const pid = providerId || allProviders[0]?.id;
-    if (!pid) return;
-    const provider = getProvider(pid);
-    if (!provider) return;
-    const workDir = cwd || defaultCwd;
+  // Start agent and immediately send a message (for idle state input)
+  const handleStartAndSend = useCallback(async (message: string) => {
+    const workDir = defaultCwd;
+    const dangerouslySkipPermissions = localStorage.getItem('agent_dangerouslySkipPermissions') === 'true';
+    const permissionMode = dangerouslySkipPermissions ? 'dangerously-skip-permissions' : 'default';
 
-    const sessionId = await sessionsApi.start(provider.id, provider.id, undefined, workDir);
-    const connectionId = await provider.start({ sessionId, cwd: workDir });
-    setActiveProvider(provider.id);
+    // Create session in DB
+    const sessionId = await sessionsApi.start('claude', 'claude', undefined, workDir, permissionMode);
+
+    // Directly use ClaudeProvider — no DB provider config needed
+    const provider = new ClaudeProvider();
+    await provider.start({ sessionId, cwd: workDir, dangerouslySkipPermissions });
+    setActiveProvider('claude');
     providerRef.current = provider;
-
-    setAgent({
-      id: provider.id,
-      name: provider.name,
-      icon: provider.icon,
-      session: {
-        id: sessionId,
-        agentTabId: connectionId,
-        runtimeId: provider.id,
-        startedAt: new Date().toISOString(),
-        status: 'running',
-      },
-    });
     setActiveSessionId(sessionId);
-  }, [defaultCwd, setActiveProvider]);
 
-  // Stop agent via provider
-  const handleStopAgent = useCallback(async () => {
-    if (providerRef.current) {
-      try {
-        await providerRef.current.stop();
-      } catch { /* ignore */ }
-      providerRef.current = null;
-    }
-    setActiveProvider(null);
-    if (activeSessionId) {
-      try {
-        await sessionsApi.end(activeSessionId);
-      } catch { /* ignore */ }
-    }
-    setAgent(prev => ({ ...prev, session: null }));
-    setActiveSessionId(null);
-  }, [activeSessionId, setActiveProvider]);
-
-  // Handle "New Chat" — stop existing and start fresh
-  const handleNewChat = useCallback(async () => {
-    const providerId = providerRef.current?.id || allProviders[0]?.id;
-    await handleStopAgent();
-    setTimeout(() => handleStartAgent(providerId), 200);
-  }, [handleStopAgent, handleStartAgent]);
-
-  // Handle agent selection
-  const handleSelectAgent = useCallback((selected: AgentWithSession) => {
-    if (!agent.session) {
-      handleStartAgent(selected.id);
-    }
-  }, [agent.session, handleStartAgent]);
-
-  // Listen for PTY exit (agent terminal)
-  useEffect(() => {
-    if (!providerRef.current) return;
-    const connectionId = providerRef.current.connectionId;
-    if (!connectionId) return;
-
-    const unlisten = listen<TerminalExitEvent>('terminal-exit', (event) => {
-      if (event.payload.terminalId === connectionId) {
-        setActiveProvider(null);
-        providerRef.current = null;
-        if (activeSessionId) {
-          sessionsApi.end(activeSessionId).catch(() => {});
-        }
-        setAgent(prev => ({ ...prev, session: null }));
-        setActiveSessionId(null);
-      }
-    });
-    return () => { unlisten.then(fn => fn()); };
-  }, [activeProviderId, activeSessionId, setActiveProvider]);
+    await provider.send(message);
+  }, [defaultCwd, setActiveProvider, setActiveSessionId]);
 
   // Process launch queue from project pages
   const processingRef = useRef(false);
@@ -186,68 +157,143 @@ export default function WorkspacePage() {
     process();
   }, [launchQueueLength]);
 
-  // Listen for terminal exit events (non-agent terminals)
-  const agentConnectionId = providerRef.current?.connectionId ?? null;
+  // Listen for terminal events (exit + URL detection)
+  const urlLastSeenRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const unlisten = listen<TerminalExitEvent>('terminal-exit', (event) => {
+    const unlistenExit = listen<TerminalExitEvent>('terminal-exit', (event) => {
       const { terminalId, code } = event.payload;
-      if (terminalId !== agentConnectionId) {
-        useTerminalStore.getState().updateTerminal(terminalId, { status: code === 0 ? 'exited' : 'error' });
-        usePreviewStore.getState().removePreviewsByTerminal(terminalId);
-      }
+      if (terminalId.startsWith('claude-')) return;
+      useTerminalStore.getState().updateTerminal(terminalId, { status: code === 0 ? 'exited' : 'error' });
+      usePreviewStore.getState().removePreviewsByTerminal(terminalId);
     });
-    return () => { unlisten.then(fn => fn()); };
-  }, [agentConnectionId]);
 
-  // Listen for terminal output and detect localhost URLs
-  useEffect(() => {
-    const unlisten = listen<TerminalOutputEvent>('terminal-output', (event) => {
-      const { data } = event.payload;
+    const unlistenOutput = listen<TerminalOutputEvent>('terminal-output', (event) => {
+      const { data, terminalId } = event.payload;
+      if (!data.includes('http')) return;
       for (const pattern of URL_PATTERNS) {
         const match = data.match(pattern);
         if (match) {
           const url = match[1] || match[0];
-          usePreviewStore.getState().addPreview(url, event.payload.terminalId);
+          if (urlLastSeenRef.current.has(url)) break;
+          urlLastSeenRef.current.add(url);
+          usePreviewStore.getState().addPreview(url, terminalId);
           break;
         }
       }
     });
-    return () => { unlisten.then(fn => fn()); };
+
+    return () => {
+      unlistenExit.then(fn => fn());
+      unlistenOutput.then(fn => fn());
+    };
   }, []);
+
+  const isRunning = !!activeProviderId;
+  const activeTerminal = useTerminalStore(s => s.terminals[0]);
+
+  // Editor panel state
+  const editorOpen = useWorkspaceStore(s => s.editorOpen);
+  const setEditorOpen = useWorkspaceStore(s => s.setEditorOpen);
+  const selectedFile = useWorkspaceStore(s => s.selectedFile);
+
+  // Open editor when a file is selected from FileExplorer
+  useEffect(() => {
+    if (selectedFile) {
+      setEditorOpen(true);
+    }
+  }, [selectedFile, setEditorOpen]);
 
   return (
     <div style={styles.container}>
-      {/* Center: Header + AgentSelector + Chat + Bottom Panel */}
-      <div style={styles.center}>
-        <WorkspaceHeader
-          isRunning={!!activeProviderId}
-          onNewChat={handleNewChat}
-          onStart={() => handleStartAgent()}
-          onStop={handleStopAgent}
-        />
-
-        <AgentSelector
-          agents={allProviders.map(p => ({
-            id: p.id,
-            name: p.name,
-            icon: p.icon,
-            session: p.id === agent.id ? agent.session : null,
-          }))}
-          activeAgentId={agent.id}
-          onSelect={handleSelectAgent}
-        />
-
-        <div style={styles.chatArea}>
-          <AgentChat
-            provider={providerRef.current}
-            activeSessionId={activeSessionId}
-          />
+      {/* Agent area */}
+      <div style={styles.agentArea}>
+        {/* Project summary bar */}
+        <div style={styles.summaryBar}>
+          <span style={styles.projectName}>{projectName}</span>
+          <div style={styles.summaryStats}>
+            <span>Tasks: <strong style={{ color: 'var(--md-on-surface)' }}>{stats?.tasks ?? '—'}</strong></span>
+            <span>Issues: <strong style={{ color: 'var(--md-error)' }}>{stats?.issues ?? '—'}</strong></span>
+            <span>Docs: <strong style={{ color: 'var(--md-on-surface)' }}>{stats?.docs ?? '—'}</strong></span>
+            {lastCommitTime && (
+              <span>Last Commit: <strong style={{ color: 'var(--md-on-surface)' }}>{lastCommitTime}</strong></span>
+            )}
+          </div>
+          <div style={styles.summaryStatus}>
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: isRunning ? 'var(--md-tertiary-container)' : 'var(--md-outline-variant)',
+              flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--md-on-surface-variant)' }}>
+              {isRunning ? 'Agent Running' : 'Agent Ready'}
+            </span>
+          </div>
         </div>
 
-        <BottomPanel />
+        {/* Agent content */}
+        <div style={styles.agentContent}>
+          <div style={styles.agentSplit}>
+            {/* Chat / Idle area */}
+            <div style={{ ...styles.agentPane, flex: editorOpen ? 1 : '1 1 100%' }}>
+              {isRunning ? (
+                <AgentChat
+                  provider={providerRef.current}
+                  activeSessionId={activeSessionId}
+                />
+              ) : (
+                <AgentIdleState
+                  onStartAndSend={handleStartAndSend}
+                  recentSessions={recentSessions}
+                />
+              )}
+            </div>
+
+            {/* Editor panel */}
+            {editorOpen && (
+              <div style={styles.editorPane}>
+                <div style={styles.editorHeader}>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--md-on-surface)', fontFamily: 'var(--font-sans)' }}>
+                    Editor
+                  </span>
+                  <span
+                    className="material-symbols-outlined"
+                    onClick={() => setEditorOpen(false)}
+                    style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 2 }}
+                  >close</span>
+                </div>
+                <CodeEditorPane onEmpty={() => setEditorOpen(false)} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Terminal bar */}
+        <div
+          onClick={() => setTerminalExpanded(!terminalExpanded)}
+          style={styles.terminalBar}
+          className="terminal-bar"
+        >
+          <span style={styles.terminalIcon}>$</span>
+          <span style={{
+            ...styles.terminalStatus,
+            color: activeTerminal?.status === 'running' ? 'var(--color-status-done)' : 'var(--color-text-muted)',
+          }}>
+            {activeTerminal?.status === 'running' ? 'running' : 'stopped'}
+          </span>
+          <span style={styles.terminalExpand}>
+            {terminalExpanded ? '▼' : '▲'} {terminalExpanded ? 'collapse' : 'expand'}
+          </span>
+        </div>
+
+        {/* Expanded terminal */}
+        {terminalExpanded && (
+          <div style={styles.terminalExpanded}>
+            <BottomPanel defaultHeight={240} />
+          </div>
+        )}
       </div>
 
-      {/* Right: Task/Plan Panel */}
+      {/* Plan/Right panel */}
       <AgentRightPanel sessionId={activeSessionId} />
     </div>
   );
@@ -258,23 +304,116 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     width: '100%',
     height: '100%',
-    gap: 8,
-    padding: 8,
+    gap: 'var(--space-2)',
+    padding: 'var(--space-2)',
     background: 'var(--md-surface-container-lowest)',
     overflow: 'hidden',
   },
-  center: {
+  agentArea: {
     display: 'flex',
     flexDirection: 'column',
     flex: 1,
-    gap: 0,
     minWidth: 0,
+    background: 'var(--md-surface-container-lowest)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--md-outline-variant)',
+    overflow: 'hidden',
   },
-  chatArea: {
+  summaryBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-4)',
+    height: 52,
+    padding: '0 var(--space-5)',
+    borderBottom: '1px solid var(--md-outline-variant)',
+    flexShrink: 0,
+  },
+  projectName: {
+    fontSize: 'var(--text-base)',
+    fontWeight: 600,
+    color: 'var(--md-on-surface)',
+    fontFamily: 'var(--font-sans)',
+  },
+  summaryStats: {
+    display: 'flex',
+    gap: 'var(--space-4)',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--md-on-surface-variant)',
+    fontFamily: 'var(--font-sans)',
+  },
+  summaryStatus: {
+    marginLeft: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  agentContent: {
     display: 'flex',
     flexDirection: 'column',
     flex: 1,
     minHeight: 0,
     overflow: 'hidden',
+  },
+  agentSplit: {
+    display: 'flex',
+    flex: 1,
+    minHeight: 0,
+    gap: 0,
+  },
+  agentPane: {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+  },
+  editorPane: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: '1 1 50%',
+    minWidth: 0,
+    borderLeft: '1px solid var(--md-outline-variant)',
+  },
+  editorHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 12px',
+    borderBottom: '1px solid var(--md-outline-variant)',
+    flexShrink: 0,
+    background: 'var(--md-surface-container-lowest)',
+  },
+  terminalBar: {
+    display: 'flex',
+    alignItems: 'center',
+    height: 32,
+    margin: '0 var(--space-2) var(--space-2)',
+    padding: '0 var(--space-3)',
+    background: '#0f172a',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  terminalIcon: {
+    fontSize: 'var(--text-sm)',
+    fontFamily: 'var(--font-mono)',
+    color: 'var(--color-status-done)',
+    marginRight: 'var(--space-2)',
+  },
+  terminalStatus: {
+    fontSize: 'var(--text-xs)',
+    fontFamily: 'var(--font-mono)',
+    padding: '1px 6px',
+    background: 'rgba(74, 222, 128, 0.1)',
+    borderRadius: 'var(--radius-xs)',
+  },
+  terminalExpand: {
+    marginLeft: 'auto',
+    fontSize: 'var(--text-xs)',
+    color: 'var(--color-text-muted)',
+    fontFamily: 'var(--font-sans)',
+  },
+  terminalExpanded: {
+    flexShrink: 0,
+    margin: '0 var(--space-2) var(--space-2)',
+    height: 240,
   },
 };

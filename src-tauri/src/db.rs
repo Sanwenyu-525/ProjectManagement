@@ -178,6 +178,18 @@ impl Database {
         // Browser memory
         run_migration_sql(&conn, include_str!("../migrations/008_browser_memory.sql"));
 
+        // Builds, templates, integrations
+        run_migration_sql(&conn, include_str!("../migrations/009_builds_templates_integrations.sql"));
+
+        // Agent providers and configs
+        run_migration_sql(&conn, include_str!("../migrations/010_agent_providers.sql"));
+
+        // Agent tasks
+        run_migration_sql(&conn, include_str!("../migrations/011_agent_tasks.sql"));
+
+        // Agent sessions extend + tasks CHECK constraints
+        run_migration_sql(&conn, include_str!("../migrations/012_agent_sessions_extend.sql"));
+
         Ok(())
     }
 
@@ -273,6 +285,7 @@ impl Database {
     pub fn delete_by_id(&self, table: &str, id: &str) -> Result<(), DbError> {
         const VALID_TABLES: &[&str] = &[
             "milestones", "documents", "remote_repos", "tags", "tasks", "workspaces",
+            "builds", "templates", "integrations", "model_providers", "agent_configs",
         ];
         if !VALID_TABLES.contains(&table) {
             return Err(DbError::Lock(format!("Invalid table name: {}", table)));

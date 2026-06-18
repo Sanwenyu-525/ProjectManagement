@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Dropdown, Modal, message } from 'antd';
+import { Modal, message } from 'antd';
 import { filesApi } from '../api';
 import { useTerminalStore } from '../stores/terminalStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -194,25 +194,6 @@ export default function FileExplorer({ collapsed }: Props) {
     });
   }, []);
 
-  const collapseAll = useCallback(() => {
-    setDirs(prev => {
-      const next = prev.map(d =>
-        d.expanded.size > 0 ? { ...d, expanded: new Set<string>() } : d
-      );
-      return next === prev ? prev : next;
-    });
-  }, []);
-
-  const refresh = useCallback(() => {
-    fetchingRef.current.clear();
-    setDirs(prev => {
-      const next = prev.map(d => ({ ...d, tree: [] as FileTreeNode[], loading: true }));
-      return next;
-    });
-    // Re-fetch all
-    dirs.forEach(d => fetchTree(d.path));
-  }, [dirs, fetchTree]);
-
   // 刷新指定目录
   const refreshDir = useCallback((path: string) => {
     fetchingRef.current.delete(path);
@@ -231,12 +212,6 @@ export default function FileExplorer({ collapsed }: Props) {
       return prev;
     });
   }, [fetchTree]);
-
-  const menuItems = [
-    { key: 'add', label: '添加目录', onClick: () => setIsAdding(true) },
-    { key: 'refresh', label: '刷新', onClick: refresh },
-    { key: 'collapse', label: '全部折叠', onClick: collapseAll },
-  ];
 
   const selectFile = useCallback((path: string) => {
     useWorkspaceStore.getState().selectFile(path);
@@ -426,57 +401,6 @@ export default function FileExplorer({ collapsed }: Props) {
 
   return (
     <div style={{ padding: collapsed ? '12px 0 0' : '0', position: 'relative' }}>
-      {/* Sticky header */}
-      <h3 style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 2,
-        background: isDark ? 'var(--md-surface)' : 'var(--md-surface-container-lowest)',
-        borderBottom: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.3)'}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'space-between',
-        fontSize: 12,
-        fontWeight: 500,
-        letterSpacing: '0.02em',
-        color: 'var(--md-outline)',
-        textTransform: 'uppercase',
-        margin: 0,
-        padding: collapsed ? '0' : '16px 12px 8px',
-        lineHeight: '16px',
-        overflow: 'visible',
-      }}>
-        {collapsed ? (
-          <span
-            className="material-symbols-outlined"
-            style={{ fontSize: 18, cursor: 'pointer', transition: 'color 0.15s' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--md-on-surface)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
-          >folder_open</span>
-        ) : (
-          <>
-            资源管理器
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: 16, cursor: 'pointer', transition: 'color 0.15s' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--md-on-surface)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
-                onClick={() => setIsAdding(true)}
-              >add</span>
-              <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontSize: 16, cursor: 'pointer', transition: 'color 0.15s' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--md-on-surface)'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = ''; }}
-                >more_horiz</span>
-              </Dropdown>
-            </div>
-          </>
-        )}
-      </h3>
-
       {/* Add directory popover */}
       {isAdding && (
         <div

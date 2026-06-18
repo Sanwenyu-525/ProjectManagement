@@ -1,16 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { DndContext, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, Select, Tag, Modal, Form, message, Empty, Spin, Table, InputNumber, Dropdown } from 'antd';
-import { FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, HolderOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { useProjects, useCreateProject, useDeleteProject, useDetectLocal, useDetectGit } from '../../hooks/useProjects';
 import { useAllHealth } from '../../hooks/useHealth';
-import { useWorkspaces } from '../../hooks/useWorkspaces';
 import type { CreateProjectInput, ProjectWithStats, ProjectStatus, ProjectPriority, DetectedProject, ScanGroup, ProjectHealthResult } from '../../types';
 import ProjectIcon from '../../shared/ProjectIcon';
 import QuickLaunchModal from '../../shared/QuickLaunchModal';
 import HealthBadge from '../../shared/HealthBadge';
 import { launchHistoryStorage } from '../../lib/launchProfiles';
+import { projectsApi } from '../../api';
 import { STATUS_COLORS, PROJECT_STATUSES, PRIORITY_OPTIONS } from '../../lib/constants';
 import { buildLaunchRequests } from '../../lib/launchUtils';
 import { getProjectPriority, getPriorityLabel, getPriorityColor } from './projectUtils';
@@ -25,12 +28,59 @@ const SOURCE_OPTIONS = [
   { value: 'Hybrid', label: '混合项目' },
 ];
 
+function SortableProjectCard({ project, isDark, navigate }: { project: ProjectWithStats; isDark: boolean; navigate: (path: string) => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.3 : 1,
+      }}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        onClick={() => navigate(`/projects/${project.id}`)}
+        style={{
+          padding: '10px 12px',
+          borderRadius: 8,
+          background: isDark ? 'var(--md-surface-container)' : '#ffffff',
+          border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+          cursor: 'grab',
+          transition: 'all 0.15s ease',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'; }}
+        onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+          <div style={{ fontWeight: 500, fontSize: 13, color: 'var(--md-on-surface)' }}>{project.name}</div>
+          <HolderOutlined style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', flexShrink: 0, marginTop: 2 }} />
+        </div>
+        {project.description && (
+          <div style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {project.description}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {project.techStack?.slice(0, 2).map(tech => (
+            <span key={tech} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)', color: 'var(--md-on-surface-variant)' }}>
+              {tech}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProjectsPage() {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
-  const [smartSortEnabled] = useState(true);
   const [quickLaunchModalOpen, setQuickLaunchModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban'>('grid');
   const [sortBy, setSortBy] = useState<'name' | 'status' | 'updated'>('updated');
@@ -42,12 +92,14 @@ export default function ProjectsPage() {
   const { data: projects = [], isLoading: loading, refetch } = useProjects(
     Object.keys(projectsParams).length > 0 ? projectsParams : undefined,
   );
-  const { data: _workspaces = [] } = useWorkspaces();
   const { data: healthData = [] } = useAllHealth();
-  const healthResults: Record<string, ProjectHealthResult> = {};
-  if (Array.isArray(healthData)) {
-    healthData.forEach((h) => { healthResults[h.projectId] = h; });
-  }
+  const healthResults: Record<string, ProjectHealthResult> = useMemo(() => {
+    const map: Record<string, ProjectHealthResult> = {};
+    if (Array.isArray(healthData)) {
+      healthData.forEach((h) => { map[h.projectId] = h; });
+    }
+    return map;
+  }, [healthData]);
 
   // ── Mutations ──
   const createProject = useCreateProject();
@@ -57,7 +109,7 @@ export default function ProjectsPage() {
 
   const batch = useBatchLaunch({
     projects,
-    smartSortEnabled,
+    smartSortEnabled: true,
     onLaunchComplete: () => refetch(),
   });
 
@@ -320,6 +372,65 @@ export default function ProjectsPage() {
     if (mapped === 'orange') return 'var(--md-primary)';
     return 'var(--md-outline)';
   };
+
+  // ── Kanban DnD ──
+  const KANBAN_COLUMNS = [
+    { key: 'Idea', label: '想法' },
+    { key: 'Planning', label: '规划中' },
+    { key: 'Active', label: '进行中' },
+    { key: 'Completed', label: '已完成' },
+    { key: 'Archived', label: '已归档' },
+  ];
+  const kanbanSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+
+  const projectsByStatus = useMemo(() => {
+    const grouped: Record<string, ProjectWithStats[]> = {};
+    KANBAN_COLUMNS.forEach(col => { grouped[col.key] = []; });
+    projects.forEach(p => { if (grouped[p.status]) grouped[p.status].push(p); });
+    return grouped;
+  }, [projects]);
+
+  const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId) || null, [projects, activeProjectId]);
+
+  function kanbanFindColumn(projectId: string): string | undefined {
+    for (const [status, list] of Object.entries(projectsByStatus)) {
+      if (list.some(p => p.id === projectId)) return status;
+    }
+    return undefined;
+  }
+
+  function handleKanbanDragStart(e: DragStartEvent) { setActiveProjectId(e.active.id as string); }
+
+  function handleKanbanDragOver(e: DragOverEvent) {
+    const { active, over } = e;
+    if (!over) return;
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    const fromCol = kanbanFindColumn(activeId);
+    const toCol = kanbanFindColumn(overId);
+    if (!fromCol || !toCol || fromCol === toCol) return;
+    const proj = projectsByStatus[fromCol].find(p => p.id === activeId);
+    if (!proj) return;
+    projectsByStatus[fromCol] = projectsByStatus[fromCol].filter(p => p.id !== activeId);
+    (proj as ProjectWithStats).status = toCol as ProjectStatus;
+    projectsByStatus[toCol].push(proj);
+  }
+
+  async function handleKanbanDragEnd(e: DragEndEvent) {
+    setActiveProjectId(null);
+    const { active, over } = e;
+    if (!over) return;
+    const activeId = active.id as string;
+    const original = projects.find(p => p.id === activeId);
+    if (!original) return;
+    const newStatus = kanbanFindColumn(activeId);
+    if (!newStatus || newStatus === original.status) return;
+    try {
+      await projectsApi.updateStatus(activeId, newStatus);
+      refetch();
+    } catch { refetch(); }
+  }
 
   // ── Render ──
 
@@ -745,74 +856,72 @@ export default function ProjectsPage() {
           })}
         </div>
       ) : (
-        /* ── Kanban View (placeholder) ── */
-        <div style={{ display: 'flex', gap: 16 }}>
-          {[
-            { key: 'Development', label: '开发中' },
-            { key: 'Testing', label: '测试中' },
-            { key: 'Deployed', label: '已部署' },
-            { key: 'Archived', label: '已归档' },
-          ].map(({ key, label }) => {
-            const filtered = sortedProjects.filter(p => p.status === key);
-            return (
-              <div key={key} style={{ flex: 1, minWidth: 220 }}>
-                <div style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: 'var(--md-on-surface)',
-                  padding: '8px 12px',
-                  marginBottom: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}>
-                  <span style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: key === 'Development' ? 'var(--md-primary)' : key === 'Testing' ? 'var(--md-secondary)' : key === 'Deployed' ? 'var(--md-tertiary)' : 'var(--md-outline)',
-                  }} />
-                  {label}
-                  <span style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', fontWeight: 400 }}>
-                    ({filtered.length})
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {filtered.map(project => (
-                    <div
-                      key={project.id}
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 8,
-                        background: isDark ? 'var(--md-surface-container)' : '#ffffff',
-                        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
-                    >
-                      <div style={{ fontWeight: 500, fontSize: 13, color: 'var(--md-on-surface)' }}>{project.name}</div>
-                      {project.description && (
-                        <div style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {project.description}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-                        {project.techStack?.slice(0, 2).map(tech => (
-                          <span key={tech} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)', color: 'var(--md-on-surface-variant)' }}>
-                            {tech}
-                          </span>
-                        ))}
-                      </div>
+        /* ── Kanban View ── */
+        <DndContext
+          sensors={kanbanSensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleKanbanDragStart}
+          onDragOver={handleKanbanDragOver}
+          onDragEnd={handleKanbanDragEnd}
+        >
+          <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
+            {KANBAN_COLUMNS.map(({ key, label }) => {
+              const columnProjects = projectsByStatus[key] || [];
+              return (
+                <div key={key} style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'var(--md-on-surface)',
+                    padding: '8px 12px',
+                    marginBottom: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}>
+                    <span style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: getStatusColorVar(key),
+                    }} />
+                    {label}
+                    <span style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', fontWeight: 400 }}>
+                      ({columnProjects.length})
+                    </span>
+                  </div>
+                  <SortableContext items={columnProjects.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 120 }}>
+                      {columnProjects.map(project => (
+                        <SortableProjectCard
+                          key={project.id}
+                          project={project}
+                          isDark={isDark}
+                          navigate={navigate}
+                        />
+                      ))}
                     </div>
-                  ))}
+                  </SortableContext>
                 </div>
+              );
+            })}
+          </div>
+          <DragOverlay>
+            {activeProject ? (
+              <div style={{
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: isDark ? 'var(--md-surface-container)' : '#ffffff',
+                border: '1px solid var(--md-primary)',
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transform: 'rotate(1.5deg)',
+                maxWidth: 260,
+              }}>
+                <div style={{ fontWeight: 500, fontSize: 13, color: 'var(--md-on-surface)' }}>{activeProject.name}</div>
               </div>
-            );
-          })}
-        </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       )}
 
       {/* Create Project Modal */}
@@ -1004,11 +1113,9 @@ export default function ProjectsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={22} />
                     <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>{project.name}</span>
-                    {smartSortEnabled && (
-                      <Tag color={getPriorityColor(priority)} style={{ fontSize: 10, margin: 0, padding: '0 6px' }}>
-                        {getPriorityLabel(priority)}
-                      </Tag>
-                    )}
+                    <Tag color={getPriorityColor(priority)} style={{ fontSize: 10, margin: 0, padding: '0 6px' }}>
+                      {getPriorityLabel(priority)}
+                    </Tag>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--color-text-description)', display: 'flex', alignItems: 'center', gap: 8 }}>
                     {progress.status === 'pending' && '等待启动...'}

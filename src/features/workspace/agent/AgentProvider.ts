@@ -1,12 +1,15 @@
 export type AgentStreamEvent =
   | { type: 'token'; text: string }
   | { type: 'done' }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  | { type: 'tool_use'; toolName: string; description: string };
 
 export interface StartOptions {
   sessionId: string;
   projectId?: string;
   cwd?: string;
+  /** When true, pass --dangerously-skip-permissions to Claude CLI. Disabled by default. */
+  dangerouslySkipPermissions?: boolean;
 }
 
 export interface AgentProvider {

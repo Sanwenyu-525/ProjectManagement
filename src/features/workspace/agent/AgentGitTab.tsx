@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { message, Modal } from 'antd';
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { gitApi } from '../../../api';
 import type { GitFileChange, GitCommit } from '../git/gitTypes';
 
@@ -38,6 +40,19 @@ function statusMeta(status: string): { icon: string; color: string } {
   }
 }
 
+/** Map backend status strings to single-char codes used by GitFileChange */
+function mapStatus(raw: string): GitFileChange['status'] {
+  switch (raw) {
+    case 'Modified': return 'M';
+    case 'Added': return 'A';
+    case 'Deleted': return 'D';
+    case 'Renamed': return 'R';
+    case 'Copied': return 'C';
+    case 'Untracked': return '?';
+    default: return 'M';
+  }
+}
+
 export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
   const [statusData, setStatusData] = useState<GitStatusData | null>(null);
   const [commits, setCommits] = useState<GitCommit[]>([]);
@@ -50,14 +65,24 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     setLoading(true);
     setError(null);
     try {
-      const [s, logData] = await Promise.all([
+      const [statusResult, logData] = await Promise.all([
         gitApi.status(repoPath),
         gitApi.log(repoPath, 5),
       ]);
-      const status = s as unknown as { files: GitFileChange[]; branch: string };
-      setStatusData({ files: status.files ?? [], branch: status.branch ?? '' });
-      const log = logData as unknown as { commits: GitCommit[] };
-      setCommits(log.commits ?? []);
+      // Backend returns a flat array of { path, status, staged }
+      const rawEntries = Array.isArray(statusResult) ? statusResult : [];
+      const files: GitFileChange[] = rawEntries.map((f: Record<string, unknown>) => ({
+        path: String(f.path ?? ''),
+        status: mapStatus(String(f.status ?? '')),
+        staged: Boolean(f.staged),
+      }));
+      // Extract branch from log result's branches (current branch)
+      const logResult = logData as Record<string, unknown>;
+      const branchArr = Array.isArray(logResult?.branches) ? logResult.branches : [];
+      const current = branchArr.find((b: Record<string, unknown>) => b.current) as Record<string, unknown> | undefined;
+      setStatusData({ files, branch: String(current?.name ?? '') });
+      const logCommits = Array.isArray(logResult?.commits) ? logResult.commits : [];
+      setCommits(logCommits as GitCommit[]);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -94,7 +119,10 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     try {
       await gitApi.add(repoPath, unstagedFiles.map(f => f.path));
       await load();
-    } catch { /* ignore */ }
+      message.success('已暂存所有文件');
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '暂存失败');
+    }
   };
 
   const handleStageFile = async (path: string) => {
@@ -102,7 +130,9 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     try {
       await gitApi.add(repoPath, [path]);
       await load();
-    } catch { /* ignore */ }
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '暂存失败');
+    }
   };
 
   const handleUnstageFile = async (path: string) => {
@@ -110,15 +140,30 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     try {
       await gitApi.unstage(repoPath, [path]);
       await load();
-    } catch { /* ignore */ }
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '取消暂存失败');
+    }
   };
 
   const handleDiscard = async (path: string) => {
     if (!repoPath) return;
-    try {
-      await gitApi.restore(repoPath, [path]);
-      await load();
-    } catch { /* ignore */ }
+    Modal.confirm({
+      title: '丢弃更改',
+      icon: <ExclamationCircleOutlined />,
+      content: `确定要丢弃 "${path}" 的所有更改吗？此操作不可撤销。`,
+      okText: '丢弃',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await gitApi.restore(repoPath, [path]);
+          await load();
+          message.success('已丢弃更改');
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : '丢弃失败');
+        }
+      },
+    });
   };
 
   const handleCommitAll = async () => {
@@ -128,7 +173,10 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
       await gitApi.commit(repoPath, commitMsg.trim());
       setCommitMsg('');
       await load();
-    } catch { /* ignore */ }
+      message.success('已提交');
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '提交失败');
+    }
   };
 
   const handleFetch = async () => {
@@ -136,7 +184,10 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     try {
       await gitApi.fetch(repoPath);
       await load();
-    } catch { /* ignore */ }
+      message.success('已同步远程');
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '同步失败');
+    }
   };
 
   return (
