@@ -10,6 +10,8 @@ export const terminalApi: TerminalApi = {
     cmd<string>('terminal_start_shell', { terminalId, shell, args: args ?? null, cwd }),
   startAgent: (terminalId: string, command: string, args: string[], cwd: string) =>
     cmd<string>('terminal_start_agent', { terminalId, command, args, cwd }),
+  startAgentPiped: (terminalId: string, command: string, args: string[], cwd: string, stdinData: string) =>
+    cmd<string>('terminal_start_agent_piped', { terminalId, command, args, cwd, stdinData }),
   stop: (terminalId: string) =>
     cmd('terminal_stop', { terminalId }),
   input: (terminalId: string, data: string) =>

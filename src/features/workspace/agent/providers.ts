@@ -3,8 +3,9 @@ import { ClaudeProvider } from './ClaudeProvider';
 
 /**
  * Adapter factory: create an AgentProvider instance for a given type.
- * Currently only 'claude' is supported; other types return undefined.
+ * Currently only 'claude' is supported.
  */
-export function createProvider(_type: string): AgentProvider | undefined {
-  return new ClaudeProvider();
+export function createProvider(type: string): AgentProvider {
+  if (type === 'claude') return new ClaudeProvider();
+  throw new Error(`Unknown provider type: ${type}`);
 }

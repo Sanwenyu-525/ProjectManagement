@@ -133,6 +133,7 @@ pub fn run() {
             commands::workspace::terminal::terminal_input,
             commands::workspace::terminal::terminal_start_shell,
             commands::workspace::terminal::terminal_start_agent,
+            commands::workspace::terminal::terminal_start_agent_piped,
             commands::workspace::terminal::terminal_resize,
             // File operations
             commands::workspace::files::files_list_directory,

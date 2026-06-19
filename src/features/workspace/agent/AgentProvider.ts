@@ -2,7 +2,15 @@ export type AgentStreamEvent =
   | { type: 'token'; text: string }
   | { type: 'done' }
   | { type: 'error'; error: string }
-  | { type: 'tool_use'; toolName: string; description: string };
+  | { type: 'tool_use'; toolName: string; description: string }
+  | { type: 'thinking'; text: string }
+  | { type: 'tool_start'; id: string; toolName: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; toolUseId: string; output: string; isError: boolean };
+
+export type MessageBlock =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; text: string }
+  | { type: 'tool_use'; id: string; toolName: string; input: Record<string, unknown>; output?: string; isError?: boolean };
 
 export interface StartOptions {
   sessionId: string;
@@ -10,6 +18,8 @@ export interface StartOptions {
   cwd?: string;
   /** When true, pass --dangerously-skip-permissions to Claude CLI. Disabled by default. */
   dangerouslySkipPermissions?: boolean;
+  /** CLI session ID for --resume (from a previous session's providerSessionId). */
+  providerSessionId?: string;
 }
 
 export interface AgentProvider {

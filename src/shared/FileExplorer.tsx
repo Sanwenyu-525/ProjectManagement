@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Modal, message } from 'antd';
 import { filesApi } from '../api';
 import { useTerminalStore } from '../stores/terminalStore';
@@ -587,8 +588,8 @@ export default function FileExplorer({ collapsed }: Props) {
         </div>
       ))}
 
-      {/* 右键菜单 */}
-      {contextMenu && (
+      {/* 右键菜单 — portal 到 body 避免被父级 stacking context 遮挡 */}
+      {contextMenu && createPortal(
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
@@ -612,7 +613,8 @@ export default function FileExplorer({ collapsed }: Props) {
           onCut={handleCut}
           onPaste={handlePaste}
           onRemoveDir={removeDir}
-        />
+        />,
+        document.body
       )}
     </div>
   );

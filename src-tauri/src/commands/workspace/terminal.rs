@@ -350,14 +350,14 @@ pub async fn terminal_start_agent(
         .map_err(|e| format!("创建 PTY 失败: {}", e))?;
 
     // Spawn the agent command. On Windows, npm-installed CLIs (like `claude`)
-    // are `.cmd` scripts that portable_pty can't exec directly — always route
-    // through cmd.exe /C which handles both .cmd/.bat scripts and .exe files.
-    // Also set codepage to UTF-8 (65001) to prevent GBK encoding mismatch.
+    // are `.cmd` scripts — route through cmd.exe /C which handles .cmd/.bat/.exe.
+    // NOTE: do NOT chain `chcp 65001` with "&" here — portable_pty quotes each
+    // arg containing spaces, wrapping "&" in quotes and breaking command parsing.
+    // The claude CLI outputs UTF-8 by default in stream-json mode.
     #[cfg(target_os = "windows")]
     let mut cmd_builder = {
         let mut c = CommandBuilder::new("cmd.exe");
         c.arg("/C");
-        c.arg("chcp 65001 >nul 2>&1 &");
         // .cjs files have no default handler on Windows — invoke via node explicitly
         if command.ends_with(".cjs") || command.ends_with(".mjs") {
             c.arg("node");
@@ -435,6 +435,128 @@ pub async fn terminal_start_agent(
                 let mut terminals = recover_lock(&PTY_TERMINALS);
                 terminals.remove(&tid_exit).and_then(|mut t| {
                     t.child.try_wait().ok().flatten().map(|s| s.exit_code() as i32)
+                })
+            };
+            let _ = app_exit.emit(
+                "terminal-exit",
+                TerminalExit {
+                    terminal_id: tid_exit.clone(),
+                    code,
+                },
+            );
+            break;
+        }
+    });
+
+    Ok(terminal_id)
+}
+
+// ── Start agent in piped mode (non-PTY, for one-shot -p mode) ───────────
+
+/// Spawn an agent command with piped stdin/stdout. The `stdin_data` is written
+/// to the child's stdin and then stdin is closed, signaling EOF. Output is
+/// emitted as terminal-output events just like PTY-based terminals.
+///
+/// This avoids cmd.exe argument mangling issues with special characters
+/// (angle brackets, ampersands, etc.) by passing the prompt via stdin instead
+/// of command-line arguments.
+#[command]
+pub async fn terminal_start_agent_piped(
+    app: AppHandle,
+    terminal_id: String,
+    command: String,
+    args: Vec<String>,
+    cwd: String,
+    stdin_data: String,
+) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        let mut shell_cmd = String::new();
+        if command.ends_with(".cjs") || command.ends_with(".mjs") {
+            shell_cmd.push_str("node ");
+        }
+        shell_cmd.push_str(&command);
+        for arg in &args {
+            shell_cmd.push(' ');
+            // Quote args that contain spaces
+            if arg.contains(' ') {
+                shell_cmd.push('"');
+                shell_cmd.push_str(arg);
+                shell_cmd.push('"');
+            } else {
+                shell_cmd.push_str(arg);
+            }
+        }
+        c.args(["/C", &shell_cmd]);
+        c
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = Command::new(&command);
+        for arg in &args {
+            c.arg(arg);
+        }
+        c
+    };
+
+    cmd.current_dir(&cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(Stdio::piped())
+        .env("FORCE_COLOR", "0")
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb");
+
+    let mut child = cmd.spawn().map_err(|e| format!("启动智能体失败: {} (命令: {})", e, command))?;
+
+    // Write stdin_data and close stdin to signal EOF
+    if let Some(mut stdin) = child.stdin.take() {
+        let data = stdin_data;
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(data.as_bytes());
+            let _ = stdin.flush();
+            // stdin is dropped here, closing the pipe (EOF)
+        });
+    }
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    if let Some(stdout) = stdout {
+        spawn_output_reader(Box::new(stdout), app.clone(), terminal_id.clone());
+    }
+    if let Some(stderr) = stderr {
+        spawn_output_reader(Box::new(stderr), app.clone(), terminal_id.clone());
+    }
+
+    // Register process
+    {
+        let mut procs = recover_lock(&PROCESSES);
+        procs.insert(terminal_id.clone(), child);
+    }
+
+    // Exit watcher
+    let app_exit = app.clone();
+    let tid_exit = terminal_id.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let exited = {
+                let mut procs = recover_lock(&PROCESSES);
+                match procs.get_mut(&tid_exit) {
+                    Some(child) => child.try_wait().ok().flatten().is_some(),
+                    None => break,
+                }
+            };
+            if !exited {
+                continue;
+            }
+            let code = {
+                let mut procs = recover_lock(&PROCESSES);
+                procs.remove(&tid_exit).and_then(|mut c| {
+                    c.try_wait().ok().flatten().and_then(|s| s.code())
                 })
             };
             let _ = app_exit.emit(

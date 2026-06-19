@@ -15,8 +15,9 @@ import BottomPanel from './terminal/BottomPanel';
 import AgentRightPanel from './agent/AgentRightPanel';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { folderName } from './components/terminalFactory';
-import { ClaudeProvider } from './agent/ClaudeProvider';
+import { createProvider } from './agent/providers';
 import type { AgentProvider } from './agent/AgentProvider';
+import type { AgentSession } from '../../types';
 
 // Regex patterns for detecting dev server URLs in terminal output
 const URL_PATTERNS = [
@@ -28,8 +29,9 @@ const URL_PATTERNS = [
 
 export default function WorkspacePage() {
   const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
-  const activeProviderId = useAgentStore(s => s.activeProviderId);
   const setActiveProvider = useAgentStore(s => s.setActiveProvider);
+  const activeSessionId = useAgentStore(s => s.activeSessionId);
+  const setActiveSessionId = useAgentStore(s => s.setActiveSessionId);
 
   // Recent sessions for idle state
   const { data: recentSessions = [] } = useQuery({
@@ -45,12 +47,8 @@ export default function WorkspacePage() {
     staleTime: 30_000,
   });
 
-  const [activeSessionId, _setActiveSessionId] = useState<string | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
-  const setActiveSessionId = useCallback((id: string | null) => {
-    sessionIdRef.current = id;
-    _setActiveSessionId(id);
-  }, []);
+  const appendMessage = useAgentStore(s => s.appendMessage);
+  const startStreaming = useAgentStore(s => s.startStreaming);
   const defaultCwd = useTerminalStore(s => s.defaultCwd);
   const providerRef = useRef<AgentProvider | null>(null);
 
@@ -79,6 +77,10 @@ export default function WorkspacePage() {
   // Terminal expand/collapse state
   const [terminalExpanded, setTerminalExpanded] = useState(false);
 
+  // Agent ↔ Editor split ratio (0.2 – 0.8)
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [isDragging, setIsDragging] = useState(false);
+
   // On mount, clean up stale sessions
   useEffect(() => {
     sessionsApi.cleanupStale(60, 30).catch(() => {});
@@ -88,7 +90,18 @@ export default function WorkspacePage() {
         sessionsApi.end(s.id).catch(() => {});
       }
     }).catch(() => {});
-  }, []);
+
+    // Stop provider and clear agent state on unmount
+    return () => {
+      if (providerRef.current) {
+        providerRef.current.stop().catch(() => {});
+        providerRef.current = null;
+      }
+      useAgentStore.getState().clearStreaming();
+      setActiveProvider(null);
+      setActiveSessionId(null);
+    };
+  }, [setActiveProvider, setActiveSessionId]);
 
   // Start agent and immediately send a message (for idle state input)
   const handleStartAndSend = useCallback(async (message: string) => {
@@ -100,14 +113,84 @@ export default function WorkspacePage() {
     const sessionId = await sessionsApi.start('claude', 'claude', undefined, workDir, permissionMode);
 
     // Directly use ClaudeProvider — no DB provider config needed
-    const provider = new ClaudeProvider();
+    const provider = createProvider('claude');
     await provider.start({ sessionId, cwd: workDir, dangerouslySkipPermissions });
     setActiveProvider('claude');
     providerRef.current = provider;
     setActiveSessionId(sessionId);
 
-    await provider.send(message);
+    // Record user message and start streaming before sending
+    appendMessage(sessionId, 'user', message);
+    sessionsApi.appendMessage(sessionId, 'user', message).catch(() => {});
+    startStreaming(sessionId);
+
+    try {
+      await provider.send(message);
+    } catch (e) {
+      console.error('[WorkspacePage] Failed to start agent:', e);
+      // Clean up: stop provider and revert to idle
+      provider.stop().catch(() => {});
+      providerRef.current = null;
+      useAgentStore.getState().clearStreaming();
+      setActiveProvider(null);
+      setActiveSessionId(null);
+      throw e;
+    }
+  }, [defaultCwd, setActiveProvider, setActiveSessionId, appendMessage, startStreaming]);
+
+  // Stop agent and return to idle state
+  const handleBackToIdle = useCallback(() => {
+    if (providerRef.current) {
+      providerRef.current.stop().catch(() => {});
+      providerRef.current = null;
+    }
+    useAgentStore.getState().clearStreaming();
+    setActiveProvider(null);
+    setActiveSessionId(null);
+  }, [setActiveProvider, setActiveSessionId]);
+
+  // Resume an existing session
+  const handleResumeSession = useCallback((session: AgentSession) => {
+    const dangerouslySkipPermissions = localStorage.getItem('agent_dangerouslySkipPermissions') === 'true';
+
+    const provider = createProvider('claude');
+    provider.start({
+      sessionId: session.id,
+      cwd: session.cwd || defaultCwd,
+      dangerouslySkipPermissions,
+      providerSessionId: session.providerSessionId,
+    }).then(() => {
+      setActiveProvider('claude');
+      providerRef.current = provider;
+      setActiveSessionId(session.id);
+    }).catch((e) => {
+      console.error('[WorkspacePage] Failed to resume session:', e);
+    });
   }, [defaultCwd, setActiveProvider, setActiveSessionId]);
+
+  // Divider drag handlers
+  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    const startX = e.clientX;
+    const startRatio = splitRatio;
+    const splitEl = (e.currentTarget as HTMLElement).parentElement;
+    if (!splitEl) return;
+    const splitWidth = splitEl.getBoundingClientRect().width;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      const newRatio = Math.min(0.8, Math.max(0.2, startRatio + delta / splitWidth));
+      setSplitRatio(newRatio);
+    };
+    const onMouseUp = () => {
+      setIsDragging(false);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [splitRatio]);
 
   // Process launch queue from project pages
   const processingRef = useRef(false);
@@ -188,7 +271,7 @@ export default function WorkspacePage() {
     };
   }, []);
 
-  const isRunning = !!activeProviderId;
+  const isRunning = !!activeSessionId;
   const activeTerminal = useTerminalStore(s => s.terminals[0]);
 
   // Editor panel state
@@ -234,23 +317,48 @@ export default function WorkspacePage() {
         <div style={styles.agentContent}>
           <div style={styles.agentSplit}>
             {/* Chat / Idle area */}
-            <div style={{ ...styles.agentPane, flex: editorOpen ? 1 : '1 1 100%' }}>
+            <div style={{
+              ...styles.agentPane,
+              flex: editorOpen ? `0 0 ${splitRatio * 100}%` : '1 1 100%',
+            }}>
               {isRunning ? (
                 <AgentChat
                   provider={providerRef.current}
                   activeSessionId={activeSessionId}
+                  onStartAndSend={handleStartAndSend}
+                  onBack={handleBackToIdle}
                 />
               ) : (
                 <AgentIdleState
                   onStartAndSend={handleStartAndSend}
+                  onResumeSession={handleResumeSession}
                   recentSessions={recentSessions}
                 />
               )}
             </div>
 
+            {/* Draggable divider */}
+            {editorOpen && (
+              <div
+                onMouseDown={handleDividerMouseDown}
+                style={{
+                  ...styles.divider,
+                }}
+              >
+                <div style={{
+                  width: isDragging ? 3 : 1,
+                  height: '100%',
+                  background: isDragging ? 'var(--md-primary)' : 'var(--md-outline-variant)',
+                  transition: 'background 0.15s, width 0.15s',
+                  borderRadius: 1,
+                  margin: '0 auto',
+                }} />
+              </div>
+            )}
+
             {/* Editor panel */}
             {editorOpen && (
-              <div style={styles.editorPane}>
+              <div style={{ ...styles.editorPane, flex: `0 0 ${(1 - splitRatio) * 100}%` }}>
                 <div style={styles.editorHeader}>
                   <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--md-on-surface)', fontFamily: 'var(--font-sans)' }}>
                     Editor
@@ -271,7 +379,7 @@ export default function WorkspacePage() {
         <div
           onClick={() => setTerminalExpanded(!terminalExpanded)}
           style={styles.terminalBar}
-          className="terminal-bar"
+          className="ws-terminal-bar"
         >
           <span style={styles.terminalIcon}>$</span>
           <span style={{
@@ -368,9 +476,16 @@ const styles: Record<string, React.CSSProperties> = {
   editorPane: {
     display: 'flex',
     flexDirection: 'column',
-    flex: '1 1 50%',
     minWidth: 0,
-    borderLeft: '1px solid var(--md-outline-variant)',
+    overflow: 'hidden',
+  },
+  divider: {
+    flexShrink: 0,
+    cursor: 'col-resize',
+    alignSelf: 'stretch',
+    width: 8,
+    display: 'flex',
+    alignItems: 'center',
   },
   editorHeader: {
     display: 'flex',
@@ -379,7 +494,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '6px 12px',
     borderBottom: '1px solid var(--md-outline-variant)',
     flexShrink: 0,
-    background: 'var(--md-surface-container-lowest)',
+    background: 'var(--md-surface-container-low)',
   },
   terminalBar: {
     display: 'flex',

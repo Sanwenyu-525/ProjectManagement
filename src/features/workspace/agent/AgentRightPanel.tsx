@@ -8,9 +8,9 @@ import AgentContextPanel from './AgentContextPanel';
 type RightTab = 'plan' | 'git' | 'context';
 
 const TABS: { key: RightTab; label: string; icon: string }[] = [
-  { key: 'plan', label: 'Plan', icon: 'description' },
+  { key: 'plan', label: '计划', icon: 'description' },
   { key: 'git', label: 'Git', icon: 'account_tree' },
-  { key: 'context', label: 'Context', icon: 'psychology' },
+  { key: 'context', label: '上下文', icon: 'psychology' },
 ];
 
 interface AgentRightPanelProps {
@@ -105,15 +105,16 @@ const styles: Record<string, React.CSSProperties> = {
   tabBar: {
     display: 'flex',
     gap: 2,
-    padding: '6px 12px 0',
+    padding: '4px 8px 0',
     borderBottom: '1px solid var(--md-outline-variant)',
     flexShrink: 0,
+    background: 'var(--md-surface-container-lowest)',
   },
   tab: {
     display: 'flex',
     alignItems: 'center',
     gap: 4,
-    padding: '6px 12px',
+    padding: '7px 12px',
     fontSize: 12,
     fontWeight: 500,
     fontFamily: 'var(--font-sans)',
@@ -127,7 +128,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     color: 'var(--md-primary)',
-    background: 'var(--md-surface-container-low)',
+    background: 'var(--md-surface-container)',
     fontWeight: 600,
   },
   content: {

@@ -315,3 +315,11 @@ body {
 [data-theme="dark"] .ant-table-row-loading td::after {
   background: linear-gradient(90deg, transparent 25%, rgba(255, 255, 255, 0.04) 50%, transparent 75%);
 }
+
+/* ── Workspace terminal bar ── */
+.ws-terminal-bar {
+  transition: background 0.15s ease;
+}
+.ws-terminal-bar:hover {
+  background: #1e293b !important;
+}

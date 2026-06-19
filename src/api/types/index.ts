@@ -40,6 +40,7 @@ export interface TerminalApi {
   start: (projectId: string, commandStr: string, cwd: string) => Promise<string>;
   startShell: (terminalId: string, shell: string, cwd: string, args?: string[]) => Promise<string>;
   startAgent: (terminalId: string, command: string, args: string[], cwd: string) => Promise<string>;
+  startAgentPiped: (terminalId: string, command: string, args: string[], cwd: string, stdinData: string) => Promise<string>;
   stop: (terminalId: string) => Promise<void>;
   input: (terminalId: string, data: string) => Promise<void>;
   resize: (terminalId: string, cols: number, rows: number) => Promise<void>;

@@ -5,8 +5,28 @@ interface AgentContextPanelProps {
 }
 
 export default function AgentContextPanel({ sessionId }: AgentContextPanelProps) {
-  const toolEvents = useAgentStore(s => sessionId ? (s.toolEvents[sessionId] ?? []) : []);
   const messages = useAgentStore(s => sessionId ? (s.messages[sessionId] ?? []) : []);
+
+  // Derive tool calls from message blocks (toolEvents store is deprecated)
+  const toolCalls = useAgentStore(s => {
+    if (!sessionId) return [];
+    const msgs = s.messages[sessionId] ?? [];
+    const calls: Array<{ id: string; toolName: string; description: string; timestamp: number }> = [];
+    for (const msg of msgs) {
+      for (const block of msg.blocks) {
+        if (block.type === 'tool_use') {
+          const inputStr = block.input ? JSON.stringify(block.input) : '';
+          calls.push({
+            id: block.id,
+            toolName: block.toolName,
+            description: inputStr.length > 100 ? inputStr.slice(0, 100) + '...' : inputStr,
+            timestamp: msg.timestamp,
+          });
+        }
+      }
+    }
+    return calls;
+  });
 
   if (!sessionId) {
     return (
@@ -14,7 +34,7 @@ export default function AgentContextPanel({ sessionId }: AgentContextPanelProps)
         <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)' }}>
           psychology
         </span>
-        <p style={styles.emptyText}>Start a session to see context info.</p>
+        <p style={styles.emptyText}>启动会话后查看上下文信息。</p>
       </div>
     );
   }
@@ -25,27 +45,27 @@ export default function AgentContextPanel({ sessionId }: AgentContextPanelProps)
     <div style={styles.container}>
       {/* Session info */}
       <div style={styles.section}>
-        <div style={styles.sectionTitle}>Session</div>
+        <div style={styles.sectionTitle}>会话</div>
         <div style={styles.infoRow}>
-          <span style={styles.label}>Session ID</span>
+          <span style={styles.label}>会话 ID</span>
           <span style={styles.mono}>{sessionId.slice(0, 12)}...</span>
         </div>
         <div style={styles.infoRow}>
-          <span style={styles.label}>Messages</span>
+          <span style={styles.label}>消息数</span>
           <span style={styles.value}>{messages.length}</span>
         </div>
         <div style={styles.infoRow}>
-          <span style={styles.label}>Tool Calls</span>
-          <span style={styles.value}>{toolEvents.length}</span>
+          <span style={styles.label}>工具调用</span>
+          <span style={styles.value}>{toolCalls.length}</span>
         </div>
       </div>
 
-      {/* Tool events */}
-      {toolEvents.length > 0 && (
+      {/* Tool calls */}
+      {toolCalls.length > 0 && (
         <div style={styles.section}>
-          <div style={styles.sectionTitle}>Recent Tool Calls</div>
+          <div style={styles.sectionTitle}>最近的工具调用</div>
           <div style={styles.eventList}>
-            {toolEvents.slice(-15).reverse().map((evt, i) => (
+            {toolCalls.slice(-15).reverse().map((evt, i) => (
               <div key={evt.id ?? i} style={styles.eventItem}>
                 <span className="material-symbols-outlined" style={{ fontSize: 13, color: 'var(--md-primary)', flexShrink: 0 }}>
                   build
@@ -67,7 +87,7 @@ export default function AgentContextPanel({ sessionId }: AgentContextPanelProps)
       {/* Recent messages */}
       {recentMessages.length > 0 && (
         <div style={styles.section}>
-          <div style={styles.sectionTitle}>Recent Messages</div>
+          <div style={styles.sectionTitle}>最近消息</div>
           <div style={styles.eventList}>
             {recentMessages.map((msg, i) => (
               <div key={i} style={styles.msgItem}>
@@ -78,8 +98,11 @@ export default function AgentContextPanel({ sessionId }: AgentContextPanelProps)
                 }}>
                   {msg.role}
                 </span>
-                <span style={styles.msgPreview} title={msg.content}>
-                  {msg.content.length > 80 ? msg.content.slice(0, 80) + '...' : msg.content}
+                <span style={styles.msgPreview} title={msg.blocks.map(b => b.type === 'text' || b.type === 'thinking' ? b.text : '').join('')}>
+                  {(() => {
+                    const preview = msg.blocks.map(b => b.type === 'text' || b.type === 'thinking' ? b.text : '').join('');
+                    return preview.length > 80 ? preview.slice(0, 80) + '...' : preview || '(工具调用)';
+                  })()}
                 </span>
               </div>
             ))}
@@ -87,9 +110,9 @@ export default function AgentContextPanel({ sessionId }: AgentContextPanelProps)
         </div>
       )}
 
-      {messages.length === 0 && toolEvents.length === 0 && (
+      {messages.length === 0 && toolCalls.length === 0 && (
         <div style={styles.empty}>
-          <p style={styles.emptyText}>No activity yet.</p>
+          <p style={styles.emptyText}>暂无活动。</p>
         </div>
       )}
     </div>
