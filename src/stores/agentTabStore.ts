@@ -9,6 +9,7 @@ interface AgentTab {
   sessionId: string | null;
   label: string;
   cwd: string | null;
+  agentMode: 'xterm' | 'gui';
 }
 
 interface AgentTabStore {
@@ -21,11 +22,12 @@ interface AgentTabStore {
   setSessionId: (tabId: string, sessionId: string) => void;
   setLabel: (tabId: string, label: string) => void;
   setCwd: (tabId: string, cwd: string) => void;
+  setAgentMode: (tabId: string, mode: 'xterm' | 'gui') => void;
   getActiveTab: () => AgentTab | undefined;
 }
 
 export const useAgentTabStore = create<AgentTabStore>((set, get) => {
-  const firstTab: AgentTab = { id: generateTabId(), sessionId: null, label: '新对话', cwd: null };
+  const firstTab: AgentTab = { id: generateTabId(), sessionId: null, label: '新对话', cwd: null, agentMode: 'xterm' };
   return {
     tabs: [firstTab],
     activeTabId: firstTab.id,
@@ -45,6 +47,7 @@ export const useAgentTabStore = create<AgentTabStore>((set, get) => {
       sessionId: null,
       label: '新对话',
       cwd: null,
+      agentMode: 'xterm',
     };
     set({ tabs: [...tabs, newTab], activeTabId: id });
     return id;
@@ -66,7 +69,7 @@ export const useAgentTabStore = create<AgentTabStore>((set, get) => {
     if (activeTabId === tabId) {
       if (newTabs.length === 0) {
         // Create a fresh empty tab
-        const fresh: AgentTab = { id: generateTabId(), sessionId: null, label: '新对话', cwd: null };
+        const fresh: AgentTab = { id: generateTabId(), sessionId: null, label: '新对话', cwd: null, agentMode: 'xterm' };
         newTabs.push(fresh);
         newActiveId = fresh.id;
       } else {
@@ -95,6 +98,13 @@ export const useAgentTabStore = create<AgentTabStore>((set, get) => {
     const { tabs } = get();
     set({
       tabs: tabs.map(t => t.id === tabId ? { ...t, cwd } : t),
+    });
+  },
+
+  setAgentMode: (tabId, agentMode) => {
+    const { tabs } = get();
+    set({
+      tabs: tabs.map(t => t.id === tabId ? { ...t, agentMode } : t),
     });
   },
 
