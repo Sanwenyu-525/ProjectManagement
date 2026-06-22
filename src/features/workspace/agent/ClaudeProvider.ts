@@ -1,41 +1,8 @@
 import { listen } from '@tauri-apps/api/event';
 import { terminalApi, sessionsApi, gitApi } from '../../../api';
-import { stripAnsi } from '../../../lib/stripAnsi';
 import type { TerminalOutputEvent, TerminalExitEvent } from '../../../shared/terminalTypes';
 import type { AgentProvider, AgentStreamEvent, StartOptions } from './AgentProvider';
-
-/** Parsed Claude CLI stream-json event */
-interface StreamJsonEvent {
-  type: 'system' | 'assistant' | 'user' | 'result' | 'error';
-  subtype?: string;
-  session_id?: string;
-  model?: string;
-  tools?: string[];
-  cwd?: string;
-  attempt?: number;
-  max_retries?: number;
-  retry_delay_ms?: number;
-  error_status?: number;
-  message?: {
-    content?: Array<{
-      type: string;
-      text?: string;
-      id?: string;
-      name?: string;
-      input?: Record<string, unknown>;
-      tool_use_id?: string;
-      thinking?: string;
-      is_error?: boolean;
-      [key: string]: unknown; // allow extra fields like content (tool_result output)
-    }>;
-  };
-  result?: string;
-  error?: string;
-  is_error?: boolean;
-  duration_ms?: number;
-  total_cost_usd?: number;
-  num_turns?: number;
-}
+import { extractJsonObjects, type StreamJsonEvent } from '../../../lib/parseStreamJson';
 
 /**
  * ClaudeProvider — one-shot mode per message.
@@ -132,6 +99,7 @@ export class ClaudeProvider implements AgentProvider {
       this.cleanupListeners();
       this.activeTerminalId = null;
       this.jsonBuffer = '';
+      this.pendingPartial = '';
       this.stderrBuffer = '';
       this.scheduleRetry(this.lastMessage);
       return;
@@ -140,6 +108,7 @@ export class ClaudeProvider implements AgentProvider {
     this.cleanupListeners();
     this.activeTerminalId = null;
     this.jsonBuffer = '';
+    this.pendingPartial = '';
     if (!this.hasError) {
       this.emit({ type: 'done' });
     }
@@ -188,6 +157,7 @@ export class ClaudeProvider implements AgentProvider {
 
     // 每次 send 前重置解析状态，为下一轮对话做准备
     this.jsonBuffer = '';
+    this.pendingPartial = '';
     this.emittedTextLengths.clear();
     this.hasStreamedText = false;
     this.resultText = null;
@@ -211,6 +181,7 @@ export class ClaudeProvider implements AgentProvider {
     const terminalId = `claude-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     this.activeTerminalId = terminalId;
     this.jsonBuffer = '';
+    this.pendingPartial = '';
     this.hasStreamedText = false;
     this.resultText = null;
     this.hasError = false;
@@ -276,6 +247,7 @@ export class ClaudeProvider implements AgentProvider {
     this.cliSessionId = null;
     this.clearRetryTimer();
     this.jsonBuffer = '';
+    this.pendingPartial = '';
     this.stderrBuffer = '';
     this.pendingEvents = [];
   }
@@ -365,8 +337,9 @@ export class ClaudeProvider implements AgentProvider {
 
   // ── NDJSON Parsing ──────────────────────────────────────────
   // PTY output arrives in arbitrary chunks that may split JSON objects mid-line.
-  // Instead of splitting on \n (which breaks when newlines fall inside JSON),
-  // we scan the raw buffer for complete {…} objects using brace depth + string state.
+  // Parsing is delegated to the shared extractJsonObjects() in src/lib/parseStreamJson.ts.
+
+  private pendingPartial = '';
 
   private parseStreamJson(data: string): void {
     this.jsonBuffer += data.replace(/\r/g, '');
@@ -374,220 +347,30 @@ export class ClaudeProvider implements AgentProvider {
   }
 
   /**
-   * Extract complete JSON objects from the buffer.
-   *
-   * Strategy: split by newlines first (stream-json is NDJSON — one JSON per line).
-   * Lines that don't parse are accumulated. If a line starts with '{' but doesn't
-   * parse, we hold it in the buffer waiting for more data. Non-JSON lines (banner
-   * text, PTY control output) are discarded.
+   * Extract complete JSON objects from the buffer using the shared parser,
+   * then dispatch each parsed event to handleStreamEvent.
    */
   private extractJsonObjects(): void {
-    // Fast path: skip ANSI stripping when buffer contains no escape sequences
-    const buf = this.jsonBuffer.indexOf('\x1b') >= 0
-      ? stripAnsi(this.jsonBuffer)
-      : this.jsonBuffer;
-    const lines = buf.split('\n');
+    const result = extractJsonObjects(this.jsonBuffer, this.pendingPartial);
+    this.jsonBuffer = result.buffer;
+    this.pendingPartial = result.pending;
 
-    // Last line may be incomplete — hold it back
-    const maybePending = lines.pop() ?? '';
-
-    let pendingPartial = '';
-
-    for (const rawLine of lines) {
-      const line = (pendingPartial + rawLine).trim();
-      pendingPartial = '';
-
-      if (!line) continue;
-      if (!line.startsWith('{')) continue; // skip non-JSON lines (banner, prompts)
-
-      // Try parsing as a single object first (fast path)
-      if (this.tryParseObject(line)) continue;
-
-      // Line starts with '{' — might be concatenated JSON objects (no newline between them)
-      // Split by brace-depth to extract each complete object
-      const objects = this.splitJsonObjects(line);
-      if (objects.length > 1) {
-        for (const obj of objects) {
-          this.tryParseObject(obj);
-        }
-        continue;
-      }
-
-      // Line starts with '{' but didn't parse — could be partial (split across lines
-      // due to newlines in string values like thinking content). Check brace balance.
-      if (this.hasUnbalancedBraces(line)) {
-        pendingPartial = line;
-        continue;
-      }
-
-      // Brace-balanced but still didn't parse — might have trailing garbage.
-      // Already tried in tryParseObject; nothing more we can do here.
+    for (const event of result.events) {
+      this.handleStreamEvent(event);
     }
 
-    // Whatever is left (pending partial + last incomplete line) goes back to buffer
-    const remaining = pendingPartial
-      ? pendingPartial + '\n' + maybePending
-      : maybePending;
-    this.jsonBuffer = remaining;
-  }
-
-  /**
-   * Try to parse a JSON object string with progressive fallback strategies.
-   * PTY output may contain control characters inside JSON string values
-   * (e.g. from terminal escape sequences not fully stripped by stripAnsi),
-   * which break JSON.parse. We try multiple strategies to recover.
-   *
-   * Returns true if parsing succeeded, false otherwise.
-   */
-  private tryParseObject(objStr: string): boolean {
-    // Strategy 1: parse as-is (fast path for clean data)
-    try {
-      this.handleStreamEvent(JSON.parse(objStr) as StreamJsonEvent);
-      return true;
-    } catch { /* fall through */ }
-
-    // Strategy 2: strip control characters 0x00-0x1f
-    // eslint-disable-next-line no-control-regex -- Intentional: stripping control chars from PTY output
-    const cleaned = objStr.replace(/[\x00-\x1f]/g, '');
-    try {
-      this.handleStreamEvent(JSON.parse(cleaned) as StreamJsonEvent);
-      return true;
-    } catch { /* fall through */ }
-
-    // Strategy 3: aggressive strip — remove non-printable chars outside basic ASCII
-    const aggressive = objStr.replace(/[^\x20-\x7e]/g, '');
-    try {
-      this.handleStreamEvent(JSON.parse(aggressive) as StreamJsonEvent);
-      return true;
-    } catch { /* fall through */ }
-
-    // Strategy 4: repair malformed JSON from non-official API backends
-    // Some backends emit invalid syntax like `"key"::` (double colon)
-    const repaired = this.repairMalformedJson(cleaned);
-    if (repaired !== cleaned) {
-      try {
-        this.handleStreamEvent(JSON.parse(repaired) as StreamJsonEvent);
-        return true;
-      } catch { /* fall through */ }
-    }
-
-    // Strategy 5: brace-matching — extract first complete JSON object from line
-    // Handles trailing garbage, extra content, or line concatenation artifacts
-    const extracted = this.extractFirstJsonObject(aggressive);
-    if (extracted && extracted !== aggressive) {
-      try {
-        this.handleStreamEvent(JSON.parse(extracted) as StreamJsonEvent);
-        return true;
-      } catch { /* fall through */ }
-    }
-
-    // Strategy 6: extract session_id from init messages via regex (even if full parse fails)
-    const sidMatch = objStr.match(/"session_id"\s*:\s*"([^"]+)"/);
-    if (sidMatch) {
-      this.cliSessionId = sidMatch[1];
-      if (this.config?.sessionId) {
-        sessionsApi.update(this.config.sessionId, { providerSessionId: sidMatch[1] }).catch(() => {});
-      }
-      // If we got session_id, attempt to reconstruct the event type
-      if (objStr.includes('"subtype":"init"') || objStr.includes('"type":"system"')) {
-        // Init event — we extracted what we need (session_id), consider it handled
-        return true;
-      }
-    }
-
-    // Brace-balanced but still didn't parse — might have trailing garbage.
-    // Already tried in tryParseObject; nothing more we can do here.
-    // Suppress warn for obviously incomplete chunks (no closing brace) —
-    // the data will be re-parsed once the next PTY chunk arrives.
-    if (objStr.endsWith('}')) {
-      console.warn('[ClaudeProvider] parse fail:', objStr.slice(0, 200));
-    }
-    return false;
-  }
-
-  /** Check if a line has more open braces than close braces (indicating a split JSON object) */
-  private hasUnbalancedBraces(s: string): boolean {
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    for (const ch of s) {
-      if (escape) { escape = false; continue; }
-      if (ch === '\\' && inString) { escape = true; continue; }
-      if (ch === '"') { inString = !inString; continue; }
-      if (inString) continue;
-      if (ch === '{') depth++;
-      if (ch === '}') depth--;
-    }
-    return depth > 0;
-  }
-
-  /**
-   * Split a string containing multiple concatenated JSON objects into individual objects.
-   * E.g. '{"a":1}{"b":2}' → ['{"a":1}', '{"b":2}']
-   */
-  private splitJsonObjects(s: string): string[] {
-    const objects: string[] = [];
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    let start = -1;
-
-    for (let i = 0; i < s.length; i++) {
-      const ch = s[i];
-      if (escape) { escape = false; continue; }
-      if (ch === '\\' && inString) { escape = true; continue; }
-      if (ch === '"') { inString = !inString; continue; }
-      if (inString) continue;
-      if (ch === '{') {
-        if (depth === 0) start = i;
-        depth++;
-      } else if (ch === '}') {
-        depth--;
-        if (depth === 0 && start !== -1) {
-          objects.push(s.slice(start, i + 1));
-          start = -1;
+    // Provider-specific: extract session_id from unparseable init messages via regex.
+    // The shared parser discards brace-balanced but unparseable lines; we recover
+    // session_id from them as a resilience measure (Strategy 6 from original code).
+    for (const line of result.failedLines) {
+      const sidMatch = line.match(/"session_id"\s*:\s*"([^"]+)"/);
+      if (sidMatch) {
+        this.cliSessionId = sidMatch[1];
+        if (this.config?.sessionId) {
+          sessionsApi.update(this.config.sessionId, { providerSessionId: sidMatch[1] }).catch(() => {});
         }
       }
     }
-    return objects;
-  }
-
-  /**
-   * Repair common JSON syntax errors from non-official API backends.
-   * Currently handles: `"key"::` → `"key":` (double colon after property name).
-   */
-  private repairMalformedJson(s: string): string {
-    // Fix `"key"::` → `"key":` — match a quoted key followed by two colons
-    // Safe: in valid JSON, `::` never appears outside string values
-    return s.replace(/"(\w+)"::/g, '"$1":');
-  }
-
-  /**
-   * Extract the first complete JSON object from a string using brace depth tracking.
-   * Handles cases where the line contains extra content before/after the JSON,
-   * or where multiple JSON objects are concatenated.
-   */
-  private extractFirstJsonObject(s: string): string | null {
-    const start = s.indexOf('{');
-    if (start === -1) return null;
-
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-
-    for (let i = start; i < s.length; i++) {
-      const ch = s[i];
-      if (escape) { escape = false; continue; }
-      if (ch === '\\' && inString) { escape = true; continue; }
-      if (ch === '"') { inString = !inString; continue; }
-      if (inString) continue;
-      if (ch === '{') depth++;
-      if (ch === '}') {
-        depth--;
-        if (depth === 0) return s.slice(start, i + 1);
-      }
-    }
-    return null;
   }
 
   private flushJsonBuffer(): string {
@@ -595,6 +378,7 @@ export class ClaudeProvider implements AgentProvider {
     // Return leftover buffer content — exit handlers can surface it if nothing was streamed
     const leftover = this.jsonBuffer.trim();
     this.jsonBuffer = '';
+    this.pendingPartial = '';
     return leftover;
   }
 
