@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Modal } from 'antd';
 import { useAgentTabStore } from '../../../stores/agentTabStore';
 import { useAgentStore } from '../../../stores/agentStore';
 
@@ -12,7 +13,9 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
   const switchTab = useAgentTabStore(s => s.switchTab);
   const addTab = useAgentTabStore(s => s.addTab);
   const streamingSessionId = useAgentStore(s => s.streamingSessionId);
+  const setAgentMode = useAgentTabStore(s => s.setAgentMode);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [confirmTabId, setConfirmTabId] = useState<string | null>(null);
 
   return (
     <div style={styles.tabBar}>
@@ -37,12 +40,25 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
                 fontSize: 16,
                 color: isActive ? 'var(--md-primary)' : 'var(--md-tertiary-container)',
               }}>
-                {tab.sessionId ? 'chat' : 'add_comment'}
+                {tab.agentMode === 'gui' ? 'chat' : 'terminal'}
               </span>
               {isStreaming && (
                 <span style={styles.streamingDot} />
               )}
               <span style={styles.tabLabel}>{tab.label}</span>
+              {showClose && (
+                <span
+                  className="material-symbols-outlined"
+                  role="button"
+                  aria-label="切换模式"
+                  title="切换模式"
+                  style={{
+                    ...styles.closeIcon,
+                    opacity: isActive || hoveredId === tab.id ? 1 : 0,
+                  }}
+                  onClick={e => { e.stopPropagation(); setConfirmTabId(tab.id); }}
+                >swap_horiz</span>
+              )}
               {showClose && (
                 <span
                   className="material-symbols-outlined"
@@ -68,6 +84,25 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
           add
         </span>
       </div>
+      <Modal
+        open={!!confirmTabId}
+        onOk={() => {
+          if (confirmTabId) {
+            const tab = tabs.find(t => t.id === confirmTabId);
+            if (tab) {
+              setAgentMode(confirmTabId, tab.agentMode === 'xterm' ? 'gui' : 'xterm');
+            }
+          }
+          setConfirmTabId(null);
+        }}
+        onCancel={() => setConfirmTabId(null)}
+        title="切换模式"
+        okText="切换"
+        cancelText="取消"
+        styles={{ body: { fontSize: 13 } }}
+      >
+        切换模式将结束当前会话，是否继续？
+      </Modal>
     </div>
   );
 }
