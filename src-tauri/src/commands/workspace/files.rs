@@ -26,6 +26,7 @@ pub struct FileTreeNode {
     pub children: Option<Vec<FileTreeNode>>,
     pub size: Option<u64>,
     pub extension: Option<String>,
+    pub modified: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -38,6 +39,7 @@ pub struct FileContent {
     pub line_count: usize,
     pub is_binary: bool,
     pub is_writable: bool,
+    pub too_large: bool,
     pub modified: String,
 }
 
@@ -142,6 +144,7 @@ pub async fn files_read(path: String) -> Result<FileContent, String> {
             line_count: 0,
             is_binary: false,
             is_writable: writable,
+            too_large: true,
             modified,
         });
     }
@@ -164,6 +167,7 @@ pub async fn files_read(path: String) -> Result<FileContent, String> {
             line_count: 0,
             is_binary: true,
             is_writable: writable,
+            too_large: false,
             modified,
         });
     }
@@ -190,6 +194,7 @@ pub async fn files_read(path: String) -> Result<FileContent, String> {
         line_count,
         is_binary: false,
         is_writable: writable,
+        too_large: false,
         modified,
     })
 }
@@ -377,10 +382,18 @@ fn build_tree(dir: &Path, remaining: i32) -> Vec<FileTreeNode> {
             path.extension().map(|e| e.to_string_lossy().to_string())
         };
 
-        let size = if is_dir {
-            None
+        let (size, modified) = if is_dir {
+            (None, None)
         } else {
-            fs::metadata(&path).ok().map(|m| m.len())
+            let meta = fs::metadata(&path).ok();
+            let size = meta.as_ref().map(|m| m.len());
+            let modified = meta.and_then(|m| {
+                m.modified().ok().and_then(|t| {
+                    let datetime: chrono::DateTime<chrono::Local> = t.into();
+                    Some(datetime.to_rfc3339())
+                })
+            });
+            (size, modified)
         };
 
         let children = if is_dir {
@@ -396,6 +409,7 @@ fn build_tree(dir: &Path, remaining: i32) -> Vec<FileTreeNode> {
             children,
             size,
             extension,
+            modified,
         });
     }
 

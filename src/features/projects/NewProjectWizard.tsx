@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ThunderboltOutlined, CloseOutlined, CheckCircleFilled, PlusOutlined, CodeOutlined, ApartmentOutlined, ApiOutlined, DesktopOutlined, CloudOutlined } from '@ant-design/icons';
-import { templatesApi } from '../../api';
+import { message } from 'antd';
+import { templatesApi, projectsApi } from '../../api';
 import type { Template } from '../../types';
 import './NewProjectWizard.css';
 
@@ -49,15 +50,21 @@ const DEFAULT_TEMPLATES: TemplateVM[] = [
 ];
 
 const STEPS = [
-  { label: '模板', active: true },
-  { label: '工作区', active: false },
-  { label: '智能体', active: false },
-];
+  { label: '模板', key: 'template' },
+  { label: '工作区', key: 'workspace' },
+  { label: '智能体', key: 'agent' },
+] as const;
+
+type StepKey = typeof STEPS[number]['key'];
 
 export default function NewProjectWizard() {
   const navigate = useNavigate();
   const [selected, setSelected] = useState<string>('react');
+  const [projectName, setProjectName] = useState('');
   const [templates, setTemplates] = useState<TemplateVM[]>(DEFAULT_TEMPLATES);
+  const [currentStep, setCurrentStep] = useState<StepKey>('template');
+  const [creating, setCreating] = useState(false);
+  const currentStepIdx = STEPS.findIndex(s => s.key === currentStep);
 
   useEffect(() => {
     templatesApi.list('project').then(list => {
@@ -97,64 +104,110 @@ export default function NewProjectWizard() {
 
           {/* Steps */}
           <div className="wizard-steps">
-            {STEPS.map((step, i) => (
-              <div key={step.label} style={{ display: 'contents' }}>
-                {i > 0 && <div className="wizard-step-divider" />}
-                <div className={`wizard-step ${step.active ? '' : 'wizard-step--inactive'}`}>
-                  <div className={`wizard-step-circle ${step.active ? 'wizard-step-circle--active' : 'wizard-step-circle--inactive'}`}>
-                    {i + 1}
+            {STEPS.map((step, i) => {
+              const isCurrent = step.key === currentStep;
+              const isCompleted = i < currentStepIdx;
+              return (
+                <div key={step.key} style={{ display: 'contents' }}>
+                  {i > 0 && <div className="wizard-step-divider" />}
+                  <div className={`wizard-step ${isCurrent ? '' : 'wizard-step--inactive'}`}>
+                    <div className={`wizard-step-circle ${isCurrent ? 'wizard-step-circle--active' : isCompleted ? 'wizard-step-circle--completed' : 'wizard-step-circle--inactive'}`}>
+                      {isCompleted ? '✓' : i + 1}
+                    </div>
+                    <span className={`wizard-step-label ${isCurrent ? 'wizard-step-label--active' : 'wizard-step-label--inactive'}`}>
+                      {step.label}
+                    </span>
                   </div>
-                  <span className={`wizard-step-label ${step.active ? 'wizard-step-label--active' : 'wizard-step-label--inactive'}`}>
-                    {step.label}
-                  </span>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          {/* Grid */}
-          <div className="wizard-grid">
-            {templates.map((t) => (
-              <div
-                key={t.id}
-                className={`wizard-card ${selected === t.id ? 'wizard-card--selected' : ''}`}
-                onClick={() => setSelected(t.id)}
-                role="button"
-                tabIndex={0}
-              >
-                <div className="wizard-card-bg-icon" style={{ color: `var(--md-${t.iconVariant === 'default' ? 'on-surface' : t.iconVariant})` }}>
-                  {t.bgIcon}
-                </div>
-                <div className="wizard-card-header">
-                  <div className={`wizard-card-icon-box wizard-card-icon-box--${t.iconVariant}`}>
-                    {t.icon}
+          {/* Step content */}
+          {currentStep === 'template' && (
+            <>
+              <div className="wizard-grid">
+                {templates.map((t) => (
+                  <div
+                    key={t.id}
+                    className={`wizard-card ${selected === t.id ? 'wizard-card--selected' : ''}`}
+                    onClick={() => setSelected(t.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(t.id); } }}
+                  >
+                    <div className="wizard-card-bg-icon" style={{ color: `var(--md-${t.iconVariant === 'default' ? 'on-surface' : t.iconVariant})` }}>
+                      {t.bgIcon}
+                    </div>
+                    <div className="wizard-card-header">
+                      <div className={`wizard-card-icon-box wizard-card-icon-box--${t.iconVariant}`}>
+                        {t.icon}
+                      </div>
+                      {selected === t.id && <CheckCircleFilled className="wizard-card-check" />}
+                    </div>
+                    <h3 className="wizard-card-title">{t.name}</h3>
+                    <p className="wizard-card-desc">{t.desc}</p>
+                    <div className="wizard-card-tags">
+                      {t.tags.map((tag) => (
+                        <span key={tag} className="wizard-card-tag">{tag}</span>
+                      ))}
+                    </div>
                   </div>
-                  {selected === t.id && <CheckCircleFilled className="wizard-card-check" />}
-                </div>
-                <h3 className="wizard-card-title">{t.name}</h3>
-                <p className="wizard-card-desc">{t.desc}</p>
-                <div className="wizard-card-tags">
-                  {t.tags.map((tag) => (
-                    <span key={tag} className="wizard-card-tag">{tag}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
+                ))}
 
-            {/* Blank Canvas */}
-            <div
-              className={`wizard-card wizard-card--blank ${selected === 'blank' ? 'wizard-card--selected' : ''}`}
-              onClick={() => setSelected('blank')}
-              role="button"
-              tabIndex={0}
-            >
-              <div className="wizard-blank-icon">
-                <PlusOutlined />
+                {/* Blank Canvas */}
+                <div
+                  className={`wizard-card wizard-card--blank ${selected === 'blank' ? 'wizard-card--selected' : ''}`}
+                  onClick={() => setSelected('blank')}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected('blank'); } }}
+                >
+                  <div className="wizard-blank-icon">
+                    <PlusOutlined />
+                  </div>
+                  <h3 className="wizard-card-title">空白画布</h3>
+                  <p className="wizard-card-desc">完全从零开始</p>
+                </div>
               </div>
-              <h3 className="wizard-card-title">空白画布</h3>
-              <p className="wizard-card-desc">完全从零开始</p>
+
+              {/* Project name input */}
+              <div style={{ marginTop: 20, maxWidth: 400 }}>
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={e => setProjectName(e.target.value)}
+                  placeholder="输入项目名称"
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border: '1px solid var(--md-outline-variant)',
+                    background: 'var(--md-surface)',
+                    color: 'var(--md-on-surface)',
+                    fontSize: 14,
+                    fontFamily: 'var(--font-sans)',
+                    outline: 'none',
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') { /* handled by footer button */ } }}
+                />
+              </div>
+            </>
+          )}
+
+          {currentStep === 'workspace' && (
+            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--md-on-surface-variant)', fontSize: 13, fontFamily: 'var(--font-sans)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 32, display: 'block', marginBottom: 8, color: 'var(--md-outline-variant)' }}>folder_open</span>
+              工作区配置将在后续版本中开放。当前将使用默认工作目录。
             </div>
-          </div>
+          )}
+
+          {currentStep === 'agent' && (
+            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--md-on-surface-variant)', fontSize: 13, fontFamily: 'var(--font-sans)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 32, display: 'block', marginBottom: 8, color: 'var(--md-outline-variant)' }}>smart_toy</span>
+              智能体配置将在后续版本中开放。当前将使用默认 Agent 设置。
+            </div>
+          )}
 
           {/* Footer */}
           <div className="wizard-footer">
@@ -162,8 +215,39 @@ export default function NewProjectWizard() {
               <CloseOutlined style={{ fontSize: 14 }} />
               取消
             </button>
-            <button className="wizard-footer-next" onClick={() => {/* next step */}}>
-              配置工作区
+            <button
+              className="wizard-footer-next"
+              disabled={creating}
+              onClick={async () => {
+                const nextIdx = currentStepIdx + 1;
+                if (nextIdx < STEPS.length) {
+                  setCurrentStep(STEPS[nextIdx].key);
+                } else {
+                  // Final step: create project and go to projects list
+                  const trimmedName = projectName.trim();
+                  if (!trimmedName) {
+                    message.warning('请输入项目名称');
+                    setCurrentStep('template');
+                    return;
+                  }
+                  const selectedTemplate = templates.find(t => t.id === selected);
+                  setCreating(true);
+                  try {
+                    const project = await projectsApi.create({
+                      name: trimmedName,
+                      techStack: selectedTemplate?.tags,
+                    });
+                    message.success(`项目「${trimmedName}」创建成功`);
+                    navigate(`/projects/${project.id}`);
+                  } catch (err) {
+                    message.error(`创建失败: ${err}`);
+                  } finally {
+                    setCreating(false);
+                  }
+                }
+              }}
+            >
+              {currentStepIdx < STEPS.length - 1 ? '下一步' : '完成创建'}
               <span style={{ fontSize: 14 }}>→</span>
             </button>
           </div>

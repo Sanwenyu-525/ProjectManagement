@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { message } from 'antd';
 import { useTerminalStore } from '../../../stores/terminalStore';
 import { usePreviewStore } from '../../../stores/previewStore';
 import { terminalApi } from '../../../api';
@@ -49,7 +50,10 @@ export default function BottomPanel({ defaultHeight = 280, onHeightChange }: Bot
     const id = `term-${Date.now()}`;
     const label = 'Terminal 1';
 
-    terminalApi.startShell(id, cfg.shell, defaultCwd, cfg.args).catch(() => {});
+    terminalApi.startShell(id, cfg.shell, defaultCwd, cfg.args).catch((e) => {
+      console.error('Failed to start terminal:', e);
+      message.error('终端启动失败，请检查 shell 配置');
+    });
     useTerminalStore.getState().addTerminal({
       id, label, createdAt: new Date(),
       shell: cfg.shell, cwd: defaultCwd, status: 'running',
@@ -135,7 +139,18 @@ export default function BottomPanel({ defaultHeight = 280, onHeightChange }: Bot
   return (
     <div ref={containerRef} style={{ ...styles.container, height }}>
       {/* Resize handle */}
-      <div style={styles.resizeHandle} onMouseDown={handleResizeStart} />
+      <div
+        style={styles.resizeHandle}
+        onMouseDown={handleResizeStart}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-primary-container)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+      >
+        <div style={{ display: 'flex', gap: 3, opacity: 0.4 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ width: 2, height: 2, borderRadius: '50%', background: 'var(--md-on-surface-variant)' }} />
+          ))}
+        </div>
+      </div>
 
       {/* Tab bar */}
       <div style={styles.tabBar}>
@@ -206,7 +221,7 @@ export default function BottomPanel({ defaultHeight = 280, onHeightChange }: Bot
             src={detectedPreview.url}
             style={styles.iframe}
             title="Preview"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            sandbox="allow-scripts allow-forms allow-popups"
           />
         )}
         {activeTab === 'preview' && !detectedPreview && (
@@ -242,7 +257,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     borderRadius: 12,
     border: '1px solid var(--md-outline-variant)',
-    background: '#0F172A',
+    background: 'var(--term-bg)',
     overflow: 'hidden',
     position: 'relative',
   },
@@ -251,16 +266,21 @@ const styles: Record<string, React.CSSProperties> = {
     top: 0,
     left: 0,
     right: 0,
-    height: 4,
+    height: 8,
     cursor: 'row-resize',
     zIndex: 10,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'transparent',
+    transition: 'background 0.15s',
   },
   tabBar: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottom: '1px solid rgba(148, 163, 184, 0.15)',
-    background: 'rgba(15, 23, 42, 0.95)',
+    borderBottom: '1px solid var(--term-border)',
+    background: 'var(--term-bg)',
     padding: '0 8px',
     flexShrink: 0,
     minHeight: 32,
@@ -280,24 +300,24 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     border: 'none',
     background: 'transparent',
-    color: 'rgba(148, 163, 184, 0.7)',
+    color: 'var(--term-text-muted)',
     cursor: 'pointer',
     transition: 'all 0.15s',
   },
   tabActive: {
-    background: 'rgba(148, 163, 184, 0.12)',
-    color: '#e2e8f0',
+    background: 'var(--term-surface)',
+    color: 'var(--term-text)',
   },
   addBtn: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
     borderRadius: 6,
     border: 'none',
     background: 'transparent',
-    color: 'rgba(148, 163, 184, 0.5)',
+    color: 'var(--term-text-dim)',
     cursor: 'pointer',
   },
   terminalTabs: {
@@ -314,19 +334,19 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     border: 'none',
     background: 'transparent',
-    color: 'rgba(148, 163, 184, 0.6)',
+    color: 'var(--term-text-muted)',
     cursor: 'pointer',
   },
   terminalTabActive: {
-    background: 'rgba(148, 163, 184, 0.1)',
-    color: '#e2e8f0',
+    background: 'var(--term-surface)',
+    color: 'var(--term-text)',
   },
   miniDot: {
     display: 'inline-block',
     width: 5,
     height: 5,
     borderRadius: '50%',
-    background: '#16bb83',
+    background: 'var(--term-accent)',
   },
   statusArea: {
     display: 'flex',
@@ -338,12 +358,12 @@ const styles: Record<string, React.CSSProperties> = {
     width: 6,
     height: 6,
     borderRadius: '50%',
-    background: '#16bb83',
+    background: 'var(--term-accent)',
   },
   statusText: {
     fontFamily: 'var(--font-mono)',
     fontSize: 10,
-    color: 'rgba(148, 163, 184, 0.5)',
+    color: 'var(--term-text-dim)',
   },
   content: {
     flex: 1,
@@ -362,6 +382,6 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     width: '100%',
     height: '100%',
-    color: 'rgba(148, 163, 184, 0.5)',
+    color: 'var(--term-text-dim)',
   },
 };

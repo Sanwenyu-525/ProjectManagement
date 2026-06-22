@@ -190,18 +190,6 @@ export const healthApi = {
     cmd<ProjectHealthResult[]>('get_all_latest_health'),
 };
 
-// ==================== Dependencies ====================
-
-export const dependenciesApi = {
-  detect: (projectIds: string[]) =>
-    cmd('detect_project_dependencies', { projectIds }),
-  getLaunchOrder: (projectIds: string[], respectDependencies: boolean) =>
-    cmd<string[]>('get_launch_order', { projectIds, respectDependencies }),
-  analyzeDockerCompose: (path: string) =>
-    cmd('analyze_docker_compose', { path }),
-  detectMonorepo: (path: string) =>
-    cmd('detect_monorepo_structure', { path }),
-};
 
 // ==================== Git ====================
 

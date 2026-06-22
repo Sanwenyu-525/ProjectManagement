@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import type { AgentSession } from '../types';
 
 const STORAGE_KEYS = {
   panelWidth: 'devhub_agent_panel_width',
@@ -8,15 +7,6 @@ const STORAGE_KEYS = {
 interface AgentWorkspaceStore {
   panelWidth: number;
   setPanelWidth: (w: number) => void;
-
-  recentSessions: AgentSession[];
-  setRecentSessions: (sessions: AgentSession[]) => void;
-
-  summaryStats: { tasks: number; issues: number; docs: number } | null;
-  setSummaryStats: (stats: { tasks: number; issues: number; docs: number } | null) => void;
-
-  lastCommitTime: string | null;
-  setLastCommitTime: (time: string | null) => void;
 }
 
 export const useAgentWorkspaceStore = create<AgentWorkspaceStore>((set) => ({
@@ -29,13 +19,4 @@ export const useAgentWorkspaceStore = create<AgentWorkspaceStore>((set) => ({
     localStorage.setItem(STORAGE_KEYS.panelWidth, String(clamped));
     set({ panelWidth: clamped });
   },
-
-  recentSessions: [],
-  setRecentSessions: (sessions) => set({ recentSessions: sessions }),
-
-  summaryStats: null,
-  setSummaryStats: (stats) => set({ summaryStats: stats }),
-
-  lastCommitTime: null,
-  setLastCommitTime: (time) => set({ lastCommitTime: time }),
 }));

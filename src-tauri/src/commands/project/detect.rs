@@ -875,27 +875,12 @@ fn detect_elixir_project(dir: &Path) -> Option<ElixirProjectInfo> {
 }
 
 struct RProjectInfo {
-    #[allow(dead_code)]
-    name: Option<String>,
     description: Option<String>,
 }
 
 fn detect_r_project(dir: &Path) -> Option<RProjectInfo> {
     // Try DESCRIPTION file (standard R package format)
     if let Ok(content) = fs::read_to_string(dir.join("DESCRIPTION")) {
-        let name = content.lines().find_map(|l| {
-            let trimmed = l.trim();
-            if trimmed.starts_with("Package:") {
-                trimmed
-                    .split(':')
-                    .nth(1)?
-                    .trim()
-                    .to_string()
-                    .into()
-            } else {
-                None
-            }
-        });
         let description = content.lines().find_map(|l| {
             let trimmed = l.trim();
             if trimmed.starts_with("Description:") {
@@ -909,7 +894,7 @@ fn detect_r_project(dir: &Path) -> Option<RProjectInfo> {
                 None
             }
         });
-        return Some(RProjectInfo { name, description });
+        return Some(RProjectInfo { description });
     }
     None
 }

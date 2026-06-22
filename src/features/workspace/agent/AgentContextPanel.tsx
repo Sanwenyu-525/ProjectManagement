@@ -1,122 +1,114 @@
-import { useAgentStore } from '../../../stores/agentStore';
+import { useMemo } from 'react';
+import { useAgentContextStore } from '../../../stores/agentContextStore';
+import type { FileOperation } from '../../../stores/agentContextStore';
 
 interface AgentContextPanelProps {
   sessionId: string | null;
+  cwd?: string;
 }
 
-export default function AgentContextPanel({ sessionId }: AgentContextPanelProps) {
-  const messages = useAgentStore(s => sessionId ? (s.messages[sessionId] ?? []) : []);
+const OP_CONFIG: Record<FileOperation, { icon: string; color: string; label: string }> = {
+  read: { icon: 'description', color: 'var(--md-primary)', label: '读' },
+  write: { icon: 'save', color: 'var(--md-secondary)', label: '写' },
+  edit: { icon: 'edit_note', color: 'var(--md-tertiary)', label: '改' },
+  search: { icon: 'search', color: 'var(--md-outline)', label: '搜' },
+};
 
-  // Derive tool calls from message blocks (toolEvents store is deprecated)
-  const toolCalls = useAgentStore(s => {
-    if (!sessionId) return [];
-    const msgs = s.messages[sessionId] ?? [];
-    const calls: Array<{ id: string; toolName: string; description: string; timestamp: number }> = [];
-    for (const msg of msgs) {
-      for (const block of msg.blocks) {
-        if (block.type === 'tool_use') {
-          const inputStr = block.input ? JSON.stringify(block.input) : '';
-          calls.push({
-            id: block.id,
-            toolName: block.toolName,
-            description: inputStr.length > 100 ? inputStr.slice(0, 100) + '...' : inputStr,
-            timestamp: msg.timestamp,
-          });
-        }
-      }
+export default function AgentContextPanel({ sessionId, cwd }: AgentContextPanelProps) {
+  // Subscribe to this session's context slice only
+  const sessionContext = useAgentContextStore(s => sessionId ? s.contexts[sessionId] : undefined);
+  const displayFiles = useMemo(
+    () => (sessionContext ? Object.values(sessionContext.files).sort((a, b) => b.lastAccessed - a.lastAccessed) : []),
+    [sessionContext],
+  );
+
+  // Group files by primary operation
+  const grouped = useMemo(() => {
+    const groups: Record<string, typeof displayFiles> = { read: [], write: [], edit: [], search: [] };
+    for (const f of displayFiles) {
+      const primary = f.operations[f.operations.length - 1]; // most recent operation
+      (groups[primary] ?? (groups[primary] = [])).push(f);
     }
-    return calls;
-  });
+    return groups;
+  }, [displayFiles]);
 
   if (!sessionId) {
     return (
       <div style={styles.empty}>
         <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)' }}>
-          psychology
+          folder_open
         </span>
-        <p style={styles.emptyText}>启动会话后查看上下文信息。</p>
+        <p style={styles.emptyText}>启动会话后查看 agent 引用的文件。</p>
       </div>
     );
   }
 
-  const recentMessages = messages.slice(-10);
+  if (displayFiles.length === 0) {
+    return (
+      <div style={styles.empty}>
+        <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)' }}>
+          folder_open
+        </span>
+        <p style={styles.emptyText}>开始对话后，agent 引用的文件会显示在这里。</p>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
-      {/* Session info */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>会话</div>
-        <div style={styles.infoRow}>
-          <span style={styles.label}>会话 ID</span>
-          <span style={styles.mono}>{sessionId.slice(0, 12)}...</span>
-        </div>
-        <div style={styles.infoRow}>
-          <span style={styles.label}>消息数</span>
-          <span style={styles.value}>{messages.length}</span>
-        </div>
-        <div style={styles.infoRow}>
-          <span style={styles.label}>工具调用</span>
-          <span style={styles.value}>{toolCalls.length}</span>
-        </div>
+      {/* Summary */}
+      <div style={styles.summary}>
+        <span style={styles.summaryCount}>{displayFiles.length}</span>
+        <span style={styles.summaryLabel}>个文件被引用</span>
       </div>
 
-      {/* Tool calls */}
-      {toolCalls.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>最近的工具调用</div>
-          <div style={styles.eventList}>
-            {toolCalls.slice(-15).reverse().map((evt, i) => (
-              <div key={evt.id ?? i} style={styles.eventItem}>
-                <span className="material-symbols-outlined" style={{ fontSize: 13, color: 'var(--md-primary)', flexShrink: 0 }}>
-                  build
-                </span>
-                <div style={styles.eventContent}>
-                  <span style={styles.toolName}>{evt.toolName}</span>
-                  {evt.description && (
-                    <span style={styles.toolDesc} title={evt.description}>
-                      {evt.description.length > 80 ? evt.description.slice(0, 80) + '...' : evt.description}
+      {/* File list grouped by operation */}
+      {(Object.keys(OP_CONFIG) as FileOperation[]).map(op => {
+        const groupFiles = grouped[op];
+        if (!groupFiles || groupFiles.length === 0) return null;
+        const config = OP_CONFIG[op];
+        return (
+          <div key={op} style={styles.group}>
+            <div style={styles.groupHeader}>
+              <span className="material-symbols-outlined" style={{ fontSize: 13, color: config.color }}>
+                {config.icon}
+              </span>
+              <span style={styles.groupLabel}>{config.label}取</span>
+              <span style={styles.groupCount}>{groupFiles.length}</span>
+            </div>
+            {groupFiles.map(f => (
+              <div key={f.path} style={styles.fileItem} title={f.path}>
+                <span style={styles.fileName}>{getShortPath(f.path, cwd)}</span>
+                <div style={styles.fileBadges}>
+                  {f.operations.map(op2 => (
+                    <span key={op2} style={{
+                      ...styles.opBadge,
+                      background: OP_CONFIG[op2]?.color ?? 'var(--md-outline)',
+                    }}>
+                      {OP_CONFIG[op2]?.label ?? op2}
                     </span>
+                  ))}
+                  {f.accessCount > 1 && (
+                    <span style={styles.countBadge}>{f.accessCount}x</span>
                   )}
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Recent messages */}
-      {recentMessages.length > 0 && (
-        <div style={styles.section}>
-          <div style={styles.sectionTitle}>最近消息</div>
-          <div style={styles.eventList}>
-            {recentMessages.map((msg, i) => (
-              <div key={i} style={styles.msgItem}>
-                <span style={{
-                  ...styles.roleTag,
-                  background: msg.role === 'user' ? 'var(--md-primary-container)' : 'var(--md-secondary-container)',
-                  color: msg.role === 'user' ? 'var(--md-on-primary-container)' : 'var(--md-on-secondary-container)',
-                }}>
-                  {msg.role}
-                </span>
-                <span style={styles.msgPreview} title={msg.blocks.map(b => b.type === 'text' || b.type === 'thinking' ? b.text : '').join('')}>
-                  {(() => {
-                    const preview = msg.blocks.map(b => b.type === 'text' || b.type === 'thinking' ? b.text : '').join('');
-                    return preview.length > 80 ? preview.slice(0, 80) + '...' : preview || '(工具调用)';
-                  })()}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {messages.length === 0 && toolCalls.length === 0 && (
-        <div style={styles.empty}>
-          <p style={styles.emptyText}>暂无活动。</p>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
+}
+
+/** Shorten a file path relative to cwd */
+function getShortPath(path: string, cwd?: string): string {
+  if (cwd && path.startsWith(cwd)) {
+    const rel = path.slice(cwd.length).replace(/^[/\\]+/, '');
+    if (rel) return rel;
+  }
+  const parts = path.split(/[/\\]/);
+  return parts.length > 2 ? parts.slice(-2).join('/') : path;
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -127,95 +119,6 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: 'auto',
     padding: 0,
   },
-  section: {
-    padding: '10px 12px',
-    borderBottom: '1px solid var(--md-outline-variant)',
-  },
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: 'var(--md-on-surface-variant)',
-    fontFamily: 'var(--font-label)',
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    marginBottom: 8,
-    opacity: 0.7,
-  },
-  infoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '3px 0',
-  },
-  label: {
-    fontSize: 12,
-    color: 'var(--md-on-surface-variant)',
-  },
-  value: {
-    fontSize: 12,
-    color: 'var(--md-on-surface)',
-    fontWeight: 500,
-  },
-  mono: {
-    fontSize: 11,
-    color: 'var(--md-on-surface)',
-    fontFamily: 'var(--font-mono)',
-  },
-  eventList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-  },
-  eventItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 6,
-    padding: '4px 0',
-  },
-  eventContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 1,
-    minWidth: 0,
-    flex: 1,
-  },
-  toolName: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: 'var(--md-on-surface)',
-    fontFamily: 'var(--font-mono)',
-  },
-  toolDesc: {
-    fontSize: 11,
-    color: 'var(--md-on-surface-variant)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  msgItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 6,
-    padding: '3px 0',
-  },
-  roleTag: {
-    fontSize: 9,
-    fontWeight: 600,
-    padding: '1px 5px',
-    borderRadius: 3,
-    flexShrink: 0,
-    fontFamily: 'var(--font-label)',
-    letterSpacing: '0.02em',
-    marginTop: 1,
-  },
-  msgPreview: {
-    fontSize: 11,
-    color: 'var(--md-on-surface-variant)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    flex: 1,
-  },
   empty: {
     flex: 1,
     display: 'flex',
@@ -223,10 +126,96 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
+    padding: 24,
   },
   emptyText: {
     margin: '8px 0 0',
     fontSize: 12,
     color: 'var(--md-on-surface-variant)',
+    textAlign: 'center',
+    fontFamily: 'var(--font-sans)',
+  },
+  summary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '8px 12px',
+    borderBottom: '1px solid var(--md-outline-variant)',
+    fontSize: 11,
+    color: 'var(--md-on-surface-variant)',
+    fontFamily: 'var(--font-sans)',
+  },
+  summaryCount: {
+    fontWeight: 700,
+    color: 'var(--md-primary)',
+    fontSize: 13,
+    fontFamily: 'var(--font-mono)',
+  },
+  summaryLabel: {
+    fontSize: 11,
+  },
+  group: {
+    padding: '6px 0',
+    borderBottom: '1px solid var(--md-outline-variant)',
+  },
+  groupHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '3px 12px 5px',
+  },
+  groupLabel: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: 'var(--md-on-surface-variant)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    fontFamily: 'var(--font-sans)',
+  },
+  groupCount: {
+    fontSize: 10,
+    color: 'var(--md-on-surface-variant)',
+    fontFamily: 'var(--font-mono)',
+    marginLeft: 'auto',
+  },
+  fileItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '3px 12px 3px 24px',
+    gap: 8,
+  },
+  fileName: {
+    fontSize: 11,
+    fontFamily: 'var(--font-mono)',
+    color: 'var(--md-on-surface)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    flex: 1,
+    minWidth: 0,
+  },
+  fileBadges: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 3,
+    flexShrink: 0,
+  },
+  opBadge: {
+    fontSize: 8,
+    fontWeight: 700,
+    color: '#fff',
+    padding: '0 4px',
+    borderRadius: 3,
+    lineHeight: '14px',
+    letterSpacing: '0.02em',
+    fontFamily: 'var(--font-sans)',
+  },
+  countBadge: {
+    fontSize: 9,
+    fontWeight: 500,
+    color: 'var(--md-on-surface-variant)',
+    fontFamily: 'var(--font-mono)',
+    opacity: 0.7,
   },
 };

@@ -4,3 +4,6 @@ pub mod sessions;
 pub mod agent_tasks;
 pub mod agent_configs;
 pub mod workspaces;
+pub mod memory;
+pub mod notes;
+pub mod knowledge;

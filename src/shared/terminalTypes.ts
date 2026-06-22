@@ -54,17 +54,3 @@ export interface TerminalExitEvent {
   terminalId: string;
   code: number | null;
 }
-
-export interface TerminalManagerState {
-  terminals: Terminal[];
-  activeId: string | null;
-  theme: TerminalTheme;
-}
-
-export interface TerminalManagerActions {
-  createTerminal: (label?: string) => Promise<void>;
-  closeTerminal: (id: string) => Promise<void>;
-  switchTerminal: (id: string) => void;
-  renameTerminal: (id: string, label: string) => void;
-  setTheme: (theme: TerminalTheme) => void;
-}

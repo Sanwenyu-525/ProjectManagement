@@ -6,52 +6,10 @@
  * Call inside component render or useMemo — reads live values so it responds to theme toggle.
  */
 
-export interface ThemeColors {
-  primary: string;
-  primaryDark: string;
-  primaryLight: string;
-  accent: string;
-  info: string;
-  purple: string;
-  amber: string;
-  text: string;
-  textSecondary: string;
-  textTertiary: string;
-  textMuted: string;
-  textDescription: string;
-  textPlaceholder: string;
-  textLight: string;
-  bgBase: string;
-  bgSurface: string;
-  bgCard: string;
-  bgElevated: string;
-  bgInput: string;
-  border: string;
-  borderSubtle: string;
-  divider: string;
-  statusDone: string;
-  statusProgress: string;
-  statusTodo: string;
-  statusCancel: string;
-  diffAddBg: string;
-  diffAddText: string;
-  diffDelBg: string;
-  diffDelText: string;
-  diffHunkBg: string;
-  wsBg: string;
-  wsText: string;
-  wsTextSecondary: string;
-  wsTextTertiary: string;
-  wsBorder: string;
-  wsActiveBg: string;
-  wsActiveBorder: string;
-  wsContentBg: string;
-}
-
-let cache: ThemeColors | null = null;
+let cache: Record<string, string> | null = null;
 let lastTheme = '';
 
-export function getThemeColors(): ThemeColors {
+export function getThemeColors() {
   const root = document.documentElement;
   const theme = root.getAttribute('data-theme') || 'light';
   if (cache && lastTheme === theme) return cache;
@@ -104,8 +62,3 @@ export function getThemeColors(): ThemeColors {
   return cache;
 }
 
-/** Invalidate cache when theme changes. Call from theme toggle handler. */
-export function invalidateThemeCache() {
-  cache = null;
-  lastTheme = '';
-}

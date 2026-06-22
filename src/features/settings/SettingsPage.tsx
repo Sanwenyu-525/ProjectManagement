@@ -89,7 +89,16 @@ function GeneralSettings() {
       </GlassCard>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-        <Button icon={<UndoOutlined />}>重置默认</Button>
+        <Button
+          icon={<UndoOutlined />}
+          onClick={() => {
+            setDefaultCmd('code {path}');
+            localStorage.removeItem('devhub_default_open_cmd');
+            message.info('已重置为默认值');
+          }}
+        >
+          重置默认
+        </Button>
         <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>保存设置</Button>
       </div>
     </div>
@@ -118,32 +127,36 @@ function AppearanceSettings() {
   );
 }
 
-function WorkspaceSettings() {
+// ── Placeholder for not-yet-implemented settings ──
+
+function PlaceholderSettings({ icon, title, description, badge, hint }: { icon: string; title: string; description: string; badge?: string; hint?: string }) {
   const isDark = useThemeStore(s => s.mode === 'dark');
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <GlassCard isDark={isDark}>
-        <CardHeader title="工作区设置" />
-        <div style={{ padding: '16px 24px 20px', color: 'var(--md-on-surface-variant)', fontSize: 14 }}>
-          工作区相关设置将在后续版本中开放。
+        <CardHeader title={title} badge={badge} />
+        <div style={{ padding: '16px 24px 20px', textAlign: 'center' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--md-outline-variant)', display: 'block', marginBottom: 8 }}>{icon}</span>
+          <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 13 }}>
+            {description}
+          </div>
+          {hint && (
+            <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 11, marginTop: 4, opacity: 0.6 }}>
+              {hint}
+            </div>
+          )}
         </div>
       </GlassCard>
     </div>
   );
 }
 
+function WorkspaceSettings() {
+  return <PlaceholderSettings icon="workspaces" title="工作区设置" description="工作区设置将在后续版本中开放。" hint="包含面板布局、快捷键、多显示器支持等功能。" />;
+}
+
 function McpServersSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
-        <CardHeader title="MCP 服务器" badge="Beta" />
-        <div style={{ padding: '16px 24px 20px', color: 'var(--md-on-surface-variant)', fontSize: 14 }}>
-          MCP 服务器管理功能将在后续版本中开放。
-        </div>
-      </GlassCard>
-    </div>
-  );
+  return <PlaceholderSettings icon="dns" title="MCP 服务器" description="MCP 服务器管理功能将在后续版本中开放。" badge="Beta" hint="届时可通过界面添加、配置和监控 MCP 服务器连接。" />;
 }
 
 function TerminalSettings() {
@@ -212,31 +225,11 @@ function TerminalSettings() {
 }
 
 function GitToolsSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
-        <CardHeader title="Git 设置" />
-        <div style={{ padding: '16px 24px 20px', color: 'var(--md-on-surface-variant)', fontSize: 14 }}>
-          Git 全局设置将在后续版本中开放。
-        </div>
-      </GlassCard>
-    </div>
-  );
+  return <PlaceholderSettings icon="account_tree" title="Git 设置" description="Git 全局设置将在后续版本中开放。" hint="包含默认分支名、提交模板、SSH 密钥管理等功能。" />;
 }
 
 function BuildSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
-        <CardHeader title="构建设置" />
-        <div style={{ padding: '16px 24px 20px', color: 'var(--md-on-surface-variant)', fontSize: 14 }}>
-          构建相关设置将在后续版本中开放。
-        </div>
-      </GlassCard>
-    </div>
-  );
+  return <PlaceholderSettings icon="build" title="构建设置" description="构建相关设置将在后续版本中开放。" hint="包含构建流水线配置、环境变量管理、CI/CD 集成等功能。" />;
 }
 
 function DataManagementSettings() {

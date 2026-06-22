@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { EditorView } from '@codemirror/view';
-import { message } from 'antd';
+import { message, Modal } from 'antd';
 import { filesApi } from '../../../api';
 import type { FileEntry } from '../../../api';
 import { useTerminalStore } from '../../../stores/terminalStore';
@@ -17,6 +17,7 @@ interface EditorFile {
   originalContent: string;
   modified: boolean;
   isBinary: boolean;
+  tooLarge: boolean;
 }
 
 interface CodeEditorPaneProps {
@@ -28,6 +29,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
   const isDark = useThemeStore(s => s.mode === 'dark');
   const [files, setFiles] = useState<EditorFile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const viewRef = useRef<EditorView | null>(null);
   const filesRef = useRef(files);
   filesRef.current = files;
@@ -37,10 +39,15 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
     [files, activeId],
   );
 
+  const [autoCopyEnabled, setAutoCopyEnabled] = useState(false);
+
   // Helper: read a file from disk and add it to the editor
   const openFile = useCallback(async (path: string, inferredLang?: string) => {
     const result = await filesApi.read(path);
     const name = path.split(/[/\\]/).pop() || path;
+    if (result.tooLarge) {
+      message.warning(`${name} 超过 1MB，无法在编辑器中打开`);
+    }
     const file: EditorFile = {
       id: path,
       label: name,
@@ -50,6 +57,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
       originalContent: result.content,
       modified: false,
       isBinary: result.isBinary,
+      tooLarge: result.tooLarge,
     };
     setFiles(prev => {
       if (prev.some(p => p.path === path)) return prev;
@@ -90,20 +98,47 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
     });
   }, []);
 
-  const handleCloseTab = useCallback((id: string) => {
+  const doCloseTab = useCallback((id: string) => {
     setFiles(prev => {
+      const idx = prev.findIndex(f => f.id === id);
       const next = prev.filter(f => f.id !== id);
       if (activeIdRef.current === id) {
-        const idx = prev.findIndex(f => f.id === id);
         setActiveId(next[Math.min(idx, next.length - 1)]?.id ?? null);
       }
       if (next.length === 0) {
-        // Defer onEmpty to avoid setState-during-render
         setTimeout(() => onEmpty?.(), 0);
       }
       return next;
     });
   }, [onEmpty]);
+
+  const handleCloseTab = useCallback((id: string) => {
+    const file = filesRef.current.find(f => f.id === id);
+    if (!file || !file.modified) {
+      doCloseTab(id);
+      return;
+    }
+    Modal.confirm({
+      title: '未保存的更改',
+      content: `"${file.label}" 有未保存的更改，是否保存？`,
+      okText: '保存',
+      cancelText: '不保存',
+      onOk: async () => {
+        try {
+          await filesApi.write(file.path, file.content);
+          setFiles(prev => prev.map(f =>
+            f.id === file.id ? { ...f, modified: false, originalContent: f.content } : f
+          ));
+          doCloseTab(id);
+        } catch (e) {
+          message.error(`保存失败: ${e}`);
+        }
+      },
+      onCancel: () => {
+        doCloseTab(id);
+      },
+    });
+  }, [doCloseTab]);
 
   const handleCreateEditor = useCallback((view: EditorView) => {
     viewRef.current = view;
@@ -136,9 +171,12 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
       await Promise.all(targets.map(f => openFile(f.path)));
     };
 
+    setLoading(true);
     loadFromDir(srcDir, /\.(tsx?|jsx?)$/, 6).catch(() => {
-      loadFromDir(projectRoot, /\.(tsx?|jsx?|rs|py|go)$/, 4).catch(() => {});
-    });
+      loadFromDir(projectRoot, /\.(tsx?|jsx?|rs|py|go)$/, 4).catch(() => {
+        message.warning('无法自动加载项目文件');
+      });
+    }).finally(() => setLoading(false));
   }, [projectRoot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Open file selected from FileExplorer sidebar — consume-and-clear pattern
@@ -194,7 +232,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
                   color: isActive ? 'var(--md-primary)' : 'var(--md-tertiary-container)',
                 }}>{getFileIcon(file.isBinary, file.path)}</span>
                 <span style={styles.tabLabel}>{file.label}</span>
-                {file.modified && !isActive && (
+                {file.modified && (
                   <span style={styles.modifiedDot} />
                 )}
                 <span
@@ -211,6 +249,31 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
             No files open
           </span>
         )}
+        <button
+          onClick={() => setAutoCopyEnabled(v => !v)}
+          style={{
+            marginLeft: 'auto',
+            marginRight: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '3px 8px',
+            borderRadius: 6,
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontFamily: 'var(--font-sans)',
+            background: autoCopyEnabled ? 'var(--md-primary-container, #e8def8)' : 'transparent',
+            color: autoCopyEnabled ? 'var(--md-on-primary-container, #1d192b)' : 'var(--md-outline-variant)',
+            transition: 'all 0.15s',
+            flexShrink: 0,
+          }}
+          title={autoCopyEnabled ? '选中即复制：开启' : '选中即复制：关闭'}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+            {autoCopyEnabled ? 'content_copy' : 'copy_all'}
+          </span>
+        </button>
       </div>
 
       {/* Code Area */}
@@ -222,16 +285,25 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
             language={activeFile.language}
             isBinary={activeFile.isBinary}
             isDark={isDark}
+            tooLarge={activeFile.tooLarge}
             onChange={handleChange}
             onSave={handleSave}
             onCreateEditor={handleCreateEditor}
             viewRef={viewRef}
+            autoCopy={autoCopyEnabled}
           />
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-            <span style={{ fontSize: 12, color: 'var(--md-outline-variant)' }}>
-              Select a file to edit
-            </span>
+            {loading ? (
+              <span style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }}>progress_activity</span>
+                加载文件中...
+              </span>
+            ) : (
+              <span style={{ fontSize: 12, color: 'var(--md-outline-variant)' }}>
+                选择文件开始编辑
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -245,16 +317,16 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     flex: 1,
     minHeight: 0,
-    background: '#ffffff',
+    background: 'var(--md-surface-container-lowest)',
     borderRadius: 12,
-    border: '1px solid rgba(187, 202, 198, 0.50)',
+    border: '1px solid var(--md-outline-variant)',
     boxShadow: '0 2px 8px rgba(11, 28, 48, 0.04)',
     overflow: 'hidden',
   },
   tabBar: {
     display: 'flex',
     alignItems: 'center',
-    borderBottom: '1px solid rgba(187, 202, 198, 0.50)',
+    borderBottom: '1px solid var(--md-outline-variant)',
     background: 'var(--md-surface-container-lowest)',
     overflowX: 'auto',
     flexShrink: 0,
@@ -274,13 +346,13 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     transition: 'all 0.15s',
-    borderRight: '1px solid rgba(187, 202, 198, 0.50)',
+    borderRight: '1px solid var(--md-outline-variant)',
     background: 'transparent',
     borderBottom: '2px solid transparent',
     flexShrink: 0,
   },
   tabActive: {
-    background: '#ffffff',
+    background: 'var(--md-surface-container-lowest)',
     borderBottom: '2px solid var(--md-primary)',
     opacity: 1,
   },
@@ -306,6 +378,6 @@ const styles: Record<string, React.CSSProperties> = {
   codeArea: {
     flex: 1,
     overflow: 'auto',
-    background: '#FAFAFA',
+    background: 'var(--md-surface-container-low)',
   },
 };

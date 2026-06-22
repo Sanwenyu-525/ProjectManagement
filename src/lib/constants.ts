@@ -27,40 +27,9 @@ export const PROJECT_STATUSES = ['Idea', 'Planning', 'Active', 'Completed', 'Arc
 /** Priority options */
 export const PRIORITY_OPTIONS = ['Low', 'Medium', 'High', 'Critical'] as const;
 
-/** Activity action display config — call at render time for theme-aware values */
-export function getActivityActionConfig(): Record<string, { label: string; color: string }> {
-  const c = getThemeColors();
-  return {
-    status_change: { label: '状态变更', color: c.info },
-    task_created: { label: '创建任务', color: c.statusDone },
-    task_status_change: { label: '任务状态变更', color: c.amber },
-    repo_synced: { label: '仓库同步', color: '#13c2c2' },
-  };
-}
-
-/** Parse activity log details JSON */
-export function parseActivityDetails(action: string, detailsStr: string | null): string {
-  if (!detailsStr) return '';
-  try {
-    const details = JSON.parse(detailsStr);
-    switch (action) {
-      case 'status_change':
-      case 'task_status_change':
-        return `${details.from || ''} → ${details.to || ''}`;
-      case 'task_created':
-      case 'repo_synced':
-        return details.repo || '';
-      default:
-        return JSON.stringify(details);
-    }
-  } catch {
-    return detailsStr;
-  }
-}
-
 // ==================== Terminal ====================
 
-export const isWindows = navigator.platform.includes('Win');
+const isWindows = navigator.platform.includes('Win');
 
 export const DEFAULT_CWD = isWindows ? 'C:\\Users' : '/Users';
 

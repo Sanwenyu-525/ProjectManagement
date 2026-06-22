@@ -288,30 +288,6 @@ export default function ProjectsPage() {
       return;
     }
 
-    const launchHints = getProjectPriority(project) > 0 ? [] : [];
-
-    if (launchHints.length > 0) {
-      const confirmed = await new Promise<boolean>((resolve) => {
-        Modal.confirm({
-          title: '启动项目',
-          icon: <PlayCircleOutlined style={{ color: 'var(--color-status-done)' }} />,
-          width: 520,
-          content: (
-            <div>
-              <div style={{ marginBottom: 12, color: 'var(--color-text-description)', fontSize: 13 }}>
-                即将启动项目：<strong style={{ color: 'var(--color-text-primary)' }}>{project.name}</strong>
-              </div>
-            </div>
-          ),
-          okText: '启动',
-          cancelText: '取消',
-          onOk: () => resolve(true),
-          onCancel: () => resolve(false),
-        });
-      });
-      if (!confirmed) return;
-    }
-
     try {
       for (const req of requests) {
         useTerminalStore.getState().requestLaunch({
@@ -562,7 +538,7 @@ export default function ProjectsPage() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>
       ) : projects.length === 0 ? (
-        <Empty description="暂无项目" />
+        <Empty description={statusFilter ? `没有${statusFilter === 'active' ? '进行中' : statusFilter === 'completed' ? '已完成' : statusFilter === 'paused' ? '已暂停' : ''}的项目` : '暂无项目'} />
       ) : viewMode === 'grid' ? (
         /* ── Grid View ── */
         <div style={{

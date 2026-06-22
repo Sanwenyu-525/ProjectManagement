@@ -41,12 +41,3 @@ export function getScoreColor(score: number): string {
   return c.statusCancel;
 }
 
-/** Get health status label. */
-export function getHealthStatusLabel(status: string): string {
-  switch (status) {
-    case 'healthy': return '健康';
-    case 'needs_attention': return '需要关注';
-    case 'critical': return '风险';
-    default: return '未知';
-  }
-}

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export interface DiscoveredPreview {
+interface DiscoveredPreview {
   url: string;
   label: string;
   terminalId: string;

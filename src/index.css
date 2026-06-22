@@ -2,15 +2,7 @@
 @import './shared/styles/animations.css';
 @import './shared/styles/glassmorphism.css';
 /* Fonts loaded via non-blocking <link> in index.html */
-
-/* Geist font for labels (loaded from CDN) */
-@font-face {
-  font-family: 'Geist';
-  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
+/* Space Grotesk (display), DM Sans (body), JetBrains Mono (code) */
 
 /* ==================== DevHub Custom Overrides ==================== */
 
@@ -88,6 +80,17 @@ body {
   50% { opacity: 0; }
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes progressSlide {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(150%); }
+  100% { transform: translateX(-100%); }
+}
+
 /* ==================== Glass Card Enhancement ==================== */
 
 .ant-card {
@@ -112,7 +115,7 @@ body {
 }
 
 .terminal-bar:hover {
-  background: #1e293b !important;
+  background: var(--md-surface-container-high) !important;
 }
 
 .ant-layout-sider-trigger {
@@ -313,13 +316,47 @@ body {
 }
 
 [data-theme="dark"] .ant-table-row-loading td::after {
-  background: linear-gradient(90deg, transparent 25%, rgba(255, 255, 255, 0.04) 50%, transparent 75%);
+  background: linear-gradient(90deg, transparent 25%, rgba(221, 228, 225, 0.04) 50%, transparent 75%);
 }
 
-/* ── Workspace terminal bar ── */
-.ws-terminal-bar {
-  transition: background 0.15s ease;
+/* ==================== Agent Idle State Hover Utilities ==================== */
+
+.hover-card {
+  transition: background 0.15s, border-color 0.15s;
 }
-.ws-terminal-bar:hover {
-  background: #1e293b !important;
+.hover-card:hover {
+  background: var(--md-surface-container) !important;
+  border-color: var(--md-primary-container) !important;
+}
+
+.hover-chip {
+  transition: background 0.15s;
+}
+.hover-chip:hover {
+  background: var(--md-surface-container-highest) !important;
+}
+
+.hover-send:hover {
+  background: color-mix(in srgb, var(--md-primary), black 12%) !important;
+}
+
+.hover-close:hover {
+  background: var(--md-surface-container-high);
+}
+
+/* Resize divider — zero layout width, invisible hit area via pseudo-element */
+.resize-divider {
+  position: relative;
+  width: 0;
+  flex-shrink: 0;
+  cursor: col-resize;
+  align-self: stretch;
+}
+.resize-divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
 }

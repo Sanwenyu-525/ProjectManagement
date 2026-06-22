@@ -109,6 +109,7 @@ pub fn run() {
             commands::workspace::sessions::sessions_list,
             commands::workspace::sessions::sessions_messages,
             commands::workspace::sessions::sessions_cleanup_stale,
+            commands::workspace::sessions::sessions_truncate_messages,
             commands::workspace::sessions::browser_record_visit,
             commands::workspace::sessions::browser_list_visits,
             commands::workspace::sessions::browser_find_visits_by_url,
@@ -134,7 +135,9 @@ pub fn run() {
             commands::workspace::terminal::terminal_start_shell,
             commands::workspace::terminal::terminal_start_agent,
             commands::workspace::terminal::terminal_start_agent_piped,
+            commands::workspace::terminal::terminal_start_agent_piped_pty,
             commands::workspace::terminal::terminal_resize,
+            commands::workspace::terminal::claude_commands_list,
             // File operations
             commands::workspace::files::files_list_directory,
             commands::workspace::files::files_read,
@@ -204,6 +207,33 @@ pub fn run() {
             commands::build::integrations::integrations_create,
             commands::build::integrations::integrations_update,
             commands::build::integrations::integrations_delete,
+            // Memory (knowledge base)
+            commands::workspace::memory::memories_list,
+            commands::workspace::memory::memories_search,
+            commands::workspace::memory::memories_create,
+            commands::workspace::memory::memories_delete,
+            commands::workspace::memory::memories_pin,
+            commands::workspace::memory::memories_update,
+            commands::workspace::memory::context_retrieve,
+            commands::workspace::memory::build_context,
+            commands::workspace::memory::decisions_list,
+            commands::workspace::memory::decisions_create,
+            commands::workspace::memory::decisions_update,
+            commands::workspace::memory::decisions_delete,
+            commands::workspace::memory::memory_relations_add,
+            commands::workspace::memory::memory_relations_list,
+            // Knowledge Base
+            commands::workspace::memory::knowledge_list,
+            commands::workspace::memory::knowledge_counts,
+            // Notes
+            commands::workspace::notes::notes_list,
+            commands::workspace::notes::notes_create,
+            commands::workspace::notes::notes_update,
+            commands::workspace::notes::notes_delete,
+            commands::workspace::notes::notes_pin,
+            // Knowledge file operations
+            commands::workspace::knowledge::knowledge_import_files,
+            commands::workspace::knowledge::knowledge_create_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,23 +1,31 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense, lazy } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useQuery } from '@tanstack/react-query';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { usePreviewStore } from '../../stores/previewStore';
 import { useAgentStore } from '../../stores/agentStore';
+import { useAgentTabStore } from '../../stores/agentTabStore';
+import { useAgentPlanStore } from '../../stores/agentPlanStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import { terminalApi, sessionsApi, gitApi, workspacesApi } from '../../api';
+import { terminalApi, sessionsApi, gitApi, workspacesApi, agentTasksApi, memoryApi } from '../../api';
 import { queryKeys } from '../../api/queryKeys';
 import { TerminalExitEvent, TerminalOutputEvent } from '../../shared/terminalTypes';
-import AgentChat from './agent/AgentChat';
 import AgentIdleState from './agent/AgentIdleState';
-import CodeEditorPane from './editor/CodeEditorPane';
-import BottomPanel from './terminal/BottomPanel';
-import AgentRightPanel from './agent/AgentRightPanel';
+import AgentTabBar from './agent/AgentTabBar';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { folderName } from './components/terminalFactory';
 import { createProvider } from './agent/providers';
+import { PlanRuntime } from './agent/PlanRuntime';
+
+// Lazy-load heavy components — only needed when agent is running or editor/terminal are open
+const AgentChat = lazy(() => import('./agent/AgentChat'));
+const CodeEditorPane = lazy(() => import('./editor/CodeEditorPane'));
+const BottomPanel = lazy(() => import('./terminal/BottomPanel'));
+const AgentRightPanel = lazy(() => import('./agent/AgentRightPanel'));
 import type { AgentProvider } from './agent/AgentProvider';
 import type { AgentSession } from '../../types';
+
+let staleSessionsCleanedUp = false; // Run cleanupStale only once per app session
 
 // Regex patterns for detecting dev server URLs in terminal output
 const URL_PATTERNS = [
@@ -30,8 +38,13 @@ const URL_PATTERNS = [
 export default function WorkspacePage() {
   const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
   const setActiveProvider = useAgentStore(s => s.setActiveProvider);
-  const activeSessionId = useAgentStore(s => s.activeSessionId);
-  const setActiveSessionId = useAgentStore(s => s.setActiveSessionId);
+  const tabs = useAgentTabStore(s => s.tabs);
+  const activeTabId = useAgentTabStore(s => s.activeTabId);
+  const switchTab = useAgentTabStore(s => s.switchTab);
+  const addTab = useAgentTabStore(s => s.addTab);
+  const setSessionId = useAgentTabStore(s => s.setSessionId);
+  const setLabel = useAgentTabStore(s => s.setLabel);
+  const setTabCwd = useAgentTabStore(s => s.setCwd);
 
   // Recent sessions for idle state
   const { data: recentSessions = [] } = useQuery({
@@ -50,7 +63,14 @@ export default function WorkspacePage() {
   const appendMessage = useAgentStore(s => s.appendMessage);
   const startStreaming = useAgentStore(s => s.startStreaming);
   const defaultCwd = useTerminalStore(s => s.defaultCwd);
-  const providerRef = useRef<AgentProvider | null>(null);
+  const providersRef = useRef<Map<string, AgentProvider>>(new Map());
+
+  // Derive active tab and its provider
+  const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId]);
+  const activeProvider = useMemo(
+    () => activeTabId ? providersRef.current.get(activeTabId) ?? null : null,
+    [activeTabId, activeTab?.sessionId], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Git log for last commit time
   const { data: gitLog } = useQuery({
@@ -79,79 +99,173 @@ export default function WorkspacePage() {
 
   // Agent ↔ Editor split ratio (0.2 – 0.8)
   const [splitRatio, setSplitRatio] = useState(0.5);
-  const [isDragging, setIsDragging] = useState(false);
 
-  // On mount, clean up stale sessions
+  // Plan mode
+  const planMode = useAgentStore(s => s.planMode);
+  const setPlanMode = useAgentStore(s => s.setPlanMode);
+  const planRuntimeRef = useRef<PlanRuntime | null>(null);
+  const planSessionId = useAgentPlanStore(s => s.sessionId);
+  const planCwd = useAgentPlanStore(s => s.cwd);
+  const [idleCwd, setIdleCwd] = useState<string | null>(() => localStorage.getItem('agent_lastCwd'));
+
+  // Effective cwd for the right panel: plan's cwd when in plan mode, otherwise active tab's cwd
+  const effectiveCwd = useMemo(() => {
+    if (planMode && planCwd) return planCwd;
+    return activeTab?.cwd || idleCwd || defaultCwd;
+  }, [planMode, planCwd, activeTab?.cwd, idleCwd, defaultCwd]);
+
+  // On mount, clean up stale sessions (>60 min old with no activity in 30 min) — once per app session
   useEffect(() => {
-    sessionsApi.cleanupStale(60, 30).catch(() => {});
-    sessionsApi.list(5).then(sessions => {
-      const staleRunning = sessions.filter(s => s.status === 'running');
-      for (const s of staleRunning) {
-        sessionsApi.end(s.id).catch(() => {});
-      }
-    }).catch(() => {});
+    if (!staleSessionsCleanedUp) {
+      staleSessionsCleanedUp = true;
+      sessionsApi.cleanupStale(60, 30).catch(() => {});
+    }
 
-    // Stop provider and clear agent state on unmount
+    // Stop all providers and clear agent state on unmount
+    const currentProviders = providersRef.current;
     return () => {
-      if (providerRef.current) {
-        providerRef.current.stop().catch(() => {});
-        providerRef.current = null;
+      for (const [, provider] of currentProviders) {
+        provider.stop().catch(() => {});
       }
+      currentProviders.clear();
       useAgentStore.getState().clearStreaming();
       setActiveProvider(null);
-      setActiveSessionId(null);
+      planRuntimeRef.current?.destroy();
+      planRuntimeRef.current = null;
     };
-  }, [setActiveProvider, setActiveSessionId]);
+  }, [setActiveProvider]);
 
   // Start agent and immediately send a message (for idle state input)
-  const handleStartAndSend = useCallback(async (message: string) => {
-    const workDir = defaultCwd;
+  const handleStartAndSend = useCallback(async (tabId: string, message: string, cwd?: string) => {
+    const workDir = cwd || defaultCwd;
+    localStorage.setItem('agent_lastCwd', workDir);
     const dangerouslySkipPermissions = localStorage.getItem('agent_dangerouslySkipPermissions') === 'true';
     const permissionMode = dangerouslySkipPermissions ? 'dangerously-skip-permissions' : 'default';
 
     // Create session in DB
     const sessionId = await sessionsApi.start('claude', 'claude', undefined, workDir, permissionMode);
 
-    // Directly use ClaudeProvider — no DB provider config needed
+    // Create provider
     const provider = createProvider('claude');
-    await provider.start({ sessionId, cwd: workDir, dangerouslySkipPermissions });
+    await provider.start({ sessionId, cwd: workDir, dangerouslySkipPermissions, mode: 'oneshot' });
     setActiveProvider('claude');
-    providerRef.current = provider;
-    setActiveSessionId(sessionId);
+    providersRef.current.set(tabId, provider);
+
+    // Update tab with session
+    setSessionId(tabId, sessionId);
+    setTabCwd(tabId, workDir);
+    setLabel(tabId, message.length > 20 ? message.slice(0, 20) + '…' : message);
 
     // Record user message and start streaming before sending
     appendMessage(sessionId, 'user', message);
     sessionsApi.appendMessage(sessionId, 'user', message).catch(() => {});
     startStreaming(sessionId);
 
+    // Build memory context and inject into first message
+    let enrichedMessage = message;
     try {
-      await provider.send(message);
+      const ctx = await memoryApi.buildContext();
+      if (ctx.packedContext && ctx.packedContext.length > 0) {
+        enrichedMessage = `${ctx.packedContext}\n\n---\n\n${message}`;
+      }
+    } catch { /* context injection is best-effort */ }
+
+    try {
+      await provider.send(enrichedMessage);
     } catch (e) {
       console.error('[WorkspacePage] Failed to start agent:', e);
-      // Clean up: stop provider and revert to idle
       provider.stop().catch(() => {});
-      providerRef.current = null;
+      providersRef.current.delete(tabId);
       useAgentStore.getState().clearStreaming();
       setActiveProvider(null);
-      setActiveSessionId(null);
-      throw e;
+      setSessionId(tabId, ''); // Reset tab to empty
     }
-  }, [defaultCwd, setActiveProvider, setActiveSessionId, appendMessage, startStreaming]);
+  }, [defaultCwd, setActiveProvider, setSessionId, setTabCwd, setLabel, appendMessage, startStreaming]);
 
-  // Stop agent and return to idle state
-  const handleBackToIdle = useCallback(() => {
-    if (providerRef.current) {
-      providerRef.current.stop().catch(() => {});
-      providerRef.current = null;
+  // Start a plan: parse goal → create tasks → execute steps sequentially
+  const handleStartPlan = useCallback(async (goal: string, cwd: string) => {
+    // Clean up any existing plan
+    planRuntimeRef.current?.destroy();
+    const runtime = new PlanRuntime();
+    planRuntimeRef.current = runtime;
+
+    try {
+      // Parse goal into steps
+      const parsed = await runtime.parseGoal(goal, cwd);
+
+      // Create session for the plan
+      const planSessionId = await sessionsApi.start('plan', 'claude', undefined, cwd, 'dangerously-skip-permissions');
+
+      // Create root task (the plan itself)
+      const rootTask = await agentTasksApi.create(planSessionId, {
+        title: parsed.goal,
+        priority: 'high',
+      });
+
+      // Create step tasks
+      const stepInputs = parsed.steps.map((s, i) => ({
+        title: s.title,
+        parentId: rootTask.id,
+        sortOrder: i,
+      }));
+      const createdSteps = await agentTasksApi.bulkCreate(planSessionId, stepInputs);
+
+      // Set up plan store state
+      const planStore = useAgentPlanStore.getState();
+      planStore.setPlanTaskId(rootTask.id);
+      planStore.setSessionId(planSessionId);
+      planStore.setGoal(parsed.goal);
+      planStore.setCwd(cwd);
+      planStore.setSteps(createdSteps.map((s, i) => ({
+        taskId: s.id,
+        title: s.title,
+        description: parsed.steps[i]?.description || '',
+        status: 'pending' as const,
+        sessionId: null,
+        error: null,
+      })));
+      planStore.setMode('executing');
+      setPlanMode(true);
+
+      // Execute steps sequentially (non-blocking)
+      runtime.execute(cwd).catch(err => {
+        console.error('[WorkspacePage] Plan execution error:', err);
+        useAgentPlanStore.getState().setError(err instanceof Error ? err.message : String(err));
+      });
+    } catch (err) {
+      console.error('[WorkspacePage] Failed to start plan:', err);
+      useAgentPlanStore.getState().setError(err instanceof Error ? err.message : String(err));
+      useAgentPlanStore.getState().setMode('error');
     }
-    useAgentStore.getState().clearStreaming();
-    setActiveProvider(null);
-    setActiveSessionId(null);
-  }, [setActiveProvider, setActiveSessionId]);
+  }, [setPlanMode]);
 
-  // Resume an existing session
+  // Close a tab: stop provider + end DB session, then close the tab
+  const handleTabClose = useCallback((tabId: string) => {
+    const provider = providersRef.current.get(tabId);
+    if (provider) {
+      provider.stop().catch(() => {});
+      providersRef.current.delete(tabId);
+    }
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab?.sessionId) {
+      sessionsApi.end(tab.sessionId).catch(() => {});
+    }
+    useAgentTabStore.getState().closeTab(tabId);
+  }, [tabs]);
+
+  // Resume an existing session — switch to existing tab if open, otherwise create new tab
   const handleResumeSession = useCallback((session: AgentSession) => {
+    // If a tab with this session already exists, just switch to it
+    const existingTab = tabs.find(t => t.sessionId === session.id);
+    if (existingTab) {
+      switchTab(existingTab.id);
+      return;
+    }
+
     const dangerouslySkipPermissions = localStorage.getItem('agent_dangerouslySkipPermissions') === 'true';
+    const sessionCwd = session.cwd || defaultCwd;
+    localStorage.setItem('agent_lastCwd', sessionCwd);
+    const tabId = addTab();
 
     const provider = createProvider('claude');
     provider.start({
@@ -159,19 +273,22 @@ export default function WorkspacePage() {
       cwd: session.cwd || defaultCwd,
       dangerouslySkipPermissions,
       providerSessionId: session.providerSessionId,
+      mode: 'oneshot',
     }).then(() => {
       setActiveProvider('claude');
-      providerRef.current = provider;
-      setActiveSessionId(session.id);
+      providersRef.current.set(tabId, provider);
+      setSessionId(tabId, session.id);
+      setTabCwd(tabId, sessionCwd);
+      setLabel(tabId, `会话 ${new Date(session.startedAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
+      switchTab(tabId);
     }).catch((e) => {
       console.error('[WorkspacePage] Failed to resume session:', e);
     });
-  }, [defaultCwd, setActiveProvider, setActiveSessionId]);
+  }, [tabs, defaultCwd, setActiveProvider, addTab, setSessionId, setTabCwd, setLabel, switchTab]);
 
   // Divider drag handlers
   const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    setIsDragging(true);
     const startX = e.clientX;
     const startRatio = splitRatio;
     const splitEl = (e.currentTarget as HTMLElement).parentElement;
@@ -184,7 +301,6 @@ export default function WorkspacePage() {
       setSplitRatio(newRatio);
     };
     const onMouseUp = () => {
-      setIsDragging(false);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -271,9 +387,6 @@ export default function WorkspacePage() {
     };
   }, []);
 
-  const isRunning = !!activeSessionId;
-  const activeTerminal = useTerminalStore(s => s.terminals[0]);
-
   // Editor panel state
   const editorOpen = useWorkspaceStore(s => s.editorOpen);
   const setEditorOpen = useWorkspaceStore(s => s.setEditorOpen);
@@ -285,6 +398,19 @@ export default function WorkspacePage() {
       setEditorOpen(true);
     }
   }, [selectedFile, setEditorOpen]);
+
+  // Reset planMode when plan execution completes
+  const planModeState = useAgentPlanStore(s => s.mode);
+  useEffect(() => {
+    if (planModeState === 'completed' || planModeState === 'error') {
+      // Keep planMode true for 3s to show completion state, then reset
+      const timer = setTimeout(() => {
+        setPlanMode(false);
+        useAgentPlanStore.getState().reset();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [planModeState, setPlanMode]);
 
   return (
     <div style={styles.container}>
@@ -301,15 +427,33 @@ export default function WorkspacePage() {
               <span>Last Commit: <strong style={{ color: 'var(--md-on-surface)' }}>{lastCommitTime}</strong></span>
             )}
           </div>
-          <div style={styles.summaryStatus}>
+          <div style={styles.summaryStatus} aria-live="polite" aria-atomic="true">
             <span style={{
               width: 8, height: 8, borderRadius: '50%',
-              background: isRunning ? 'var(--md-tertiary-container)' : 'var(--md-outline-variant)',
+              background: activeTab?.sessionId ? 'var(--md-tertiary-container)' : 'var(--md-outline-variant)',
               flexShrink: 0,
             }} />
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--md-on-surface-variant)' }}>
-              {isRunning ? 'Agent Running' : 'Agent Ready'}
+              {activeTab?.sessionId ? 'Agent Running' : 'Agent Ready'}
             </span>
+            <span
+              className="material-symbols-outlined"
+              onClick={() => setTerminalExpanded(!terminalExpanded)}
+              role="button"
+              aria-label={terminalExpanded ? '收起终端' : '展开终端'}
+              style={{
+                fontSize: 18,
+                cursor: 'pointer',
+                color: terminalExpanded ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                marginLeft: 4,
+                padding: 5,
+                borderRadius: 'var(--radius-xs)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title={terminalExpanded ? '收起终端' : '展开终端'}
+            >terminal</span>
           </div>
         </div>
 
@@ -321,18 +465,34 @@ export default function WorkspacePage() {
               ...styles.agentPane,
               flex: editorOpen ? `0 0 ${splitRatio * 100}%` : '1 1 100%',
             }}>
-              {isRunning ? (
-                <AgentChat
-                  provider={providerRef.current}
-                  activeSessionId={activeSessionId}
-                  onStartAndSend={handleStartAndSend}
-                  onBack={handleBackToIdle}
+              <AgentTabBar onCloseTab={handleTabClose} />
+              {activeTab?.sessionId ? (
+                <Suspense fallback={<div style={styles.loadingFallback}>Loading...</div>}>
+                  <AgentChat
+                    provider={activeProvider}
+                    activeSessionId={activeTab.sessionId}
+                    tabId={activeTab.id}
+                    onStartAndSend={(msg) => handleStartAndSend(activeTab.id, msg)}
+                  />
+                </Suspense>
+              ) : activeTabId ? (
+                <AgentIdleState
+                  onStartAndSend={(msg, cwd) => handleStartAndSend(activeTabId, msg, cwd)}
+                  onResumeSession={handleResumeSession}
+                  recentSessions={recentSessions}
+                  onStartPlan={handleStartPlan}
+                  onCwdChange={setIdleCwd}
                 />
               ) : (
                 <AgentIdleState
-                  onStartAndSend={handleStartAndSend}
+                  onStartAndSend={async (msg, cwd) => {
+                    const newTabId = useAgentTabStore.getState().addTab();
+                    await handleStartAndSend(newTabId, msg, cwd);
+                  }}
                   onResumeSession={handleResumeSession}
                   recentSessions={recentSessions}
+                  onStartPlan={handleStartPlan}
+                  onCwdChange={setIdleCwd}
                 />
               )}
             </div>
@@ -340,19 +500,40 @@ export default function WorkspacePage() {
             {/* Draggable divider */}
             {editorOpen && (
               <div
+                className="resize-divider"
                 onMouseDown={handleDividerMouseDown}
                 style={{
-                  ...styles.divider,
+                  width: 6,
+                  flexShrink: 0,
+                  cursor: 'col-resize',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  zIndex: 5,
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'var(--md-primary-container)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'transparent';
                 }}
               >
                 <div style={{
-                  width: isDragging ? 3 : 1,
-                  height: '100%',
-                  background: isDragging ? 'var(--md-primary)' : 'var(--md-outline-variant)',
-                  transition: 'background 0.15s, width 0.15s',
-                  borderRadius: 1,
-                  margin: '0 auto',
-                }} />
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 3,
+                  opacity: 0.4,
+                }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{
+                      width: 2,
+                      height: 2,
+                      borderRadius: '50%',
+                      background: 'var(--md-on-surface-variant)',
+                    }} />
+                  ))}
+                </div>
               </div>
             )}
 
@@ -369,40 +550,28 @@ export default function WorkspacePage() {
                     style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 2 }}
                   >close</span>
                 </div>
-                <CodeEditorPane onEmpty={() => setEditorOpen(false)} />
+                <Suspense fallback={<div style={styles.loadingFallback}>Loading editor...</div>}>
+                  <CodeEditorPane onEmpty={() => setEditorOpen(false)} />
+                </Suspense>
               </div>
             )}
           </div>
         </div>
 
-        {/* Terminal bar */}
-        <div
-          onClick={() => setTerminalExpanded(!terminalExpanded)}
-          style={styles.terminalBar}
-          className="ws-terminal-bar"
-        >
-          <span style={styles.terminalIcon}>$</span>
-          <span style={{
-            ...styles.terminalStatus,
-            color: activeTerminal?.status === 'running' ? 'var(--color-status-done)' : 'var(--color-text-muted)',
-          }}>
-            {activeTerminal?.status === 'running' ? 'running' : 'stopped'}
-          </span>
-          <span style={styles.terminalExpand}>
-            {terminalExpanded ? '▼' : '▲'} {terminalExpanded ? 'collapse' : 'expand'}
-          </span>
-        </div>
-
         {/* Expanded terminal */}
         {terminalExpanded && (
           <div style={styles.terminalExpanded}>
-            <BottomPanel defaultHeight={240} />
+            <Suspense fallback={<div style={styles.loadingFallback}>Loading terminal...</div>}>
+              <BottomPanel defaultHeight={240} />
+            </Suspense>
           </div>
         )}
       </div>
 
       {/* Plan/Right panel */}
-      <AgentRightPanel sessionId={activeSessionId} />
+      <Suspense fallback={null}>
+        <AgentRightPanel sessionId={planMode ? planSessionId : (activeTab?.sessionId ?? null)} cwd={effectiveCwd} />
+      </Suspense>
     </div>
   );
 }
@@ -412,8 +581,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     width: '100%',
     height: '100%',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-2)',
     background: 'var(--md-surface-container-lowest)',
     overflow: 'hidden',
   },
@@ -422,9 +589,6 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     flex: 1,
     minWidth: 0,
-    background: 'var(--md-surface-container-lowest)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--md-outline-variant)',
     overflow: 'hidden',
   },
   summaryBar: {
@@ -479,14 +643,6 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     overflow: 'hidden',
   },
-  divider: {
-    flexShrink: 0,
-    cursor: 'col-resize',
-    alignSelf: 'stretch',
-    width: 8,
-    display: 'flex',
-    alignItems: 'center',
-  },
   editorHeader: {
     display: 'flex',
     alignItems: 'center',
@@ -496,39 +652,16 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     background: 'var(--md-surface-container-low)',
   },
-  terminalBar: {
-    display: 'flex',
-    alignItems: 'center',
-    height: 32,
-    margin: '0 var(--space-2) var(--space-2)',
-    padding: '0 var(--space-3)',
-    background: '#0f172a',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  terminalIcon: {
-    fontSize: 'var(--text-sm)',
-    fontFamily: 'var(--font-mono)',
-    color: 'var(--color-status-done)',
-    marginRight: 'var(--space-2)',
-  },
-  terminalStatus: {
-    fontSize: 'var(--text-xs)',
-    fontFamily: 'var(--font-mono)',
-    padding: '1px 6px',
-    background: 'rgba(74, 222, 128, 0.1)',
-    borderRadius: 'var(--radius-xs)',
-  },
-  terminalExpand: {
-    marginLeft: 'auto',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--color-text-muted)',
-    fontFamily: 'var(--font-sans)',
-  },
   terminalExpanded: {
     flexShrink: 0,
-    margin: '0 var(--space-2) var(--space-2)',
-    height: 240,
+  },
+  loadingFallback: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    fontSize: 'var(--text-sm)',
+    color: 'var(--md-on-surface-variant)',
+    fontFamily: 'var(--font-sans)',
   },
 };

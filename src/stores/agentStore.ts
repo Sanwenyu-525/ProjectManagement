@@ -4,6 +4,12 @@ import type { MessageBlock } from '../features/workspace/agent/AgentProvider';
 /** Max messages kept per session. Oldest are trimmed when exceeded. */
 const MAX_MESSAGES_PER_SESSION = 200;
 
+interface SessionResult {
+  costUsd?: number;
+  durationMs?: number;
+  numTurns?: number;
+}
+
 export interface AgentMessage {
   role: 'user' | 'assistant' | 'error';
   blocks: MessageBlock[];
@@ -36,6 +42,8 @@ interface AgentStore {
   finishStreaming: (sessionId: string) => void;
   /** Start streaming for a session */
   startStreaming: (sessionId: string) => void;
+  /** Timestamp when current streaming started (for ActivityBar duration) */
+  streamingStartTime: Record<string, number>;
   /** Clear streaming state */
   clearStreaming: () => void;
 
@@ -47,6 +55,8 @@ interface AgentStore {
   loadMessages: (sessionId: string, dbMessages: Array<{ role: string; content: string; timestamp: string }>) => void;
   /** Clear messages for a session */
   clearMessages: (sessionId: string) => void;
+  /** Remove all messages from index onwards (used by retry) */
+  removeMessagesFrom: (sessionId: string, fromIndex: number) => void;
 
   /** Tool invocation events per session — deprecated, kept for AgentContextPanel compat */
   toolEvents: Record<string, Array<{ id: string; toolName: string; description: string; timestamp: number }>>;
@@ -62,11 +72,20 @@ interface AgentStore {
   /** Active session ID — persisted in store to survive remounts */
   activeSessionId: string | null;
   setActiveSessionId: (id: string | null) => void;
+
+  /** Result metadata per session (cost, duration, turns) */
+  sessionResults: Record<string, SessionResult>;
+  setSessionResult: (sessionId: string, result: SessionResult) => void;
+
+  /** Plan mode: when true, agent area shows plan execution UI instead of chat */
+  planMode: boolean;
+  setPlanMode: (mode: boolean) => void;
 }
 
 export const useAgentStore = create<AgentStore>((set) => ({
   streamingBlocks: {},
   streamingSessionId: null,
+  streamingStartTime: {},
 
   appendToken: (sessionId, token) =>
     set((state) => {
@@ -93,6 +112,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
         id: block.id,
         toolName: block.toolName,
         input: block.input,
+        startedAt: Date.now(),
       }];
       return { streamingBlocks: { ...state.streamingBlocks, [sessionId]: blocks } };
     }),
@@ -101,7 +121,8 @@ export const useAgentStore = create<AgentStore>((set) => ({
     set((state) => {
       const blocks = (state.streamingBlocks[sessionId] || []).map(b => {
         if (b.type === 'tool_use' && b.id === toolUseId) {
-          return { ...b, output, isError };
+          const durationMs = b.startedAt ? Date.now() - b.startedAt : undefined;
+          return { ...b, output, isError, durationMs };
         }
         return b;
       });
@@ -112,6 +133,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
     set((state) => ({
       streamingSessionId: sessionId,
       streamingBlocks: { ...state.streamingBlocks, [sessionId]: [] },
+      streamingStartTime: { ...state.streamingStartTime, [sessionId]: Date.now() },
     })),
 
   finishStreaming: (sessionId) =>
@@ -133,7 +155,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
     }),
 
   clearStreaming: () =>
-    set({ streamingBlocks: {}, streamingSessionId: null }),
+    set({ streamingBlocks: {}, streamingSessionId: null, streamingStartTime: {} }),
 
   messages: {},
 
@@ -160,6 +182,13 @@ export const useAgentStore = create<AgentStore>((set) => ({
     set((state) => {
       const { [sessionId]: _, ...rest } = state.messages;
       return { messages: rest };
+    }),
+
+  removeMessagesFrom: (sessionId, fromIndex) =>
+    set((state) => {
+      const msgs = state.messages[sessionId];
+      if (!msgs) return state;
+      return { messages: { ...state.messages, [sessionId]: msgs.slice(0, fromIndex) } };
     }),
 
   loadMessages: (sessionId, dbMessages) =>
@@ -194,4 +223,13 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   activeSessionId: null,
   setActiveSessionId: (id) => set({ activeSessionId: id }),
+
+  sessionResults: {},
+  setSessionResult: (sessionId, result) =>
+    set((state) => ({
+      sessionResults: { ...state.sessionResults, [sessionId]: result },
+    })),
+
+  planMode: false,
+  setPlanMode: (mode) => set({ planMode: mode }),
 }));

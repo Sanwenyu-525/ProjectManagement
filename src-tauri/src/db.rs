@@ -8,9 +8,9 @@ pub fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-/// Current UTC time as "YYYY-MM-DD HH:MM:SS".
+/// Current UTC time as ISO 8601 "YYYY-MM-DDTHH:MM:SSZ".
 pub fn now_str() -> String {
-    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 #[derive(Debug, Error)]
@@ -21,6 +21,8 @@ pub enum DbError {
     Serde(#[from] serde_json::Error),
     #[error("Lock error: {0}")]
     Lock(String),
+    #[error("Migration error: {0}")]
+    Migration(String),
 }
 
 impl serde::Serialize for DbError {
@@ -54,14 +56,6 @@ impl r2d2::ManageConnection for ConnectionManager {
     }
 }
 
-/// Execute a migration SQL file as a single batch (handles multi-line statements).
-/// Logs errors to stderr instead of silently swallowing them.
-fn run_migration_sql(conn: &Connection, sql: &str) {
-    if let Err(e) = conn.execute_batch(sql) {
-        eprintln!("[devhub] Migration warning: {}", e);
-    }
-}
-
 /// Thread-safe SQLite database wrapper with connection pool.
 pub struct Database {
     pool: Pool<ConnectionManager>,
@@ -73,7 +67,7 @@ impl Database {
             db_path: path.to_path_buf(),
         };
         let pool = Pool::builder()
-            .max_size(10)
+            .max_size(3)
             .build(manager)
             .map_err(|e| DbError::Lock(e.to_string()))?;
 
@@ -86,109 +80,118 @@ impl Database {
         self.pool.get().map_err(|e| DbError::Lock(e.to_string()))
     }
 
+    /// Run a named migration only if it hasn't been applied yet.
+    fn run_migration(&self, conn: &Connection, name: &str, sql: &str) -> Result<(), DbError> {
+        let already: bool = conn
+            .prepare("SELECT 1 FROM _migrations WHERE name = ?1")
+            .and_then(|mut s| s.query_row([name], |_| Ok(true)))
+            .unwrap_or(false);
+
+        if already {
+            return Ok(());
+        }
+
+        if let Err(e) = conn.execute_batch(sql) {
+            eprintln!("[devhub] Migration '{}' failed: {}", name, e);
+            return Err(DbError::Migration(format!("Migration '{}' failed: {}", name, e)));
+        }
+        conn.execute("INSERT INTO _migrations (name) VALUES (?1)", [name])?;
+        Ok(())
+    }
+
     fn run_migrations(&self) -> Result<(), DbError> {
         let conn = self.get_conn()?;
-        let sql = include_str!("../migrations/001_init.sql");
-        conn.execute_batch(sql)?;
 
-        // Incremental migrations for existing databases
-        let alters = [
-            "ALTER TABLE projects ADD COLUMN frontendCommand TEXT",
-            "ALTER TABLE projects ADD COLUMN backendCommand TEXT",
-            "ALTER TABLE projects ADD COLUMN frontendCwd TEXT",
-            "ALTER TABLE projects ADD COLUMN backendCwd TEXT",
-        ];
-        for stmt in &alters {
-            let _ = conn.execute_batch(stmt);
-        }
-
-        // Health check table
+        // Create migration tracking table (first run only)
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS \"project_health_checks\" (
-                \"id\" TEXT NOT NULL PRIMARY KEY,
-                \"projectId\" TEXT NOT NULL,
-                \"checkDate\" TEXT NOT NULL,
-                \"dirtyFileCount\" INTEGER NOT NULL DEFAULT 0,
-                \"currentBranch\" TEXT,
-                \"aheadCount\" INTEGER NOT NULL DEFAULT 0,
-                \"behindCount\" INTEGER NOT NULL DEFAULT 0,
-                \"outdatedDeps\" TEXT NOT NULL DEFAULT '[]',
-                \"outdatedDepCount\" INTEGER NOT NULL DEFAULT 0,
-                \"hasChanges\" INTEGER NOT NULL DEFAULT 0,
-                \"createdAt\" TEXT NOT NULL,
-                CONSTRAINT \"project_health_checks_projectId_fkey\"
-                    FOREIGN KEY (\"projectId\") REFERENCES \"projects\" (\"id\") ON DELETE CASCADE
-            );
-            CREATE INDEX IF NOT EXISTS \"project_health_checks_projectId_idx\"
-                ON \"project_health_checks\"(\"projectId\");
-            CREATE INDEX IF NOT EXISTS \"project_health_checks_checkDate_idx\"
-                ON \"project_health_checks\"(\"checkDate\");"
+            "CREATE TABLE IF NOT EXISTS \"_migrations\" (
+                \"name\" TEXT NOT NULL PRIMARY KEY
+            );"
         )?;
 
-        // Safety check: if migration 002 partially ran and left projects table missing,
-        // recover by renaming projects_new back to projects.
-        let projects_exists: bool = conn
+        // 001_init.sql — full schema (IF NOT EXISTS for idempotency)
+        self.run_migration(&conn, "001_init", include_str!("../migrations/001_init.sql"))?;
+
+        // Inline column additions for legacy databases
+        self.run_migration(&conn, "001_alter_columns", "\
+            ALTER TABLE projects ADD COLUMN frontendCommand TEXT;\
+            ALTER TABLE projects ADD COLUMN backendCommand TEXT;\
+            ALTER TABLE projects ADD COLUMN frontendCwd TEXT;\
+            ALTER TABLE projects ADD COLUMN backendCwd TEXT;\
+        ")?;
+
+        // Health check table (inline in 001 era)
+        self.run_migration(&conn, "001_health_checks", "\
+            CREATE TABLE IF NOT EXISTS \"project_health_checks\" (\
+                \"id\" TEXT NOT NULL PRIMARY KEY,\
+                \"projectId\" TEXT NOT NULL,\
+                \"checkDate\" TEXT NOT NULL,\
+                \"dirtyFileCount\" INTEGER NOT NULL DEFAULT 0,\
+                \"currentBranch\" TEXT,\
+                \"aheadCount\" INTEGER NOT NULL DEFAULT 0,\
+                \"behindCount\" INTEGER NOT NULL DEFAULT 0,\
+                \"outdatedDeps\" TEXT NOT NULL DEFAULT '[]',\
+                \"outdatedDepCount\" INTEGER NOT NULL DEFAULT 0,\
+                \"hasChanges\" INTEGER NOT NULL DEFAULT 0,\
+                \"createdAt\" TEXT NOT NULL,\
+                CONSTRAINT \"project_health_checks_projectId_fkey\"\
+                    FOREIGN KEY (\"projectId\") REFERENCES \"projects\" (\"id\") ON DELETE CASCADE\
+            );\
+            CREATE INDEX IF NOT EXISTS \"project_health_checks_projectId_idx\"\
+                ON \"project_health_checks\"(\"projectId\");\
+            CREATE INDEX IF NOT EXISTS \"project_health_checks_checkDate_idx\"\
+                ON \"project_health_checks\"(\"checkDate\");\
+        ")?;
+
+        // Safety: recover projects table if 002 partially ran
+        let projects_missing: bool = conn
             .prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projects'")
             .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
-            .unwrap_or(0) > 0;
+            .unwrap_or(0) == 0;
         let projects_new_exists: bool = conn
             .prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projects_new'")
             .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
             .unwrap_or(0) > 0;
 
-        if !projects_exists && projects_new_exists {
+        if projects_missing && projects_new_exists {
             let _ = conn.execute_batch("ALTER TABLE \"projects_new\" RENAME TO \"projects\"");
-        } else if !projects_exists && !projects_new_exists {
-            // Both missing — recreate from init schema (data is lost)
-            conn.execute_batch(sql)?;
+        } else if projects_missing && !projects_new_exists {
+            conn.execute_batch(include_str!("../migrations/001_init.sql"))?;
         }
 
-        // Remove users table and simplify schema
-        run_migration_sql(&conn, include_str!("../migrations/002_remove_users.sql"));
+        self.run_migration(&conn, "002_remove_users", include_str!("../migrations/002_remove_users.sql"))?;
 
-        // Safety check again after 002: if projects is still missing but projects_new exists
-        let projects_exists: bool = conn
+        // Safety: recover after 002
+        let projects_missing: bool = conn
             .prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projects'")
             .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
-            .unwrap_or(0) > 0;
+            .unwrap_or(0) == 0;
         let projects_new_exists: bool = conn
             .prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projects_new'")
             .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
             .unwrap_or(0) > 0;
 
-        if !projects_exists && projects_new_exists {
+        if projects_missing && projects_new_exists {
             let _ = conn.execute_batch("ALTER TABLE \"projects_new\" RENAME TO \"projects\"");
         }
 
-        // Add runtime status fields
-        run_migration_sql(&conn, include_str!("../migrations/003_runtime_status.sql"));
-
-        // Add health score fields
-        run_migration_sql(&conn, include_str!("../migrations/004_health_score.sql"));
-
-        // Workspaces
-        run_migration_sql(&conn, include_str!("../migrations/005_workspaces.sql"));
-
-        // Workspace layout persistence
-        run_migration_sql(&conn, include_str!("../migrations/006_workspace_layout.sql"));
-
-        // Agent session recording
-        run_migration_sql(&conn, include_str!("../migrations/007_agent_sessions.sql"));
-
-        // Browser memory
-        run_migration_sql(&conn, include_str!("../migrations/008_browser_memory.sql"));
-
-        // Builds, templates, integrations
-        run_migration_sql(&conn, include_str!("../migrations/009_builds_templates_integrations.sql"));
-
-        // Agent providers and configs
-        run_migration_sql(&conn, include_str!("../migrations/010_agent_providers.sql"));
-
-        // Agent tasks
-        run_migration_sql(&conn, include_str!("../migrations/011_agent_tasks.sql"));
-
-        // Agent sessions extend + tasks CHECK constraints
-        run_migration_sql(&conn, include_str!("../migrations/012_agent_sessions_extend.sql"));
+        // Remaining incremental migrations
+        self.run_migration(&conn, "003_runtime_status", include_str!("../migrations/003_runtime_status.sql"))?;
+        self.run_migration(&conn, "004_health_score", include_str!("../migrations/004_health_score.sql"))?;
+        self.run_migration(&conn, "005_workspaces", include_str!("../migrations/005_workspaces.sql"))?;
+        self.run_migration(&conn, "006_workspace_layout", include_str!("../migrations/006_workspace_layout.sql"))?;
+        self.run_migration(&conn, "007_agent_sessions", include_str!("../migrations/007_agent_sessions.sql"))?;
+        self.run_migration(&conn, "008_browser_memory", include_str!("../migrations/008_browser_memory.sql"))?;
+        self.run_migration(&conn, "009_builds_templates_integrations", include_str!("../migrations/009_builds_templates_integrations.sql"))?;
+        self.run_migration(&conn, "010_agent_providers", include_str!("../migrations/010_agent_providers.sql"))?;
+        self.run_migration(&conn, "011_agent_tasks", include_str!("../migrations/011_agent_tasks.sql"))?;
+        self.run_migration(&conn, "012_agent_sessions_extend", include_str!("../migrations/012_agent_sessions_extend.sql"))?;
+        self.run_migration(&conn, "013_memory", include_str!("../migrations/013_memory.sql"))?;
+        self.run_migration(&conn, "014_memory_v2", include_str!("../migrations/014_memory_v2.sql"))?;
+        self.run_migration(&conn, "015_personal_notes", include_str!("../migrations/015_personal_notes.sql"))?;
+        self.run_migration(&conn, "016_knowledge_view_category", include_str!("../migrations/016_knowledge_view_category.sql"))?;
+        self.run_migration(&conn, "017_notes_file_path", include_str!("../migrations/017_notes_file_path.sql"))?;
+        self.run_migration(&conn, "018_recreate_project_tags", include_str!("../migrations/018_recreate_project_tags.sql"))?;
 
         Ok(())
     }
@@ -273,13 +276,6 @@ impl Database {
             rusqlite::params![id, action, entity_type, entity_id, details_str, project_id, now],
         )?;
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn insert_and_fetch(&self, insert_sql: &str, insert_params: &[&dyn rusqlite::types::ToSql], fetch_sql: &str, fetch_id: &str) -> Result<serde_json::Value, DbError> {
-        self.execute(insert_sql, insert_params)?;
-        self.query_one_json(fetch_sql, &[&fetch_id])?
-            .ok_or_else(|| DbError::Lock("Insert succeeded but row not found".into()))
     }
 
     pub fn delete_by_id(&self, table: &str, id: &str) -> Result<(), DbError> {

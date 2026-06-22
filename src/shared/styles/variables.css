@@ -9,8 +9,8 @@
   --color-accent-hover: #00423b;
 
   /* Semantic accent colors */
-  --color-secondary: #6b38d4;
-  --color-secondary-light: rgba(107, 56, 212, 0.10);
+  --color-secondary: #8455ef;
+  --color-secondary-light: rgba(132, 85, 239, 0.10);
   --color-tertiary: #006c49;
   --color-tertiary-light: rgba(0, 108, 73, 0.10);
 
@@ -20,8 +20,8 @@
 
   --color-info: #0ea5e9;
   --color-info-light: rgba(14, 165, 233, 0.10);
-  --color-purple: #6b38d4;
-  --color-purple-light: rgba(107, 56, 212, 0.10);
+  --color-purple: #8455ef;
+  --color-purple-light: rgba(132, 85, 239, 0.10);
 
   --color-error: #ba1a1a;
   --color-error-light: rgba(186, 26, 26, 0.10);
@@ -36,7 +36,7 @@
   --color-text-light: #9eadc0;
 
   /* Surfaces — 80% opacity glassmorphism per DESIGN.md */
-  --color-bg-base: #f8f9ff;
+  --color-bg-base: #f7f9fb;
   --color-bg-surface: rgba(255, 255, 255, 0.80);
   --color-bg-elevated: rgba(255, 255, 255, 0.90);
   --color-bg-card: rgba(255, 255, 255, 0.80);
@@ -103,9 +103,10 @@
   --radius-full: 9999px;
 
   /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Consolas', monospace;
-  --font-label: 'Geist', 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', 'DM Sans', sans-serif;
+  --font-label: 'JetBrains Mono', 'Consolas', monospace;
 
   /* Type scale */
   --text-xs: 11px;
@@ -172,9 +173,9 @@
   --md-on-primary-container: #00423b;
   --md-inverse-primary: #4fdbc8;
 
-  --md-secondary: #6b38d4;
+  --md-secondary: #8455ef;
   --md-on-secondary: #ffffff;
-  --md-secondary-container: #8455ef;
+  --md-secondary-container: #a87dff;
   --md-on-secondary-container: #fffbff;
 
   --md-tertiary: #006c49;
@@ -187,26 +188,35 @@
   --md-error-container: #ffdad6;
   --md-on-error-container: #93000a;
 
-  --md-surface: #f8f9ff;
-  --md-on-surface: #0b1c30;
-  --md-on-surface-variant: #3c4947;
-  --md-surface-dim: #cbdbf5;
-  --md-surface-bright: #f8f9ff;
+  --md-surface: #f7f9fb;
+  --md-on-surface: #191c1e;
+  --md-on-surface-variant: #444653;
+  --md-surface-dim: #d8dadc;
+  --md-surface-bright: #f7f9fb;
   --md-surface-container-lowest: #ffffff;
-  --md-surface-container-low: #eff4ff;
-  --md-surface-container: #e5eeff;
-  --md-surface-container-high: #dce9ff;
-  --md-surface-container-highest: #d3e4fe;
+  --md-surface-container-low: #f2f4f6;
+  --md-surface-container: #eceef0;
+  --md-surface-container-high: #e6e8ea;
+  --md-surface-container-highest: #e0e3e5;
   --md-surface-tint: #006b5f;
-  --md-surface-variant: #d3e4fe;
+  --md-surface-variant: #e0e3e5;
 
-  --md-background: #f8f9ff;
-  --md-on-background: #0b1c30;
+  --md-background: #f7f9fb;
+  --md-on-background: #191c1e;
   --md-inverse-surface: #213145;
   --md-inverse-on-surface: #eaf1ff;
 
   --md-outline: #6c7a77;
   --md-outline-variant: #bbcac6;
+
+  /* ── Terminal Tokens (always dark) ── */
+  --term-bg: #0e1513;
+  --term-surface: rgba(133, 148, 144, 0.12);
+  --term-text: #dde4e1;
+  --term-text-muted: rgba(133, 148, 144, 0.7);
+  --term-text-dim: rgba(133, 148, 144, 0.5);
+  --term-border: rgba(133, 148, 144, 0.15);
+  --term-accent: #4fdbc8;
 
   /* ── Layout Tokens (prototype alignment) ── */
   --layout-sidebar-width: 260px;
@@ -224,8 +234,8 @@
   --color-accent: #4fdbc8;
   --color-accent-hover: #006b5f;
 
-  --color-secondary: #8455ef;
-  --color-secondary-light: rgba(132, 85, 239, 0.14);
+  --color-secondary: #d0bcff;
+  --color-secondary-light: rgba(208, 188, 255, 0.14);
   --color-tertiary: #4edea3;
   --color-tertiary-light: rgba(78, 222, 163, 0.14);
 
@@ -241,22 +251,22 @@
   --color-error: #ffb4ab;
   --color-error-light: rgba(255, 180, 171, 0.14);
 
-  --color-text-primary: #eaf1ff;
-  --color-text-secondary: #c0ccc9;
-  --color-text-tertiary: #8a9a96;
+  --color-text-primary: #dde4e1;
+  --color-text-secondary: #bbcac6;
+  --color-text-tertiary: #859490;
   --color-text-muted: #526174;
-  --color-text-description: #b0bdb9;
+  --color-text-description: #bbcac6;
   --color-text-placeholder: #718196;
   --color-text-light: #718196;
 
-  --color-bg-base: #0b1018;
-  --color-bg-surface: rgba(13, 20, 29, 0.88);
-  --color-bg-elevated: rgba(18, 28, 39, 0.94);
-  --color-bg-card: rgba(14, 22, 31, 0.88);
-  --color-bg-card-hover: rgba(22, 34, 47, 0.92);
-  --color-bg-input: rgba(16, 25, 36, 0.90);
-  --color-bg-glass-sidebar: rgba(7, 11, 18, 0.92);
-  --color-bg-glass-header: rgba(7, 11, 18, 0.90);
+  --color-bg-base: #0e1513;
+  --color-bg-surface: rgba(26, 33, 31, 0.88);
+  --color-bg-elevated: rgba(37, 43, 42, 0.94);
+  --color-bg-card: rgba(26, 33, 31, 0.88);
+  --color-bg-card-hover: rgba(47, 54, 52, 0.92);
+  --color-bg-input: rgba(22, 29, 27, 0.90);
+  --color-bg-glass-sidebar: rgba(14, 21, 19, 0.92);
+  --color-bg-glass-header: rgba(14, 21, 19, 0.90);
 
   --color-border: rgba(148, 163, 184, 0.16);
   --color-border-subtle: rgba(148, 163, 184, 0.10);
@@ -277,10 +287,10 @@
   --color-status-todo: #718196;
   --color-status-cancel: #f87171;
 
-  --color-gradient-start: #070b12;
-  --color-gradient-mid: #0b111a;
-  --color-gradient-end: #0d1824;
-  --color-gradient-accent: #102235;
+  --color-gradient-start: #0e1513;
+  --color-gradient-mid: #121917;
+  --color-gradient-end: #161f1d;
+  --color-gradient-accent: #1a2523;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.24);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
@@ -288,25 +298,25 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.40);
   --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.48);
 
-  --ws-bg: #0b1117;
-  --ws-toolbar-bg: rgba(8, 13, 20, 0.94);
-  --ws-navigator-bg: rgba(8, 13, 20, 0.92);
-  --ws-tabbar-bg: rgba(10, 16, 24, 0.96);
-  --ws-content-bg: rgba(13, 20, 29, 0.96);
-  --ws-border: rgba(148, 163, 184, 0.12);
-  --ws-border-subtle: rgba(148, 163, 184, 0.08);
-  --ws-handle: rgba(148, 163, 184, 0.18);
+  --ws-bg: #0e1513;
+  --ws-toolbar-bg: rgba(14, 21, 19, 0.94);
+  --ws-navigator-bg: rgba(14, 21, 19, 0.92);
+  --ws-tabbar-bg: rgba(16, 23, 21, 0.96);
+  --ws-content-bg: rgba(22, 29, 27, 0.96);
+  --ws-border: rgba(133, 148, 144, 0.12);
+  --ws-border-subtle: rgba(133, 148, 144, 0.08);
+  --ws-handle: rgba(133, 148, 144, 0.18);
 
-  --ws-text: #eaf1ff;
-  --ws-text-secondary: #c0ccc9;
-  --ws-text-tertiary: #8a9a96;
+  --ws-text: #dde4e1;
+  --ws-text-secondary: #bbcac6;
+  --ws-text-tertiary: #859490;
   --ws-text-muted: #526174;
 
   --ws-hover: rgba(79, 219, 200, 0.08);
   --ws-active-bg: rgba(79, 219, 200, 0.13);
   --ws-active-border: #4fdbc8;
-  --ws-glass-blur: blur(18px) saturate(1.2);
-  --ws-glass-border: rgba(148, 163, 184, 0.14);
+  --ws-glass-blur: blur(20px) saturate(1.4);
+  --ws-glass-border: rgba(133, 148, 144, 0.16);
   --ws-glass-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
   --ws-badge-bg: rgba(79, 219, 200, 0.14);
 
@@ -331,9 +341,9 @@
   --md-on-primary-container: #71f8e4;
   --md-inverse-primary: #006b5f;
 
-  --md-secondary: #8455ef;
-  --md-on-secondary: #ffffff;
-  --md-secondary-container: #6b38d4;
+  --md-secondary: #d0bcff;
+  --md-on-secondary: #3b0091;
+  --md-secondary-container: #571bc1;
   --md-on-secondary-container: #e9ddff;
 
   --md-tertiary: #4edea3;
@@ -346,21 +356,21 @@
   --md-error-container: #93000a;
   --md-on-error-container: #ffdad6;
 
-  --md-surface: #0b1018;
-  --md-on-surface: #eaf1ff;
-  --md-on-surface-variant: #c0ccc9;
-  --md-surface-dim: #0b1018;
-  --md-surface-bright: #303640;
-  --md-surface-container-lowest: #060910;
-  --md-surface-container-low: #0f1620;
-  --md-surface-container: #131a25;
-  --md-surface-container-high: #1a2130;
-  --md-surface-container-highest: #222938;
+  --md-surface: #0e1513;
+  --md-on-surface: #dde4e1;
+  --md-on-surface-variant: #bbcac6;
+  --md-surface-dim: #0e1513;
+  --md-surface-bright: #343b39;
+  --md-surface-container-lowest: #090f0e;
+  --md-surface-container-low: #161d1b;
+  --md-surface-container: #1a211f;
+  --md-surface-container-high: #252b2a;
+  --md-surface-container-highest: #2f3634;
   --md-surface-tint: #4fdbc8;
-  --md-surface-variant: #1a2130;
+  --md-surface-variant: #2f3634;
 
-  --md-background: #0b1018;
-  --md-on-background: #eaf1ff;
+  --md-background: #0e1513;
+  --md-on-background: #dde4e1;
   --md-inverse-surface: #eaf1ff;
   --md-inverse-on-surface: #213145;
 

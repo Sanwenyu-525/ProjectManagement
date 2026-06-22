@@ -144,10 +144,11 @@ pub async fn tasks_update(
             param_values.push(Box::new(now));
             idx += 1;
 
+            let id_idx = idx;
             sets.push(format!("id = ?{}", idx));
             param_values.push(Box::new(id.clone()));
 
-            let sql = format!("UPDATE tasks SET {} WHERE id = ?{}", sets.join(", "), idx - 1);
+            let sql = format!("UPDATE tasks SET {} WHERE id = ?{}", sets.join(", "), id_idx);
             let refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
             db.execute_returning_changes(&sql, &refs).map_err(|e| e.to_string())?;
         }

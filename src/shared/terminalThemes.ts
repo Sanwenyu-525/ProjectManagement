@@ -129,7 +129,3 @@ const themeBuilders: Record<TerminalTheme, () => TerminalThemeConfig> = {
 export function getThemeColors(theme: TerminalTheme): TerminalThemeConfig {
   return themeBuilders[theme]();
 }
-
-export function getThemeName(theme: TerminalTheme): string {
-  return themeBuilders[theme]().name;
-}

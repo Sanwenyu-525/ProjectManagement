@@ -39,9 +39,9 @@
   }
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* 动画工具类 */
@@ -67,12 +67,6 @@
 .animate-in-delay-4 {
   animation: fadeInUp 0.5s ease 0.4s forwards;
   opacity: 0;
-}
-
-/* 骨架屏加载动画 */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
 }
 
 /* Hover效果类 */

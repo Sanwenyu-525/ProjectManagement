@@ -223,7 +223,6 @@ export default function ProjectDetailPage() {
 function OverviewTab({ project }: { project: ProjectDetail }) {
   const navigate = useNavigate();
   const { requestLaunch } = useTerminalStore();
-  const [agentInput, setAgentInput] = useState('');
   const [activityTab, setActivityTab] = useState<'tasks' | 'files'>('tasks');
 
   const { data: brain } = useProjectBrain(project.id);
@@ -490,14 +489,14 @@ function OverviewTab({ project }: { project: ProjectDetail }) {
 
       {/* ── Right Column: AI Agent + Mini Terminal (4 cols nested) ── */}
       <div style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}>
-        {/* AI Agent */}
+        {/* AI Agent — analysis output + link to workspace */}
         <DashboardCard colSpan={0}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-primary)' }}>smart_toy</span>
-              AI 智能体
+              <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16, color: 'var(--md-primary)' }}>smart_toy</span>
+              AI 分析
             </div>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--md-tertiary)', animation: 'pulse 2s ease-in-out infinite' }} />
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--md-tertiary)' }} />
           </div>
           <div style={{
             background: 'var(--md-surface-container)',
@@ -514,76 +513,67 @@ function OverviewTab({ project }: { project: ProjectDetail }) {
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 10, position: 'relative' }}>
-            <input
-              value={agentInput}
-              onChange={e => setAgentInput(e.target.value)}
-              placeholder="询问智能体..."
-              style={{
-                width: '100%',
-                padding: '7px 32px 7px 10px',
-                background: 'var(--md-surface-container-lowest)',
-                border: '1px solid var(--md-outline-variant)',
-                borderRadius: 6,
-                fontSize: 13,
-                color: 'var(--md-on-surface)',
-                outline: 'none',
-                fontFamily: 'var(--font-sans)',
-                transition: 'border-color 0.15s ease',
-                boxSizing: 'border-box',
-              }}
-              onFocus={e => { e.currentTarget.style.borderColor = 'var(--md-primary)'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = 'var(--md-outline-variant)'; }}
-            />
-            <span
-              className="material-symbols-outlined"
-              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: 'var(--md-on-surface-variant)', cursor: 'pointer' }}
-            >
-              send
-            </span>
-          </div>
-          <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
+          <button
+            onClick={() => navigate('/workspace')}
+            style={{
+              marginTop: 10,
+              width: '100%',
+              padding: '7px 10px',
+              background: 'var(--md-primary-container)',
+              border: '1px solid var(--md-primary)',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--md-on-primary-container)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-sans)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              transition: 'opacity 0.15s',
+            }}
+          >
+            <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 14 }}>open_in_new</span>
+            在工作区中与 Agent 对话
+          </button>
         </DashboardCard>
 
-        {/* Mini Terminal */}
-        <div style={{
-          flex: 1,
-          minHeight: 140,
-          background: '#0F172A',
-          borderRadius: 12,
-          border: '1px solid var(--md-outline-variant)',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-          padding: 14,
-          fontFamily: 'var(--font-mono)',
-          fontSize: 12,
-          lineHeight: '18px',
-          color: '#94a3b8',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
-          {/* Terminal header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid rgba(71, 85, 105, 0.4)' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#64748b' }}>terminal</span>
-            <span style={{ color: '#cbd5e1', fontWeight: 600, fontSize: 12 }}>zsh - devhub</span>
+        {/* Quick actions */}
+        <DashboardCard colSpan={0}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', marginBottom: 10 }}>
+            快捷操作
           </div>
-          {/* Terminal content */}
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            <div>
-              <span style={{ color: '#006c49' }}>{'➜'}</span>{' '}
-              <span style={{ color: '#006b5f' }}>devhub</span>{' '}
-              <span style={{ color: '#6b38d4' }}>git:(</span><span style={{ color: '#ba1a1a' }}>main</span><span style={{ color: '#6b38d4' }}>)</span>{' '}
-              <span style={{ color: '#d97706' }}>{'✗'}</span>{' '}
-              <span>npm run dev</span>
-            </div>
-            <div style={{ color: '#64748b' }}>&gt; devhub@1.0.4 dev</div>
-            <div style={{ color: '#64748b' }}>&gt; tauri dev</div>
-            <div style={{ color: '#475569', marginTop: 4 }}>...</div>
-            <div style={{ color: '#006c49', marginTop: 2 }}>{'✔'} 编译前端...</div>
-            <div style={{ color: '#006c49' }}>{'✔'} 编译 Rust 后端...</div>
-            <div style={{ color: '#006b5f', marginTop: 2 }}>就绪 http://localhost:1420</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[
+              { label: '在工作区打开', icon: 'workspaces', action: () => navigate('/workspace') },
+              { label: '查看时间线', icon: 'calendar_month', action: () => navigate('/timeline') },
+            ].map(a => (
+              <button
+                key={a.label}
+                onClick={a.action}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--md-outline-variant)',
+                  background: 'var(--md-surface-container-low)',
+                  color: 'var(--md-on-surface)',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontFamily: 'var(--font-sans)',
+                  transition: 'background 0.15s',
+                  textAlign: 'left',
+                }}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16, color: 'var(--md-primary)' }}>{a.icon}</span>
+                {a.label}
+              </button>
+            ))}
           </div>
-        </div>
+        </DashboardCard>
       </div>
     </div>
   );

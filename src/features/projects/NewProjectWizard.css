@@ -157,6 +157,11 @@
   color: var(--md-on-surface-variant);
 }
 
+.wizard-step-circle--completed {
+  background: var(--md-tertiary-container);
+  color: var(--md-on-tertiary-container);
+}
+
 .wizard-step-label {
   font-family: var(--font-label);
   font-size: 12px;

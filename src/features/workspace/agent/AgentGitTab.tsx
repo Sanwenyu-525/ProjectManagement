@@ -13,34 +13,35 @@ interface GitStatusData {
   branch: string;
 }
 
+// ── Helpers ──────────────────────────────────────────────────────
+
 function relativeTime(dateStr: string): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
   const diff = Math.max(0, now - then);
   const secs = Math.floor(diff / 1000);
-  if (secs < 60) return 'just now';
+  if (secs < 60) return '刚刚';
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return `${mins}分钟前`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return `${hrs}小时前`;
   const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString();
+  return `${days}天前`;
 }
 
-function statusMeta(status: string): { icon: string; color: string } {
+/** Status → display metadata. Colors borrowed from GitHub Desktop / VS Code */
+function statusMeta(status: string): { icon: string; color: string; bg: string; label: string } {
   switch (status) {
-    case 'M': return { icon: 'edit', color: '#e2a700' };
-    case 'A': return { icon: 'add', color: '#30a46c' };
-    case 'D': return { icon: 'delete', color: '#e5484d' };
-    case 'R': return { icon: 'compare_arrows', color: '#3e63dd' };
-    case 'C': return { icon: 'content_copy', color: '#3e63dd' };
-    case '?': return { icon: 'help', color: 'var(--md-on-surface-variant)' };
-    default:  return { icon: 'circle', color: 'var(--md-on-surface-variant)' };
+    case 'M': return { icon: 'edit', color: '#e3b341', bg: 'rgba(227,179,65,0.12)', label: '修改' };
+    case 'A': return { icon: 'add_circle', color: '#3fb950', bg: 'rgba(63,185,80,0.12)', label: '新增' };
+    case 'D': return { icon: 'remove_circle', color: '#f85149', bg: 'rgba(248,81,73,0.12)', label: '删除' };
+    case 'R': return { icon: 'compare_arrows', color: '#a371f7', bg: 'rgba(163,113,247,0.12)', label: '重命名' };
+    case 'C': return { icon: 'content_copy', color: '#a371f7', bg: 'rgba(163,113,247,0.12)', label: '复制' };
+    case '?': return { icon: 'help_circle', color: '#8b949e', bg: 'rgba(139,148,158,0.08)', label: '未跟踪' };
+    default:  return { icon: 'circle', color: 'var(--md-on-surface-variant)', bg: 'transparent', label: '未知' };
   }
 }
 
-/** Map backend status strings to single-char codes used by GitFileChange */
 function mapStatus(raw: string): GitFileChange['status'] {
   switch (raw) {
     case 'Modified': return 'M';
@@ -53,12 +54,35 @@ function mapStatus(raw: string): GitFileChange['status'] {
   }
 }
 
+/** Group files by parent directory */
+function groupByDir(files: GitFileChange[]): Map<string, GitFileChange[]> {
+  const groups = new Map<string, GitFileChange[]>();
+  for (const f of files) {
+    const parts = f.path.replace(/\\/g, '/').split('/');
+    const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '.';
+    const arr = groups.get(dir) ?? [];
+    arr.push(f);
+    groups.set(dir, arr);
+  }
+  return groups;
+}
+
+// ── Component ──────────────────────────────────────────────────
+
 export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
   const [statusData, setStatusData] = useState<GitStatusData | null>(null);
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [commitMsg, setCommitMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Diff state
+  const [expandedFile, setExpandedFile] = useState<string | null>(null);
+  const [diffContent, setDiffContent] = useState<string>('');
+  const [diffLoading, setDiffLoading] = useState(false);
+
+  // Collapsed directory groups
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!repoPath) return;
@@ -67,16 +91,14 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     try {
       const [statusResult, logData] = await Promise.all([
         gitApi.status(repoPath),
-        gitApi.log(repoPath, 5),
+        gitApi.log(repoPath, 8),
       ]);
-      // Backend returns a flat array of { path, status, staged }
       const rawEntries = Array.isArray(statusResult) ? statusResult : [];
       const files: GitFileChange[] = rawEntries.map((f: Record<string, unknown>) => ({
         path: String(f.path ?? ''),
         status: mapStatus(String(f.status ?? '')),
         staged: Boolean(f.staged),
       }));
-      // Extract branch from log result's branches (current branch)
       const logResult = logData as Record<string, unknown>;
       const branchArr = Array.isArray(logResult?.branches) ? logResult.branches : [];
       const current = branchArr.find((b: Record<string, unknown>) => b.current) as Record<string, unknown> | undefined;
@@ -92,7 +114,9 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
 
   useEffect(() => { load(); }, [load]);
 
-  if (!repoPath) {
+  const isNotRepo = error?.toLowerCase().includes('not a git repository');
+
+  if (!repoPath || isNotRepo) {
     return (
       <div style={styles.empty}>
         <span className="material-symbols-outlined" style={{ fontSize: 32, opacity: 0.4 }}>folder_off</span>
@@ -113,6 +137,56 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
 
   const stagedFiles = statusData?.files.filter(f => f.staged) ?? [];
   const unstagedFiles = statusData?.files.filter(f => !f.staged) ?? [];
+  const allFiles = statusData?.files ?? [];
+  const clean = stagedFiles.length === 0 && unstagedFiles.length === 0;
+
+  // Status counts for summary bar
+  const statusCounts = allFiles.reduce((acc, f) => {
+    acc[f.status] = (acc[f.status] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const toggleDir = (dir: string) => {
+    setCollapsedDirs(prev => {
+      const next = new Set(prev);
+      if (next.has(dir)) next.delete(dir);
+      else next.add(dir);
+      return next;
+    });
+  };
+
+  const toggleFile = async (file: GitFileChange) => {
+    if (expandedFile === file.path) {
+      setExpandedFile(null);
+      setDiffContent('');
+      return;
+    }
+    setExpandedFile(file.path);
+    setDiffContent('');
+    if (!repoPath) return;
+    setDiffLoading(true);
+    try {
+      const diff = await gitApi.diff(repoPath, file.path, file.staged);
+      setDiffContent(typeof diff === 'string' ? diff : '');
+    } catch {
+      setDiffContent('(无法获取 diff)');
+    } finally {
+      setDiffLoading(false);
+    }
+  };
+
+  // ── Actions ─────────────────────────────────────────────────
+
+  const handleStageFile = async (path: string) => {
+    if (!repoPath) return;
+    try {
+      await gitApi.add(repoPath, [path]);
+      setExpandedFile(null);
+      await load();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '暂存失败');
+    }
+  };
 
   const handleStageAll = async () => {
     if (!repoPath || unstagedFiles.length === 0) return;
@@ -125,20 +199,11 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     }
   };
 
-  const handleStageFile = async (path: string) => {
-    if (!repoPath) return;
-    try {
-      await gitApi.add(repoPath, [path]);
-      await load();
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : '暂存失败');
-    }
-  };
-
   const handleUnstageFile = async (path: string) => {
     if (!repoPath) return;
     try {
       await gitApi.unstage(repoPath, [path]);
+      setExpandedFile(null);
       await load();
     } catch (e) {
       message.error(e instanceof Error ? e.message : '取消暂存失败');
@@ -157,6 +222,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
       onOk: async () => {
         try {
           await gitApi.restore(repoPath, [path]);
+          setExpandedFile(null);
           await load();
           message.success('已丢弃更改');
         } catch (e) {
@@ -169,9 +235,12 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
   const handleCommitAll = async () => {
     if (!repoPath || !commitMsg.trim()) return;
     try {
-      await gitApi.add(repoPath, unstagedFiles.map(f => f.path));
+      if (unstagedFiles.length > 0) {
+        await gitApi.add(repoPath, unstagedFiles.map(f => f.path));
+      }
       await gitApi.commit(repoPath, commitMsg.trim());
       setCommitMsg('');
+      setExpandedFile(null);
       await load();
       message.success('已提交');
     } catch (e) {
@@ -190,6 +259,91 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     }
   };
 
+  // ── Sub renderers ──────────────────────────────────────────
+
+  const renderFileRow = (f: GitFileChange) => {
+    const { color } = statusMeta(f.status);
+    const isExpanded = expandedFile === f.path;
+    const parts = f.path.replace(/\\/g, '/').split('/');
+    const filename = parts[parts.length - 1];
+
+    return (
+      <div key={f.path}>
+        <div
+          style={{
+            ...styles.fileRow,
+            background: isExpanded ? 'var(--md-primary-container)' : undefined,
+            cursor: 'pointer',
+          }}
+          onClick={() => toggleFile(f)}
+        >
+          <span style={{ ...styles.statusDot, background: color }} />
+          <span style={styles.fileName} title={f.path}>{filename}</span>
+          {parts.length > 1 && (
+            <span style={styles.dirHint} title={f.path}>{parts.slice(0, -1).join('/')}</span>
+          )}
+          <div style={styles.fileActions} onClick={e => e.stopPropagation()}>
+            {f.staged ? (
+              <button style={styles.actionBtn} title="取消暂存" onClick={() => handleUnstageFile(f.path)}>
+                <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-on-surface-variant)' }}>remove</span>
+              </button>
+            ) : (
+              <>
+                <button style={styles.actionBtn} title="暂存" onClick={() => handleStageFile(f.path)}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>add</span>
+                </button>
+                {f.status !== '?' && (
+                  <button style={styles.actionBtn} title="丢弃更改" onClick={() => handleDiscard(f.path)}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-on-surface-variant)' }}>undo</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        {/* Inline diff */}
+        {isExpanded && (
+          <div style={styles.diffContainer}>
+            {diffLoading ? (
+              <div style={styles.diffPlaceholder}>
+                <span className="material-symbols-outlined" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }}>progress_activity</span>
+              </div>
+            ) : diffContent ? (
+              <pre style={styles.diffPre}>{diffContent}</pre>
+            ) : (
+              <div style={styles.diffPlaceholder}>无变更内容</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderDirGroup = (dir: string, files: GitFileChange[]) => {
+    const collapsed = collapsedDirs.has(dir);
+    return (
+      <div key={dir} style={styles.dirGroup}>
+        <div style={styles.dirHeader} onClick={() => toggleDir(dir)}>
+          <span className="material-symbols-outlined" style={{
+            fontSize: 14,
+            color: 'var(--md-on-surface-variant)',
+            transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.15s',
+          }}>expand_more</span>
+          <span style={styles.dirName}>{dir === '.' ? '根目录' : dir}</span>
+          <span style={styles.dirCount}>{files.length}</span>
+        </div>
+        {!collapsed && files.map(renderFileRow)}
+      </div>
+    );
+  };
+
+  // ── Main render ─────────────────────────────────────────────
+
+  const summaryItems = (['M', 'A', 'D', 'R', '?'] as const)
+    .filter(s => (statusCounts[s] ?? 0) > 0)
+    .map(s => ({ status: s, ...statusMeta(s), count: statusCounts[s]! }));
+
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -202,103 +356,33 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
           <button style={styles.iconBtn} title="Fetch" onClick={handleFetch}>
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>cloud_sync</span>
           </button>
-          <button style={styles.iconBtn} title="Refresh" onClick={load}>
+          <button style={styles.iconBtn} title="刷新" onClick={load}>
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>refresh</span>
           </button>
         </div>
       </div>
 
-      {/* Commit area */}
-      {unstagedFiles.length > 0 && (
-        <div style={styles.commitArea}>
-          <input
-            value={commitMsg}
-            onChange={e => setCommitMsg(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCommitAll(); } }}
-            placeholder="Commit message..."
-            style={styles.commitInput}
-          />
-          <button
-            style={{
-              ...styles.commitBtn,
-              opacity: commitMsg.trim() ? 1 : 0.5,
-            }}
-            disabled={!commitMsg.trim() || loading}
-            onClick={handleCommitAll}
-          >
-            Commit All
-          </button>
+      {/* Summary bar */}
+      {allFiles.length > 0 && (
+        <div style={styles.summaryBar}>
+          {summaryItems.map(item => (
+            <span key={item.status} style={{ ...styles.summaryChip, background: item.bg, color: item.color }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 12 }}>{item.icon}</span>
+              {item.count} {item.label}
+            </span>
+          ))}
         </div>
       )}
 
-      {/* Scrollable file list + commits */}
       <div style={styles.scrollArea}>
-        {/* Staged files */}
-        {stagedFiles.length > 0 && (
-          <div style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <span style={styles.sectionTitle}>Staged</span>
-              <span style={styles.sectionCount}>{stagedFiles.length}</span>
-            </div>
-            {stagedFiles.map(f => {
-              const { icon, color } = statusMeta(f.status);
-              return (
-                <div key={`s-${f.path}`} style={styles.fileRow}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 14, color, flexShrink: 0 }}>{icon}</span>
-                  <span style={styles.filePath} title={f.path}>{f.path}</span>
-                  <button style={styles.actionBtn} title="Unstage" onClick={() => handleUnstageFile(f.path)}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>remove</span>
-                  </button>
-                </div>
-              );
-            })}
-            <button style={styles.stageAllBtn} onClick={handleStageAll}>
-              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>select_all</span>
-              Stage all
-            </button>
-          </div>
-        )}
-
-        {/* Unstaged / Changes */}
-        {unstagedFiles.length > 0 && (
-          <div style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <span style={styles.sectionTitle}>Changes</span>
-              <span style={styles.sectionCount}>{unstagedFiles.length}</span>
-            </div>
-            {unstagedFiles.map(f => {
-              const { icon, color } = statusMeta(f.status);
-              return (
-                <div key={`u-${f.path}`} style={styles.fileRow}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 14, color, flexShrink: 0 }}>{icon}</span>
-                  <span style={styles.filePath} title={f.path}>{f.path}</span>
-                  <button style={styles.actionBtn} title="Stage" onClick={() => handleStageFile(f.path)}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>add</span>
-                  </button>
-                  <button style={styles.actionBtn} title="Discard" onClick={() => handleDiscard(f.path)}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }}>undo</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {stagedFiles.length === 0 && unstagedFiles.length === 0 && (
-          <div style={styles.cleanState}>
-            <span className="material-symbols-outlined" style={{ fontSize: 20, opacity: 0.35 }}>check_circle</span>
-            <span style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', opacity: 0.6 }}>Working tree clean</span>
-          </div>
-        )}
-
-        {/* Recent commits */}
+        {/* Recent commits — always visible at top */}
         {commits.length > 0 && (
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
-              <span style={styles.sectionTitle}>Recent</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 13, color: 'var(--md-on-surface-variant)' }}>history</span>
+              <span style={styles.sectionTitle}>最近提交</span>
             </div>
-            {commits.map(c => (
+            {commits.slice(0, 5).map(c => (
               <div key={c.hash} style={styles.commitRow}>
                 <span style={styles.commitHash}>{c.shortHash}</span>
                 <span style={styles.commitMsg} title={c.message}>{c.message}</span>
@@ -307,6 +391,69 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
             ))}
           </div>
         )}
+
+        {/* Staged files */}
+        {stagedFiles.length > 0 && (
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <span className="material-symbols-outlined" style={{ fontSize: 13, color: '#3fb950' }}>check_circle</span>
+              <span style={styles.sectionTitle}>暂存区</span>
+              <span style={styles.sectionCount}>{stagedFiles.length}</span>
+            </div>
+            {(() => {
+              const groups = groupByDir(stagedFiles);
+              return Array.from(groups.entries()).map(([dir, files]) => renderDirGroup(dir, files));
+            })()}
+          </div>
+        )}
+
+        {/* Unstaged changes */}
+        {unstagedFiles.length > 0 && (
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <span className="material-symbols-outlined" style={{ fontSize: 13, color: '#e3b341' }}>pending</span>
+              <span style={styles.sectionTitle}>更改</span>
+              <span style={styles.sectionCount}>{unstagedFiles.length}</span>
+              <button style={styles.stageAllBtn} onClick={handleStageAll}>
+                <span className="material-symbols-outlined" style={{ fontSize: 12 }}>select_all</span>
+                全部暂存
+              </button>
+            </div>
+            {(() => {
+              const groups = groupByDir(unstagedFiles);
+              return Array.from(groups.entries()).map(([dir, files]) => renderDirGroup(dir, files));
+            })()}
+          </div>
+        )}
+
+        {/* Clean state */}
+        {clean && (
+          <div style={styles.cleanState}>
+            <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#3fb950', opacity: 0.6 }}>check_circle</span>
+            <span style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', opacity: 0.7 }}>工作区干净</span>
+          </div>
+        )}
+      </div>
+
+      {/* Commit area — always visible at bottom */}
+      <div style={styles.commitArea}>
+        <input
+          value={commitMsg}
+          onChange={e => setCommitMsg(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCommitAll(); } }}
+          placeholder="提交信息..."
+          style={styles.commitInput}
+        />
+        <button
+          style={{
+            ...styles.commitBtn,
+            opacity: commitMsg.trim() && allFiles.length > 0 ? 1 : 0.4,
+          }}
+          disabled={!commitMsg.trim() || loading || allFiles.length === 0}
+          onClick={handleCommitAll}
+        >
+          提交
+        </button>
       </div>
 
       {loading && (
@@ -317,6 +464,8 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
     </div>
   );
 }
+
+// ── Styles ──────────────────────────────────────────────────────
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -362,11 +511,30 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     transition: 'color 0.15s',
   },
+  summaryBar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 4,
+    padding: '6px 12px',
+    borderBottom: '1px solid var(--md-outline-variant)',
+    flexShrink: 0,
+  },
+  summaryChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 3,
+    padding: '2px 8px',
+    borderRadius: 10,
+    fontSize: 11,
+    fontWeight: 600,
+    fontFamily: 'var(--font-sans)',
+    lineHeight: '18px',
+  },
   commitArea: {
     display: 'flex',
     gap: 6,
     padding: '8px 12px',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderTop: '1px solid var(--md-outline-variant)',
     flexShrink: 0,
   },
   commitInput: {
@@ -382,7 +550,7 @@ const styles: Record<string, React.CSSProperties> = {
     outline: 'none',
   },
   commitBtn: {
-    padding: '5px 10px',
+    padding: '5px 12px',
     fontSize: 11,
     fontWeight: 600,
     fontFamily: 'var(--font-sans)',
@@ -414,8 +582,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     color: 'var(--md-on-surface-variant)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
+    letterSpacing: '0.02em',
   },
   sectionCount: {
     fontSize: 10,
@@ -426,21 +593,94 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0 5px',
     lineHeight: '16px',
   },
+  stageAllBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 3,
+    padding: '2px 8px',
+    marginLeft: 'auto',
+    fontSize: 10,
+    fontWeight: 500,
+    color: 'var(--md-primary)',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+    borderRadius: 4,
+  },
+  dirGroup: {
+    // no visual boundary — files flow naturally
+  },
+  dirHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '3px 12px',
+    cursor: 'pointer',
+    userSelect: 'none',
+    background: 'var(--md-surface-container-lowest)',
+  },
+  dirName: {
+    fontSize: 11,
+    fontWeight: 500,
+    color: 'var(--md-on-surface-variant)',
+    fontFamily: 'var(--font-mono)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    flex: 1,
+    minWidth: 0,
+  },
+  dirCount: {
+    fontSize: 9,
+    fontWeight: 600,
+    color: 'var(--md-on-surface-variant)',
+    background: 'var(--md-surface-container)',
+    borderRadius: 6,
+    padding: '0 4px',
+    lineHeight: '14px',
+  },
   fileRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    padding: '4px 12px',
+    padding: '3px 12px 3px 28px',
     transition: 'background 0.1s',
   },
-  filePath: {
-    flex: 1,
-    minWidth: 0,
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  fileName: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11,
+    fontWeight: 500,
+    color: 'var(--md-on-surface)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    flexShrink: 0,
+    maxWidth: '45%',
+  },
+  dirHint: {
     fontFamily: 'var(--font-mono)',
-    fontSize: 11,
+    fontSize: 10,
+    color: 'var(--md-on-surface-variant)',
+    opacity: 0.5,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'right',
+  },
+  fileActions: {
+    display: 'flex',
+    gap: 1,
+    flexShrink: 0,
+    opacity: 0.6,
   },
   actionBtn: {
     display: 'flex',
@@ -448,31 +688,44 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     border: 'none',
     background: 'transparent',
-    color: 'var(--md-on-surface-variant)',
     cursor: 'pointer',
     padding: 2,
     borderRadius: 4,
     flexShrink: 0,
-    transition: 'color 0.15s',
+    transition: 'opacity 0.15s',
   },
-  stageAllBtn: {
+  diffContainer: {
+    borderBottom: '1px solid var(--md-outline-variant)',
+    background: 'var(--md-surface-container-lowest)',
+  },
+  diffPre: {
+    margin: 0,
+    padding: '6px 12px 6px 36px',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11,
+    lineHeight: '1.5',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    color: 'var(--md-on-surface)',
+    overflowX: 'auto',
+    maxHeight: 200,
+    overflowY: 'auto',
+  },
+  diffPlaceholder: {
+    padding: '8px 12px 8px 36px',
+    fontSize: 11,
+    color: 'var(--md-on-surface-variant)',
+    fontStyle: 'italic',
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '4px 12px',
-    fontSize: 11,
-    color: 'var(--md-primary)',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
+    gap: 6,
   },
   cleanState: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: 4,
-    padding: '24px 12px',
+    gap: 6,
+    padding: '32px 12px',
   },
   commitRow: {
     display: 'flex',
@@ -482,9 +735,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   commitHash: {
     fontFamily: 'var(--font-mono)',
-    fontSize: 11,
+    fontSize: 10,
+    fontWeight: 600,
     color: 'var(--md-primary)',
     flexShrink: 0,
+    opacity: 0.8,
   },
   commitMsg: {
     flex: 1,
@@ -500,6 +755,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--md-on-surface-variant)',
     flexShrink: 0,
     whiteSpace: 'nowrap',
+    opacity: 0.7,
   },
   empty: {
     display: 'flex',

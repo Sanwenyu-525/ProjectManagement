@@ -1,42 +1,50 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Dropdown, notification } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
-import FileExplorer from './FileExplorer';
 import SearchBox from './components/SearchBox';
-import CommandPalette from './components/CommandPalette';
 import { useCommandPalette } from '../hooks/useCommandPalette';
-import { healthApi } from '../api';
-import { formatHealthIssues, isHealthUrgent } from '../lib/healthUtils';
 import { useThemeStore } from '../stores/themeStore';
+import type { FileExplorerHandle } from './FileExplorer';
+
+// Lazy-load heavy components — only needed when panels are open
+const FileExplorer = lazy(() => import('./FileExplorer'));
+const CommandPalette = lazy(() => import('./components/CommandPalette'));
 
 const WorkspacePage = lazy(() => import('../features/workspace/WorkspacePage'));
 
 const navItems = [
   { key: '/workspace', icon: 'smart_toy', label: '工作区' },
-  { key: '/projects', icon: 'folder_open', label: '项目' },
-  { key: '/graph', icon: 'schema', label: '图谱' },
+  { key: '/projects', icon: 'work', label: '项目' },
   { key: '/timeline', icon: 'calendar_month', label: '时间线' },
   { key: '/data-screen', icon: 'monitoring', label: '数据大屏' },
+  { key: '__file-explorer', icon: 'folder', label: '文件浏览器' },
+  { key: '/knowledge', icon: 'menu_book', label: '知识库' },
 ];
 
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [filePanelOpen, setFilePanelOpen] = useState(false);
+  const fileExplorerRef = useRef<FileExplorerHandle>(null);
   const [notifApi, contextHolder] = notification.useNotification();
   const isDark = useThemeStore(s => s.mode === 'dark');
   const { open: paletteOpen, openPalette, closePalette } = useCommandPalette();
 
-  const activeKey = navItems.find(item => location.pathname.startsWith(item.key))?.key || '/workspace';
+  const activeKey = navItems.find(item =>
+    item.key !== '__file-explorer' && location.pathname.startsWith(item.key)
+  )?.key || '/workspace';
 
-  // Daily project health check — runs once per day on first app open
+  // Daily project health check — defers to after first paint to avoid blocking UI
   useEffect(() => {
     const today = new Date().toLocaleDateString('sv-SE');
     const lastCheck = localStorage.getItem('lastHealthCheckDate');
     if (lastCheck === today) return;
 
-    healthApi.runAll().then(({ results, changedProjects }) => {
+    const runHealthCheck = async () => {
+      const { healthApi } = await import('../api');
+      const { formatHealthIssues, isHealthUrgent } = await import('../lib/healthUtils');
+      const { results, changedProjects } = await healthApi.runAll();
       localStorage.setItem('lastHealthCheckDate', today);
       if (!changedProjects || changedProjects.length === 0) return;
 
@@ -61,9 +69,11 @@ export default function MainLayout() {
           });
         }
       });
-    }).catch(() => {
-      // Health check is best-effort, silent failure
-    });
+    };
+
+    // Defer to after first paint
+    const id = setTimeout(runHealthCheck, 0);
+    return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -71,10 +81,41 @@ export default function MainLayout() {
     { key: 'settings', icon: <SettingOutlined />, label: '设置', onClick: () => navigate('/settings') },
   ];
 
+  // Escape key to close file panel
+  useEffect(() => {
+    if (!filePanelOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFilePanelOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filePanelOpen]);
+
   const railW = 52;
-  const panelW = 220;
-  const filePanelW = filePanelOpen ? panelW : 0;
+  const [filePanelWidth, setFilePanelWidth] = useState(220);
+  const [filePanelHover, setFilePanelHover] = useState(false);
+  const [filePanelDragging, setFilePanelDragging] = useState(false);
+  const filePanelW = filePanelOpen ? filePanelWidth : 0;
   const headerLeft = railW + filePanelW;
+
+  const handleFilePanelDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setFilePanelDragging(true);
+    const startX = e.clientX;
+    const startWidth = filePanelWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      setFilePanelWidth(Math.min(500, Math.max(160, startWidth + delta)));
+    };
+    const onMouseUp = () => {
+      setFilePanelDragging(false);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [filePanelWidth]);
 
   return (
     <div style={{
@@ -85,6 +126,34 @@ export default function MainLayout() {
       fontFamily: 'var(--font-sans)',
     }}>
       {contextHolder}
+
+      {/* Skip to content — visible only on keyboard focus */}
+      <a
+        href="#main-content"
+        onClick={e => {
+          e.preventDefault();
+          document.getElementById('main-content')?.focus();
+        }}
+        style={{
+          position: 'fixed',
+          top: -100,
+          left: 16,
+          zIndex: 200,
+          padding: '8px 16px',
+          borderRadius: 8,
+          background: 'var(--md-primary)',
+          color: 'var(--md-on-primary)',
+          fontSize: 13,
+          fontWeight: 600,
+          fontFamily: 'var(--font-sans)',
+          textDecoration: 'none',
+          transition: 'top 0.15s',
+        }}
+        onFocus={e => { e.currentTarget.style.top = '8px'; }}
+        onBlur={e => { e.currentTarget.style.top = '-100px'; }}
+      >
+        跳转到内容
+      </a>
 
       {/* ── Icon Rail ── */}
       <nav
@@ -101,7 +170,10 @@ export default function MainLayout() {
           alignItems: 'center',
           padding: '10px 0',
           gap: 6,
-          background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+          background: isDark
+            ? 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)'
+            : 'linear-gradient(180deg, rgba(230, 237, 245, 0.92) 0%, rgba(220, 228, 240, 0.88) 100%)',
+          boxShadow: isDark ? 'none' : '1px 0 0 rgba(0,0,0,0.06)',
           flexShrink: 0,
         }}
       >
@@ -127,37 +199,67 @@ export default function MainLayout() {
 
         {/* Navigation items */}
         {navItems.map(item => {
-          const isActive = activeKey === item.key;
+          const isFileExplorer = item.key === '__file-explorer';
+          const isActive = isFileExplorer ? filePanelOpen : activeKey === item.key;
+          const handleNavClick = () => isFileExplorer ? setFilePanelOpen(!filePanelOpen) : navigate(item.key);
+          const handleNavKey = (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNavClick(); }
+          };
+          const handleFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+            if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+          };
+          const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+            if (!isActive) e.currentTarget.style.background = 'transparent';
+          };
           return (
             <div
               key={item.key}
-              onClick={() => navigate(item.key)}
+              onClick={handleNavClick}
+              onKeyDown={handleNavKey}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              tabIndex={0}
+              role="button"
+              aria-current={isActive && !isFileExplorer ? 'page' : undefined}
+              aria-label={item.label}
               title={item.label}
               style={{
                 width: 36,
                 height: 36,
-                borderRadius: 8,
+                borderRadius: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                background: isActive ? 'var(--color-primary-light)' : 'transparent',
-                borderLeft: isActive ? '2px solid var(--color-primary)' : '2px solid transparent',
+                background: isActive
+                  ? (isFileExplorer ? (isDark ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.12)') : 'var(--color-primary-light)')
+                  : 'transparent',
+                borderLeft: isFileExplorer
+                  ? (isActive ? '1px solid rgba(245, 158, 11, 0.4)' : `1px solid ${isDark ? 'transparent' : 'rgba(0,0,0,0.06)'}`)
+                  : (isActive ? '2px solid var(--color-primary)' : '2px solid transparent'),
+                border: isFileExplorer
+                  ? (isActive ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid transparent')
+                  : undefined,
+                outline: 'none',
               }}
               onMouseEnter={e => {
-                if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
               }}
               onMouseLeave={e => {
                 if (!isActive) e.currentTarget.style.background = 'transparent';
               }}
             >
-              <span className="material-symbols-outlined" style={{
+              <span className="material-symbols-outlined" aria-hidden="true" style={{
                 fontSize: 18,
-                color: isActive ? 'var(--color-primary)' : 'rgba(255,255,255,0.5)',
+                color: isActive
+                  ? (isFileExplorer ? '#f59e0b' : 'var(--color-primary)')
+                  : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)'),
                 transition: 'color 0.15s',
               }}>
-                {item.icon}
+                {isFileExplorer
+                  ? (filePanelOpen ? 'folder_open' : 'folder')
+                  : item.icon}
               </span>
             </div>
           );
@@ -166,58 +268,32 @@ export default function MainLayout() {
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* File explorer toggle */}
-        <div
-          onClick={() => setFilePanelOpen(!filePanelOpen)}
-          title="文件浏览器"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-            background: filePanelOpen ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
-            border: filePanelOpen ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid transparent',
-          }}
-          onMouseEnter={e => {
-            if (!filePanelOpen) e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-          }}
-          onMouseLeave={e => {
-            if (!filePanelOpen) e.currentTarget.style.background = filePanelOpen ? 'rgba(245, 158, 11, 0.2)' : 'transparent';
-          }}
-        >
-          <span className="material-symbols-outlined" style={{
-            fontSize: 18,
-            color: filePanelOpen ? '#fbbf24' : 'rgba(255,255,255,0.5)',
-          }}>
-            {filePanelOpen ? 'folder_open' : 'folder'}
-          </span>
-        </div>
-
         {/* Settings */}
         <div
           onClick={() => navigate('/settings')}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/settings'); } }}
+          tabIndex={0}
+          role="button"
+          aria-label="设置"
           title="设置"
           style={{
             width: 36,
             height: 36,
-            borderRadius: 8,
+            borderRadius: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
             marginTop: 4,
             transition: 'all 0.15s ease',
+            outline: 'none',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
-          <span className="material-symbols-outlined" style={{
+          <span className="material-symbols-outlined" aria-hidden="true" style={{
             fontSize: 18,
-            color: activeKey === '/settings' ? 'var(--color-primary)' : 'rgba(255,255,255,0.5)',
+            color: activeKey === '/settings' ? 'var(--color-primary)' : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)'),
           }}>
             settings
           </span>
@@ -229,15 +305,15 @@ export default function MainLayout() {
         position: 'fixed',
         top: 0,
         left: railW,
-        width: panelW,
+        width: filePanelWidth,
         height: '100vh',
         zIndex: 45,
         background: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
         borderRight: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : 'rgba(187, 202, 198, 0.3)'}`,
-        transition: 'transform 0.2s ease, opacity 0.2s ease',
-        transform: filePanelOpen ? 'translateX(0)' : `translateX(-${panelW}px)`,
+        transition: filePanelDragging ? 'none' : 'transform 0.2s ease, opacity 0.2s ease',
+        transform: filePanelOpen ? 'translateX(0)' : `translateX(-${filePanelWidth}px)`,
         opacity: filePanelOpen ? 1 : 0,
         overflow: 'hidden',
         display: 'flex',
@@ -261,25 +337,64 @@ export default function MainLayout() {
           }}>
             Explorer
           </span>
-          <span
-            className="material-symbols-outlined"
-            onClick={() => setFilePanelOpen(false)}
-            style={{
-              fontSize: 16,
-              color: isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)',
-              cursor: 'pointer',
-              padding: 2,
-              borderRadius: 4,
-              transition: 'color 0.15s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-on-surface)'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)'; }}
-          >close</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <span
+              className="material-symbols-outlined"
+              onClick={() => fileExplorerRef.current?.openAddDirectory()}
+              title="添加目录"
+              style={{
+                fontSize: 16,
+                color: isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)',
+                cursor: 'pointer',
+                padding: 2,
+                borderRadius: 4,
+                transition: 'color 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-primary)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)'; }}
+            >add</span>
+            <span
+              className="material-symbols-outlined"
+              onClick={() => setFilePanelOpen(false)}
+              style={{
+                fontSize: 16,
+                color: isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)',
+                cursor: 'pointer',
+                padding: 2,
+                borderRadius: 4,
+                transition: 'color 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-on-surface)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)'; }}
+            >close</span>
+          </div>
         </div>
         {/* File tree */}
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarGutter: 'stable' }}>
-          <FileExplorer collapsed={false} />
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable' }}>
+          <Suspense fallback={null}>
+            <FileExplorer collapsed={false} ref={fileExplorerRef} />
+          </Suspense>
         </div>
+
+        {/* Drag handle — right edge */}
+        <div
+          onMouseDown={handleFilePanelDragStart}
+          onMouseEnter={() => setFilePanelHover(true)}
+          onMouseLeave={() => { if (!filePanelDragging) setFilePanelHover(false); }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: filePanelHover || filePanelDragging ? 6 : 4,
+            height: '100%',
+            cursor: 'col-resize',
+            background: filePanelHover || filePanelDragging
+              ? (isDark ? 'rgba(99, 144, 255, 0.4)' : 'rgba(99, 144, 255, 0.5)')
+              : 'transparent',
+            transition: filePanelDragging ? 'none' : 'width 0.15s ease, background 0.15s ease',
+            zIndex: 10,
+          }}
+        />
       </div>
 
       {/* ── Main area ── */}
@@ -429,17 +544,24 @@ export default function MainLayout() {
         </header>
 
         {/* ── Content area ── */}
-        <main style={{
-          flex: 1,
-          marginTop: 'var(--layout-topbar-height)',
-          overflow: 'auto',
-          position: 'relative',
-        }}>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          style={{
+            flex: 1,
+            marginTop: 'var(--layout-topbar-height)',
+            overflow: 'auto',
+            position: 'relative',
+            outline: 'none',
+          }}
+        >
           {location.pathname.startsWith('/workspace') ? <Suspense fallback={null}><WorkspacePage /></Suspense> : <Outlet />}
         </main>
       </div>
 
-      <CommandPalette open={paletteOpen} onClose={closePalette} />
+      <Suspense fallback={null}>
+        <CommandPalette open={paletteOpen} onClose={closePalette} />
+      </Suspense>
     </div>
   );
 }

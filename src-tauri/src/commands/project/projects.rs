@@ -918,30 +918,11 @@ pub async fn projects_batch_import(
         let icon_color = p.get("iconColor").and_then(|v| v.as_str());
         let now = crate::db::now_str();
 
-        // Get or create default user for ownerId
-        let default_user = db.query_json(
-            "SELECT id FROM users LIMIT 1",
-            rusqlite::params![],
-        ).ok()
-            .and_then(|v| v.as_array()?.first()?.get("id")?.as_str().map(String::from));
-
-        let owner_id = match default_user {
-            Some(id) => id,
-            None => {
-                let new_user_id = crate::db::new_id();
-                let _ = db.execute(
-                    "INSERT OR IGNORE INTO users (id, username, email, passwordHash, createdAt) VALUES (?1, 'Default', 'default@devhub.local', '', ?2)",
-                    rusqlite::params![new_user_id, crate::db::now_str()],
-                );
-                new_user_id
-            }
-        };
-
         match db.execute(
-            "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, frontendCommand, backendCommand, techStack, iconType, iconUrl, iconColor, ownerId, createdAt, updatedAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16)",
+            "INSERT INTO projects (id, name, description, status, priority, source, localPath, openCommand, frontendCommand, backendCommand, techStack, iconType, iconUrl, iconColor, createdAt, updatedAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15)",
             rusqlite::params![
                 id, name, description, "Idea", "Medium", source, local_path,
-                open_cmd, frontend_cmd, backend_cmd, tech_stack, icon_type, icon_url, icon_color, owner_id, now,
+                open_cmd, frontend_cmd, backend_cmd, tech_stack, icon_type, icon_url, icon_color, now,
             ],
         ) {
             Ok(_) => {

@@ -17,8 +17,7 @@ export default function MilestonesTab({ projectId }: { projectId: string }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadMilestones(); }, []);
+  useEffect(() => { loadMilestones(); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadMilestones() {
     try {

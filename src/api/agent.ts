@@ -16,6 +16,8 @@ export const sessionsApi = {
     cmd<AgentSession[]>('sessions_list', { limit: limit ?? null }),
   messages: (sessionId: string) =>
     cmd<AgentMessage[]>('sessions_messages', { sessionId }),
+  truncateMessages: (sessionId: string, keep: number) =>
+    cmd('sessions_truncate_messages', { sessionId, keep }),
   cleanupStale: (maxMinutes?: number, idleMinutes?: number) =>
     cmd<number>('sessions_cleanup_stale', { maxMinutes: maxMinutes ?? null, idleMinutes: idleMinutes ?? null }),
 };

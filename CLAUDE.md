@@ -37,7 +37,7 @@ cd src-tauri && cargo check # 检查 Rust 编译（快，不生成二进制）
 - **项目** (`/projects`, `/projects/:id`) — 项目 CRUD 和详情
 - **设置** (`/settings`)
 
-隐藏路由（可 URL 访问但不在侧边栏）：`/graph`、`/timeline`、`/data-screen`。根路径 `/` 重定向到 `/workspace`。
+隐藏路由（可 URL 访问但不在侧边栏）：`/timeline`、`/data-screen`。根路径 `/` 重定向到 `/workspace`。
 
 ### 前端目录结构
 
@@ -45,7 +45,7 @@ cd src-tauri && cargo check # 检查 Rust 编译（快，不生成二进制）
 src/features/
   workspace/           — 工作区页面及所有子功能
     WorkspacePage.tsx  — 主工作区视图（首页）
-    agent/             — AgentChat, AgentProvider, ClaudeProvider, providers
+    agent/             — AgentChat, AgentTabBar, AgentIdleState, AgentProvider, ClaudeProvider, providers
     terminal/          — TerminalPane, BottomPanel
     editor/            — CodeEditorPane, FileEditor, FileViewer
     browser/           — BrowserWorkspacePage

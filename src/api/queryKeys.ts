@@ -56,9 +56,6 @@ export const queryKeys = {
     all: (params?: { limit?: number; offset?: number }) => ['timeline', params] as const,
     project: (projectId: string) => ['timeline', projectId] as const,
   },
-  dependencies: {
-    graph: (projectIds: string[]) => ['dependencies', projectIds] as const,
-  },
   browser: {
     visits: (tabId?: string) => ['browser', 'visits', tabId] as const,
   },
@@ -78,5 +75,21 @@ export const queryKeys = {
   },
   search: {
     results: (query: string) => ['search', query] as const,
+  },
+  memories: {
+    all: (projectId?: string) => ['memories', projectId] as const,
+    search: (query: string, projectId?: string) => ['memories', 'search', query, projectId] as const,
+    context: (query: string, projectId?: string) => ['memories', 'context', query, projectId] as const,
+    pinned: (projectId?: string) => ['memories', 'pinned', projectId] as const,
+  },
+  decisions: {
+    all: (projectId?: string) => ['decisions', projectId] as const,
+  },
+  knowledge: {
+    list: (category?: string) => ['knowledge', 'list', category] as const,
+    counts: () => ['knowledge', 'counts'] as const,
+  },
+  notes: {
+    all: (projectId?: string) => ['notes', projectId] as const,
   },
 } as const;

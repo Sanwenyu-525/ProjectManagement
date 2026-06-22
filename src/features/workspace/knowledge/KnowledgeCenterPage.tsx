@@ -1,14 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Input } from 'antd';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Input, Modal } from 'antd';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useThemeStore } from '../../../stores/themeStore';
-import { documentsApi } from '../../../api';
+import { knowledgeApi } from '../../../api';
 import { queryKeys } from '../../../api/queryKeys';
-import { useProjects, useDocuments } from '../../../hooks/useProjects';
+import { useProjects } from '../../../hooks/useProjects';
 import { useSearch } from '../../../hooks/useSearch';
-import type { Document } from '../../../types';
+import type { KnowledgeItem } from '../../../types';
 
 // ── Types ──
+
 interface TreeNode {
   id: string;
   label: string;
@@ -22,15 +23,16 @@ type DocSection =
   | { type: 'code'; code: string }
   | { type: 'callout'; title: string; text: string };
 
-const TYPE_LABELS: Record<string, string> = {
-  Doc: '文档',
-  Note: '笔记',
-  README: 'README',
-  API: 'API 文档',
-  Architecture: '架构设计',
+const SOURCE_META: Record<KnowledgeItem['source'], { label: string; icon: string; color: string }> = {
+  memory:    { label: '记忆', icon: 'psychology',  color: '#10b981' },
+  decision:  { label: '决策', icon: 'gavel',       color: '#8b5cf6' },
+  document:  { label: '文档', icon: 'description',  color: '#3b82f6' },
+  note:      { label: '笔记', icon: 'edit_note',    color: '#f59e0b' },
 };
 
-function parseDocumentContent(content: string): DocSection[] {
+// ── Helpers ──
+
+function parseContent(content: string): DocSection[] {
   const sections: DocSection[] = [];
   const lines = content.split('\n');
   let i = 0;
@@ -44,7 +46,7 @@ function parseDocumentContent(content: string): DocSection[] {
         i++;
       }
       sections.push({ type: 'code', code: codeLines.join('\n') });
-      i++; // skip closing ```
+      i++;
     } else if (/^> /.test(line)) {
       sections.push({ type: 'callout', title: '提示', text: line.replace(/^> /, '') });
       i++;
@@ -61,29 +63,31 @@ function parseDocumentContent(content: string): DocSection[] {
   return sections;
 }
 
-function buildDocumentTree(documents: Document[]): TreeNode[] {
-  const groups: Record<string, Document[]> = {};
-  for (const doc of documents) {
-    const label = TYPE_LABELS[doc.type] || doc.type;
-    (groups[label] ??= []).push(doc);
+function buildKnowledgeTree(items: KnowledgeItem[]): TreeNode[] {
+  const order: KnowledgeItem['source'][] = ['memory', 'decision', 'document', 'note'];
+  const groups: Record<string, KnowledgeItem[]> = {};
+  for (const item of items) {
+    (groups[item.source] ??= []).push(item);
   }
-  return Object.entries(groups).map(([label, docs]) => ({
-    id: `folder-${label}`,
-    label,
-    type: 'folder' as const,
-    children: docs.map(d => ({ id: d.id, label: d.title, type: 'file' as const })),
-  }));
+  return order
+    .filter(src => groups[src]?.length)
+    .map(src => {
+      const meta = SOURCE_META[src];
+      return {
+        id: `folder-${src}`,
+        label: meta.label,
+        type: 'folder' as const,
+        children: groups[src].map(item => ({ id: item.id, label: item.title, type: 'file' as const })),
+      };
+    });
+}
+
+function formatAgo(iso: string): string {
+  const diffMin = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  return diffMin < 1 ? '刚刚' : diffMin < 60 ? `${diffMin} 分钟前` : diffMin < 1440 ? `${Math.floor(diffMin / 60)} 小时前` : `${Math.floor(diffMin / 1440)} 天前`;
 }
 
 // ── Sub-components ──
-
-function FolderIcon({ isOpen }: { isOpen: boolean }) {
-  return (
-    <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-primary)' }}>
-      {isOpen ? 'folder_open' : 'folder'}
-    </span>
-  );
-}
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
@@ -154,7 +158,9 @@ function TreeItem({ node, depth, expanded, onToggle, selected, onSelect, isDark 
       >
         {isFolder && <ChevronIcon expanded={isOpen} />}
         {isFolder ? (
-          <FolderIcon isOpen={isOpen} />
+          <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-primary)' }}>
+            {isOpen ? 'folder_open' : 'folder'}
+          </span>
         ) : (
           <span className="material-symbols-outlined" style={{ fontSize: 16, marginLeft: 16 }}>article</span>
         )}
@@ -227,40 +233,74 @@ export default function KnowledgeCenterPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
 
-  // Data fetching via React Query
+  const queryClient = useQueryClient();
+  const invalidate = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.list() });
+  }, [queryClient]);
+
+  // Data
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const projectId = projects?.[0]?.id;
-  const { data: documents = [], isLoading: docsLoading } = useDocuments(projectId);
+  const { data: items = [], isLoading: itemsLoading } = useQuery({
+    queryKey: queryKeys.knowledge.list(),
+    queryFn: () => knowledgeApi.list(undefined, projectId),
+    enabled: !!projectId,
+  });
   const { data: searchResults } = useSearch(searchQuery);
 
-  // Active document: use cache from list if available, otherwise fetch
-  const activeDocId = selected && !selected.startsWith('folder-') ? selected : undefined;
-  const cachedDoc = useMemo(
-    () => documents.find(d => d.id === activeDocId),
-    [documents, activeDocId],
-  );
-  const { data: fetchedDoc } = useQuery({
-    queryKey: queryKeys.documents.one(activeDocId!),
-    queryFn: () => documentsApi.getById(activeDocId!),
-    enabled: !!activeDocId && !cachedDoc,
+  // Item cache for detail lookup
+  const itemMap = useMemo(() => {
+    const m = new Map<string, KnowledgeItem>();
+    for (const item of items) m.set(item.id, item);
+    return m;
+  }, [items]);
+
+  const activeItem = selected && !selected.startsWith('folder-') ? (itemMap.get(selected) ?? null) : null;
+
+  // Mutations
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const paths = await open({
+        multiple: true,
+        title: '选择文件',
+        filters: [{ name: '文档', extensions: ['md', 'txt'] }],
+      });
+      if (!paths) return null;
+      const arr = Array.isArray(paths) ? paths : [paths];
+      return knowledgeApi.importFiles(arr, projectId);
+    },
+    onSuccess: (result) => {
+      if (result) invalidate();
+    },
   });
-  const activeDoc = cachedDoc ?? fetchedDoc ?? null;
+
+  const createMutation = useMutation({
+    mutationFn: () => knowledgeApi.createNote(createTitle, '', projectId),
+    onSuccess: () => {
+      setCreateOpen(false);
+      setCreateTitle('');
+      invalidate();
+    },
+  });
 
   // Derived tree
-  const knowledgeTree = useMemo(() => buildDocumentTree(documents), [documents]);
-  const loading = projectsLoading || docsLoading;
+  const knowledgeTree = useMemo(() => buildKnowledgeTree(items), [items]);
+  const loading = projectsLoading || itemsLoading;
 
-  // Auto-select first document once loaded
+  // Auto-select first item once loaded
   useEffect(() => {
-    if (initialized || loading || !documents.length || !knowledgeTree.length) return;
-    if (knowledgeTree.length > 0 && knowledgeTree[0].children?.length) {
-      const firstFileId = knowledgeTree[0].children[0].id;
+    if (initialized || loading || !items.length || !knowledgeTree.length) return;
+    if (knowledgeTree[0].children?.length) {
       setExpanded(new Set([knowledgeTree[0].id]));
-      setSelected(firstFileId);
+      setSelected(knowledgeTree[0].children[0].id);
     }
     setInitialized(true);
-  }, [loading, documents, knowledgeTree, initialized]);
+  }, [loading, items, knowledgeTree, initialized]);
 
   const toggleExpand = (id: string) => {
     setExpanded(prev => {
@@ -270,13 +310,10 @@ export default function KnowledgeCenterPage() {
     });
   };
 
-  const sections: DocSection[] = activeDoc ? parseDocumentContent(activeDoc.content) : [];
-  const docType = activeDoc ? (TYPE_LABELS[activeDoc.type] || activeDoc.type) : '';
-  const updatedAgo = activeDoc ? (() => {
-    const diffMs = Date.now() - new Date(activeDoc.updatedAt).getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    return diffMin < 1 ? '刚刚' : diffMin < 60 ? `${diffMin} 分钟前` : diffMin < 1440 ? `${Math.floor(diffMin / 60)} 小时前` : `${Math.floor(diffMin / 1440)} 天前`;
-  })() : '';
+  // Active item derived data
+  const sections: DocSection[] = activeItem ? parseContent(activeItem.content) : [];
+  const sourceMeta = activeItem ? SOURCE_META[activeItem.source] : null;
+  const tags = activeItem?.tags ? activeItem.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
 
   return (
     <div style={{
@@ -309,25 +346,69 @@ export default function KnowledgeCenterPage() {
           }}>
             知识库
           </h2>
-          <button style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 28, height: 28, borderRadius: 6,
-            background: 'transparent', border: 'none',
-            color: 'var(--md-on-surface-variant)', cursor: 'pointer',
-            transition: 'background 0.15s',
-          }}
-            onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'var(--md-surface-container-low)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>add_box</span>
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 28, height: 28, borderRadius: 6,
+                background: 'transparent', border: 'none',
+                color: 'var(--md-on-surface-variant)', cursor: 'pointer',
+                transition: 'background 0.15s',
+              }}
+              onClick={() => setMenuOpen(prev => !prev)}
+              onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'var(--md-surface-container-low)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>add_box</span>
+            </button>
+            {menuOpen && (
+              <div
+                style={{
+                  position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                  background: isDark ? 'var(--md-surface-container-high)' : '#fff',
+                  border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'var(--color-border)'}`,
+                  borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                  minWidth: 140, padding: '4px 0', zIndex: 100,
+                }}
+              >
+                <button
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '8px 12px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 13, color: 'var(--md-on-surface)',
+                    fontFamily: 'var(--font-sans)', textAlign: 'left',
+                  }}
+                  onClick={() => { setMenuOpen(false); importMutation.mutate(); }}
+                  onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'var(--md-surface-container-low)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: 'var(--md-primary)' }}>upload_file</span>
+                  导入文件
+                </button>
+                <button
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '8px 12px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontSize: 13, color: 'var(--md-on-surface)',
+                    fontFamily: 'var(--font-sans)', textAlign: 'left',
+                  }}
+                  onClick={() => { setMenuOpen(false); setCreateOpen(true); }}
+                  onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'var(--md-surface-container-low)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: 'var(--md-primary)' }}>edit_note</span>
+                  新建笔记
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Search */}
         <div style={{ padding: '8px 14px' }}>
           <Input
             prefix={<span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-on-surface-variant)' }}>search</span>}
-            placeholder="搜索文档..."
+            placeholder="搜索知识..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             allowClear
@@ -342,7 +423,6 @@ export default function KnowledgeCenterPage() {
         {/* Tree / Search Results */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
           {searchQuery && searchResults ? (
-            /* Search Results */
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', padding: '4px 8px', fontFamily: 'var(--font-label)' }}>
                 搜索结果 ({(searchResults.documents?.length || 0) + (searchResults.projects?.length || 0) + (searchResults.tasks?.length || 0)})
@@ -361,7 +441,7 @@ export default function KnowledgeCenterPage() {
                 >
                   <div style={{ fontSize: 13, color: 'var(--md-on-surface)', fontWeight: 500 }}>{doc.title}</div>
                   <div style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', marginTop: 2 }}>
-                    {TYPE_LABELS[doc.type] || doc.type}
+                    {doc.type}
                     {doc.projectName && <span> · {doc.projectName}</span>}
                   </div>
                 </div>
@@ -384,7 +464,7 @@ export default function KnowledgeCenterPage() {
             </div>
           ) : knowledgeTree.length === 0 ? (
             <div style={{ padding: 16, textAlign: 'center', color: 'var(--md-on-surface-variant)', fontSize: 13 }}>
-              暂无文档
+              暂无知识条目
             </div>
           ) : (
             knowledgeTree.map(node => (
@@ -403,15 +483,15 @@ export default function KnowledgeCenterPage() {
         </div>
       </aside>
 
-      {/* ── Center Pane: Document Viewer ── */}
+      {/* ── Center Pane: Content Viewer ── */}
       <section style={{
         flex: 1,
         overflowY: 'auto',
         background: isDark ? 'var(--md-background)' : '#ffffff',
       }}>
-        {!activeDoc ? (
+        {!activeItem ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--md-on-surface-variant)' }}>
-            {loading ? '加载中...' : '选择一个文档查看'}
+            {loading ? '加载中...' : '选择一个条目查看'}
           </div>
         ) : (
           <div style={{ maxWidth: 820, margin: '0 auto', padding: '40px 48px' }}>
@@ -422,9 +502,11 @@ export default function KnowledgeCenterPage() {
               color: 'var(--md-on-surface-variant)', marginBottom: 16,
               letterSpacing: '0.02em',
             }}>
-              <span>{docType}</span>
+              {sourceMeta && (
+                <span style={{ color: sourceMeta.color }}>{sourceMeta.label}</span>
+              )}
               <span className="material-symbols-outlined" style={{ fontSize: 14 }}>chevron_right</span>
-              <span style={{ color: 'var(--md-on-surface)' }}>{activeDoc.title}</span>
+              <span style={{ color: 'var(--md-on-surface)' }}>{activeItem.title}</span>
             </div>
 
             {/* Title */}
@@ -432,87 +514,101 @@ export default function KnowledgeCenterPage() {
               fontSize: 32, fontWeight: 600, color: 'var(--md-on-surface)',
               lineHeight: '40px', letterSpacing: '-0.02em', margin: '0 0 16px',
             }}>
-              {activeDoc.title}
+              {activeItem.title}
             </h1>
 
             {/* Meta */}
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 16,
+              display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
               fontSize: 13, color: 'var(--md-on-surface-variant)', marginBottom: 32,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>schedule</span>
-                <span>最后更新 {updatedAgo}</span>
+                <span>最后更新 {formatAgo(activeItem.updatedAt)}</span>
               </div>
-              <span style={{
-                padding: '2px 10px', borderRadius: 999,
-                background: isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)',
-                fontSize: 12, fontFamily: 'var(--font-label)', fontWeight: 500,
-                color: 'var(--md-on-surface)', letterSpacing: '0.02em',
-              }}>
-                {docType}
-              </span>
+              {sourceMeta && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 10px', borderRadius: 999,
+                  background: isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)',
+                  fontSize: 12, fontFamily: 'var(--font-label)', fontWeight: 500,
+                  color: sourceMeta.color, letterSpacing: '0.02em',
+                }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{sourceMeta.icon}</span>
+                  {sourceMeta.label}
+                </span>
+              )}
+              {tags.length > 0 && tags.map(tag => (
+                <span key={tag} style={{
+                  padding: '2px 8px', borderRadius: 999,
+                  background: isDark ? 'rgba(255,255,255,0.06)' : 'var(--md-surface-container-low)',
+                  fontSize: 12, fontFamily: 'var(--font-label)',
+                  color: 'var(--md-on-surface-variant)',
+                }}>
+                  {tag}
+                </span>
+              ))}
             </div>
 
             {/* Content */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {sections.map((section, i) => {
-              if (section.type === 'paragraph') {
-                return (
-                  <p key={i} style={{
-                    fontSize: 14, lineHeight: '22px', color: 'var(--md-on-surface-variant)',
-                    margin: 0,
-                  }}>
-                    {section.text}
-                  </p>
-                );
-              }
-              if (section.type === 'heading') {
-                return (
-                  <h2 key={i} style={{
-                    fontSize: 18, fontWeight: 600, color: 'var(--md-on-surface)',
-                    lineHeight: '24px', letterSpacing: '-0.01em',
-                    margin: '28px 0 8px',
-                    paddingBottom: 10,
-                    borderBottom: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'var(--color-border)'}`,
-                  }}>
-                    {section.text}
-                  </h2>
-                );
-              }
-              if (section.type === 'code') {
-                return <CodeBlock key={i} code={section.code} isDark={isDark} />;
-              }
-              if (section.type === 'callout') {
-                return (
-                  <div key={i} style={{
-                    background: isDark ? 'rgba(20,184,166,0.06)' : 'var(--md-surface-container-low)',
-                    borderLeft: '3px solid var(--md-primary)',
-                    borderRadius: '0 8px 8px 0',
-                    padding: '14px 16px',
-                    display: 'flex', gap: 12, alignItems: 'flex-start',
-                    margin: '8px 0',
-                  }}>
-                    <span className="material-symbols-outlined" style={{
-                      fontSize: 20, color: 'var(--md-primary)', flexShrink: 0, marginTop: 1,
-                    }}>info</span>
-                    <div>
-                      <div style={{
-                        fontSize: 12, fontFamily: 'var(--font-label)', fontWeight: 500,
-                        color: 'var(--md-on-surface)', marginBottom: 4, letterSpacing: '0.02em',
-                      }}>
-                        {section.title}
+                if (section.type === 'paragraph') {
+                  return (
+                    <p key={i} style={{
+                      fontSize: 14, lineHeight: '22px', color: 'var(--md-on-surface-variant)',
+                      margin: 0,
+                    }}>
+                      {section.text}
+                    </p>
+                  );
+                }
+                if (section.type === 'heading') {
+                  return (
+                    <h2 key={i} style={{
+                      fontSize: 18, fontWeight: 600, color: 'var(--md-on-surface)',
+                      lineHeight: '24px', letterSpacing: '-0.01em',
+                      margin: '28px 0 8px',
+                      paddingBottom: 10,
+                      borderBottom: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'var(--color-border)'}`,
+                    }}>
+                      {section.text}
+                    </h2>
+                  );
+                }
+                if (section.type === 'code') {
+                  return <CodeBlock key={i} code={section.code} isDark={isDark} />;
+                }
+                if (section.type === 'callout') {
+                  return (
+                    <div key={i} style={{
+                      background: isDark ? 'rgba(20,184,166,0.06)' : 'var(--md-surface-container-low)',
+                      borderLeft: '3px solid var(--md-primary)',
+                      borderRadius: '0 8px 8px 0',
+                      padding: '14px 16px',
+                      display: 'flex', gap: 12, alignItems: 'flex-start',
+                      margin: '8px 0',
+                    }}>
+                      <span className="material-symbols-outlined" style={{
+                        fontSize: 20, color: 'var(--md-primary)', flexShrink: 0, marginTop: 1,
+                      }}>info</span>
+                      <div>
+                        <div style={{
+                          fontSize: 12, fontFamily: 'var(--font-label)', fontWeight: 500,
+                          color: 'var(--md-on-surface)', marginBottom: 4, letterSpacing: '0.02em',
+                        }}>
+                          {section.title}
+                        </div>
+                        <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--md-on-surface-variant)', margin: 0 }}>
+                          {section.text}
+                        </p>
                       </div>
-                      <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--md-on-surface-variant)', margin: 0 }}>
-                        {section.text}
-                      </p>
                     </div>
-                  </div>
-                );
-              }
-              return null;
-            })}
-          </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
           </div>
         )}
       </section>
@@ -541,47 +637,45 @@ export default function KnowledgeCenterPage() {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Summary Card */}
-          <InsightCard
-            icon="summarize"
-            title="文档摘要"
-            isDark={isDark}
-          >
-            <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--md-on-surface-variant)', margin: 0 }}>
-              本文档介绍了 DevHub API 的认证流程。涵盖通过 REST 生成 Personal Access Token 以及在标准 Bearer 认证头中使用它。同时说明了 Token 的 30 天过期策略。
-            </p>
-          </InsightCard>
+          {activeItem ? (
+            <>
+              <InsightCard
+                icon="summarize"
+                title="摘要"
+                isDark={isDark}
+              >
+                <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--md-on-surface-variant)', margin: 0 }}>
+                  {activeItem.content.length > 200
+                    ? activeItem.content.slice(0, 200) + '...'
+                    : activeItem.content || '暂无内容'}
+                </p>
+              </InsightCard>
 
-          {/* Related Docs Card */}
-          <InsightCard
-            icon="account_tree"
-            title="相关上下文"
-            isDark={isDark}
-          >
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {['速率限制策略', 'Webhook 安全'].map(name => (
-                <li key={name}>
-                  <a
-                    href="#"
-                    onClick={e => e.preventDefault()}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      fontSize: 13, color: 'var(--md-primary)',
-                      textDecoration: 'none',
-                      transition: 'opacity 0.15s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.opacity = '0.75'; }}
-                    onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>link</span>
-                    {name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </InsightCard>
+              {activeItem.category && (
+                <InsightCard
+                  icon="category"
+                  title="分类"
+                  isDark={isDark}
+                >
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '2px 10px', borderRadius: 999,
+                    background: isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)',
+                    fontSize: 12, fontFamily: 'var(--font-label)', fontWeight: 500,
+                    color: 'var(--md-on-surface)',
+                  }}>
+                    {activeItem.category}
+                  </span>
+                </InsightCard>
+              )}
+            </>
+          ) : (
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--md-on-surface-variant)', fontSize: 13 }}>
+              选择条目查看详情
+            </div>
+          )}
 
-          {/* Spacer pushes chat input to bottom */}
+          {/* Spacer */}
           <div style={{ flex: 1 }} />
 
           {/* AI Chat Input */}
@@ -591,11 +685,11 @@ export default function KnowledgeCenterPage() {
               fontWeight: 500, color: 'var(--md-on-surface-variant)', marginBottom: 8,
               letterSpacing: '0.02em',
             }}>
-              对此文档提问
+              对此条目提问
             </label>
             <div style={{ position: 'relative' }}>
               <textarea
-                placeholder="例如：如何刷新 Token？"
+                placeholder="例如：这个决策的背景是什么？"
                 rows={3}
                 style={{
                   width: '100%',
@@ -633,6 +727,25 @@ export default function KnowledgeCenterPage() {
           </div>
         </div>
       </aside>
+
+      {/* Create Note Modal */}
+      <Modal
+        title="新建笔记"
+        open={createOpen}
+        onOk={() => { if (createTitle.trim()) createMutation.mutate(); }}
+        onCancel={() => { setCreateOpen(false); setCreateTitle(''); }}
+        okText="创建"
+        cancelText="取消"
+        okButtonProps={{ disabled: !createTitle.trim(), loading: createMutation.isPending }}
+      >
+        <Input
+          placeholder="笔记标题"
+          value={createTitle}
+          onChange={e => setCreateTitle(e.target.value)}
+          onPressEnter={() => { if (createTitle.trim()) createMutation.mutate(); }}
+          autoFocus
+        />
+      </Modal>
     </div>
   );
 }

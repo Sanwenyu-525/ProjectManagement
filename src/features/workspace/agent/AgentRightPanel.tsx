@@ -1,26 +1,27 @@
 import { useState, useCallback, useRef } from 'react';
 import { useAgentWorkspaceStore } from '../../../stores/agentWorkspaceStore';
-import { useTerminalStore } from '../../../stores/terminalStore';
 import AgentPlanPanel from './AgentPlanPanel';
 import AgentGitTab from './AgentGitTab';
+import AgentMemoryPanel from './AgentMemoryPanel';
 import AgentContextPanel from './AgentContextPanel';
 
-type RightTab = 'plan' | 'git' | 'context';
+type RightTab = 'plan' | 'git' | 'memory' | 'context';
 
 const TABS: { key: RightTab; label: string; icon: string }[] = [
   { key: 'plan', label: '计划', icon: 'description' },
   { key: 'git', label: 'Git', icon: 'account_tree' },
-  { key: 'context', label: '上下文', icon: 'psychology' },
+  { key: 'context', label: '上下文', icon: 'folder_open' },
+  { key: 'memory', label: '记忆', icon: 'neurology' },
 ];
 
 interface AgentRightPanelProps {
   sessionId: string | null;
+  cwd: string;
 }
 
-export default function AgentRightPanel({ sessionId }: AgentRightPanelProps) {
+export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps) {
   const panelWidth = useAgentWorkspaceStore(s => s.panelWidth);
   const setPanelWidth = useAgentWorkspaceStore(s => s.setPanelWidth);
-  const repoPath = useTerminalStore(s => s.defaultCwd);
   const [activeTab, setActiveTab] = useState<RightTab>('plan');
   const resizingRef = useRef(false);
 
@@ -74,8 +75,9 @@ export default function AgentRightPanel({ sessionId }: AgentRightPanelProps) {
       {/* Content */}
       <div style={styles.content}>
         {activeTab === 'plan' && <AgentPlanPanel sessionId={sessionId} />}
-        {activeTab === 'git' && <AgentGitTab repoPath={repoPath} />}
-        {activeTab === 'context' && <AgentContextPanel sessionId={sessionId} />}
+        {activeTab === 'git' && <AgentGitTab repoPath={cwd} />}
+        {activeTab === 'context' && <AgentContextPanel sessionId={sessionId} cwd={cwd} />}
+        {activeTab === 'memory' && <AgentMemoryPanel sessionId={sessionId} />}
       </div>
     </div>
   );
@@ -87,9 +89,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     flexShrink: 0,
     background: 'var(--md-surface-container-lowest)',
-    borderRadius: 12,
-    border: '1px solid var(--md-outline-variant)',
-    boxShadow: '0 2px 8px rgba(11, 28, 48, 0.04)',
+    borderLeft: '1px solid var(--md-outline-variant)',
     overflow: 'hidden',
     position: 'relative',
   },

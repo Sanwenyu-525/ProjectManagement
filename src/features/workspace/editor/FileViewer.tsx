@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView, keymap } from '@codemirror/view';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -25,15 +25,22 @@ interface FileViewerProps {
   language: string;
   isBinary: boolean;
   isDark: boolean;
+  tooLarge?: boolean;
   onChange?: (value: string) => void;
   onSave?: () => void;
   onCreateEditor?: (view: EditorView) => void;
   viewRef?: React.MutableRefObject<EditorView | null>;
+  autoCopy?: boolean;
 }
 
 export default function FileViewer({
-  path, content, language, isBinary, isDark, onChange, onSave, onCreateEditor, viewRef,
+  path, content, language, isBinary, isDark, tooLarge, onChange, onSave, onCreateEditor, viewRef, autoCopy,
 }: FileViewerProps) {
+  // Too large — show warning placeholder
+  if (tooLarge) {
+    return <TooLargePlaceholder path={path} />;
+  }
+
   // Image preview
   if (isBinary && isImageFile(path)) {
     return <ImageViewer path={path} />;
@@ -54,6 +61,7 @@ export default function FileViewer({
       onSave={onSave}
       onCreateEditor={onCreateEditor}
       viewRef={viewRef}
+      autoCopy={autoCopy}
     />
   );
 }
@@ -89,6 +97,26 @@ const imageStyles: Record<string, React.CSSProperties> = {
     boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
   },
 };
+
+/* ── Too Large Placeholder ────────────────────────────────────── */
+
+function TooLargePlaceholder({ path }: { path: string }) {
+  const name = path.split(/[/\\]/).pop() ?? path;
+
+  return (
+    <div style={binaryStyles.container}>
+      <span className="material-symbols-outlined" style={{ fontSize: 48, color: 'var(--md-error, #b3261e)' }}>
+        warning
+      </span>
+      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--md-on-surface, #1c1b1f)' }}>
+        {name}
+      </span>
+      <span style={{ fontSize: 12, color: 'var(--md-on-surface-variant, #49454f)' }}>
+        文件超过 1MB，无法在编辑器中打开
+      </span>
+    </div>
+  );
+}
 
 /* ── Binary Placeholder ─────────────────────────────────────── */
 
@@ -136,9 +164,20 @@ interface TextEditorProps {
   onSave?: () => void;
   onCreateEditor?: (view: EditorView) => void;
   viewRef?: React.MutableRefObject<EditorView | null>;
+  autoCopy?: boolean;
 }
 
-function TextEditor({ content, language, isDark, onChange, onSave, onCreateEditor, viewRef }: TextEditorProps) {
+function TextEditor({ content, language, isDark, onChange, onSave, onCreateEditor, viewRef, autoCopy }: TextEditorProps) {
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+  const composingRef = useRef(false);
+  const autoCopyRef = useRef(autoCopy);
+  autoCopyRef.current = autoCopy;
+  const [viewReady, setViewReady] = useState(false);
+
+  // Stable extensions — keymap reads onSave via ref, deps stay minimal
   const extensions = useMemo(() => {
     const exts = [];
     const langExt = getLanguageExtension(language);
@@ -146,41 +185,80 @@ function TextEditor({ content, language, isDark, onChange, onSave, onCreateEdito
     exts.push(makeDevhubTheme(isDark));
     exts.push(devhubHighlight);
     exts.push(EditorView.lineWrapping);
-    if (onSave) {
-      exts.push(keymap.of([{
-        key: 'Mod-s',
-        run: () => { onSave(); return true; },
-      }]));
-    }
+    exts.push(keymap.of([{
+      key: 'Mod-s',
+      run: () => { onSaveRef.current?.(); return true; },
+    }]));
+    exts.push(EditorView.updateListener.of((update) => {
+      if (update.selectionSet && autoCopyRef.current) {
+        const text = update.state.sliceDoc(update.state.selection.main.from, update.state.selection.main.to);
+        if (text) {
+          navigator.clipboard.writeText(text).catch(() => {});
+        }
+      }
+    }));
     return exts;
-  }, [language, isDark, onSave]);
+  }, [language, isDark]);
 
-  // Sync CodeMirror content on language/content change
-  const handleCreateEditor = useMemo(() => {
-    if (!onCreateEditor) return undefined;
-    return (view: EditorView) => {
-      if (viewRef) viewRef.current = view;
-      onCreateEditor(view);
-    };
+  const handleCreateEditor = useCallback((view: EditorView) => {
+    if (viewRef) viewRef.current = view;
+    setViewReady(true);
+    onCreateEditor?.(view);
   }, [onCreateEditor, viewRef]);
 
+  // Sync external content changes (tab switches, file reloads) into CodeMirror imperatively.
+  // Depends on viewReady to handle initial mount race: EditorView is created in the library's
+  // useLayoutEffect, which runs after this effect on first render. When viewReady flips to true,
+  // this effect re-runs and dispatches the content into the now-ready view.
+  useEffect(() => {
+    const view = viewRef?.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current !== content) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: content },
+      });
+    }
+  }, [content, viewRef, viewReady]);
+
+  // Suppress onChange during IME composition to prevent React re-renders from
+  // interrupting the browser's IME state (root cause of Chinese input requiring two attempts).
+  const handleChange = useCallback((value: string) => {
+    if (!composingRef.current) {
+      onChangeRef.current?.(value);
+    }
+  }, []);
+
+  // Clean up viewRef on unmount
+  useEffect(() => {
+    return () => { if (viewRef) viewRef.current = null; };
+  }, [viewRef]);
+
   return (
-    <CodeMirror
-      value={content}
-      extensions={extensions}
-      onChange={onChange}
-      onCreateEditor={handleCreateEditor}
-      basicSetup={{
-        lineNumbers: true,
-        highlightActiveLineGutter: true,
-        highlightActiveLine: true,
-        foldGutter: true,
-        bracketMatching: true,
-        closeBrackets: true,
-        autocompletion: false,
-        indentOnInput: true,
+    <div
+      onCompositionStart={() => { composingRef.current = true; }}
+      onCompositionEnd={() => {
+        composingRef.current = false;
       }}
       style={{ height: '100%' }}
-    />
+    >
+      <CodeMirror
+        value=""
+        extensions={extensions}
+        onChange={handleChange}
+        onCreateEditor={handleCreateEditor}
+        basicSetup={{
+          lineNumbers: true,
+          highlightActiveLineGutter: true,
+          highlightActiveLine: true,
+          foldGutter: true,
+          bracketMatching: true,
+          closeBrackets: true,
+          autocompletion: false,
+          indentOnInput: true,
+        }}
+        style={{ height: '100%' }}
+      />
+    </div>
   );
 }

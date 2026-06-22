@@ -3,17 +3,17 @@ import { DEFAULT_SHELL, SHELL_MAP } from '../../../lib/constants';
 import { useTerminalStore } from '../../../stores/terminalStore';
 import type { Terminal } from '../../../shared/terminalTypes';
 
-export interface CreateTerminalResult {
-  terminal: Terminal;
-  id: string;
-  label: string;
-}
-
 export interface CreateTerminalOptions {
   /** Override the default working directory */
   cwd?: string;
   /** Override the terminal label */
   label?: string;
+}
+
+export interface CreateTerminalResult {
+  terminal: Terminal;
+  id: string;
+  label: string;
 }
 
 /** Extract the last folder name from a path, e.g. "D:\Develop\MyApp" → "MyApp" */

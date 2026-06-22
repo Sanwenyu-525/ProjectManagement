@@ -191,7 +191,7 @@ html {
 }
 
 [data-theme="dark"] .glass-panel {
-  background-color: rgba(22, 34, 47, 0.72);
+  background-color: rgba(37, 43, 42, 0.72);
   border-color: var(--md-outline-variant);
 }
 

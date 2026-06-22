@@ -1,6 +1,13 @@
 import { cmd } from './client';
 import type { TerminalApi, FileEntry, FileTreeNode, FileContent } from './types';
 
+export interface SlashCommandDef {
+  name: string;
+  description: string;
+  icon: string;
+  category?: string;
+}
+
 // ==================== Terminal ====================
 
 export const terminalApi: TerminalApi = {
@@ -12,6 +19,8 @@ export const terminalApi: TerminalApi = {
     cmd<string>('terminal_start_agent', { terminalId, command, args, cwd }),
   startAgentPiped: (terminalId: string, command: string, args: string[], cwd: string, stdinData: string) =>
     cmd<string>('terminal_start_agent_piped', { terminalId, command, args, cwd, stdinData }),
+  startAgentPipedPty: (terminalId: string, command: string, args: string[], cwd: string, stdinData: string) =>
+    cmd<string>('terminal_start_agent_piped_pty', { terminalId, command, args, cwd, stdinData }),
   stop: (terminalId: string) =>
     cmd('terminal_stop', { terminalId }),
   input: (terminalId: string, data: string) =>
@@ -41,4 +50,11 @@ export const filesApi = {
     cmd<void>('files_rename', { oldPath, newPath }),
   delete: (path: string) =>
     cmd<void>('files_delete', { path }),
+};
+
+// ==================== Claude Code Commands ====================
+
+export const claudeCommandsApi = {
+  list: (projectDir?: string) =>
+    cmd<SlashCommandDef[]>('claude_commands_list', { projectDir: projectDir ?? null }),
 };

@@ -1,6 +1,6 @@
 use serde_json::Value as JsonValue;
 use tauri::{command, State};
-use crate::db::Database;
+use crate::db::{Database, now_str};
 
 // ── Agent Sessions ──
 
@@ -15,7 +15,7 @@ pub async fn sessions_start(
     permission_mode: Option<String>,
 ) -> Result<String, String> {
     let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = now_str();
 
     db.execute(
         "INSERT INTO agent_sessions (id, agentTabId, runtimeId, startedAt, status, projectId, cwd, permissionMode) VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?6, ?7)",
@@ -33,7 +33,7 @@ pub async fn sessions_append_message(
     role: String,
     content: String,
 ) -> Result<(), String> {
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = now_str();
 
     db.execute(
         "INSERT INTO agent_messages (sessionId, role, content, timestamp) VALUES (?1, ?2, ?3, ?4)",
@@ -49,7 +49,7 @@ pub async fn sessions_end(
     db: State<'_, Database>,
     session_id: String,
 ) -> Result<(), String> {
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = now_str();
 
     db.execute(
         "UPDATE agent_sessions SET endedAt = ?1, status = 'ended', updatedAt = ?1 WHERE id = ?2",
@@ -68,7 +68,7 @@ pub async fn sessions_update(
     last_error: Option<String>,
     exit_code: Option<i32>,
 ) -> Result<(), String> {
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = now_str();
     let mut sets = vec!["updatedAt = ?1".to_string()];
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(now)];
     let mut idx = 2u32;
@@ -106,7 +106,8 @@ pub async fn sessions_list(
 ) -> Result<Vec<JsonValue>, String> {
     let lim = limit.unwrap_or(50);
     db.query_json(
-        "SELECT * FROM agent_sessions ORDER BY startedAt DESC LIMIT ?1",
+        "SELECT s.*, (SELECT content FROM agent_messages WHERE sessionId = s.id AND role = 'input' ORDER BY id ASC LIMIT 1) AS firstMessage \
+         FROM agent_sessions s ORDER BY s.startedAt DESC LIMIT ?1",
         rusqlite::params![lim as i64],
     ).map_err(|e| e.to_string())
         .and_then(|v| v.as_array().cloned().ok_or("unexpected".into()))
@@ -123,6 +124,22 @@ pub async fn sessions_messages(
         rusqlite::params![session_id],
     ).map_err(|e| e.to_string())
         .and_then(|v| v.as_array().cloned().ok_or("unexpected".into()))
+}
+
+/// Delete all messages in a session after the first `keep` messages.
+/// Used by the retry feature to remove messages from a given point onwards.
+#[command]
+pub async fn sessions_truncate_messages(
+    db: State<'_, Database>,
+    session_id: String,
+    keep: usize,
+) -> Result<(), String> {
+    db.execute(
+        "DELETE FROM agent_messages WHERE sessionId = ?1 AND id NOT IN \
+         (SELECT id FROM agent_messages WHERE sessionId = ?1 ORDER BY id ASC LIMIT ?2)",
+        rusqlite::params![session_id, keep as i64],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Auto-close stale running sessions.
@@ -142,9 +159,9 @@ pub async fn sessions_cleanup_stale(
     // 1) startedAt older than max_minutes ago, AND
     // 2) either has no messages, or the last message is older than idle_minutes ago
     let now = chrono::Utc::now();
-    let cutoff_start = (now - chrono::Duration::minutes(max_mins)).format("%Y-%m-%d %H:%M:%S").to_string();
-    let cutoff_idle = (now - chrono::Duration::minutes(idle_mins)).format("%Y-%m-%d %H:%M:%S").to_string();
-    let ended_at = now.format("%Y-%m-%d %H:%M:%S").to_string();
+    let cutoff_start = (now - chrono::Duration::minutes(max_mins)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let cutoff_idle = (now - chrono::Duration::minutes(idle_mins)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let ended_at = now_str();
 
     // Close sessions that started long ago and either have no messages or last message is old
     let count = db.execute_returning_changes(
@@ -177,7 +194,7 @@ pub async fn browser_record_visit(
     project_id: Option<String>,
 ) -> Result<(), String> {
     let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = now_str();
 
     db.execute(
         "INSERT INTO browser_visits (id, tabId, url, title, visitedAt, domAnalysis, projectId) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",

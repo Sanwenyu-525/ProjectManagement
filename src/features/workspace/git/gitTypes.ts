@@ -26,17 +26,6 @@ export interface GitFileChange {
   staged: boolean;
 }
 
-export interface DiffLine {
-  type: 'context' | 'add' | 'del' | 'hunk';
-  oldNum: number | null;
-  newNum: number | null;
-  content: string;
-}
-
-export interface DiffSection {
-  lines: DiffLine[];
-}
-
 export interface ProjectOption {
   id: string;
   name: string;

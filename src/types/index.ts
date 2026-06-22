@@ -25,22 +25,6 @@ export type HealthStatus = 'healthy' | 'needs_attention' | 'critical';
 // Runtime status
 export type RuntimeStatus = 'stopped' | 'starting' | 'running' | 'error';
 
-// Tag color presets
-export const TAG_COLORS = [
-  '#6366F1', // Indigo
-  '#8B5CF6', // Violet
-  '#EC4899', // Pink
-  '#EF4444', // Red
-  '#F59E0B', // Amber
-  '#22C55E', // Green
-  '#06B6D4', // Cyan
-  '#3B82F6', // Blue
-  '#F97316', // Orange
-  '#14B8A6', // Teal
-] as const;
-
-export type TagColor = typeof TAG_COLORS[number];
-
 // ==================== Core Entities ====================
 
 export interface Project {
@@ -198,26 +182,6 @@ export interface HealthCheckSummary {
   changedProjects: string[];
 }
 
-// ==================== View Models ====================
-
-export interface ProjectViewModel extends ProjectWithStats {
-  // Runtime status
-  frontendStatus: RuntimeStatus;
-  backendStatus: RuntimeStatus;
-  lastLaunchTime?: ISODateTime;
-
-  // Health
-  healthScore?: number;
-  healthStatus?: HealthStatus;
-  hasUncommittedChanges?: boolean;
-
-  // Computed
-  daysSinceLastUpdate?: number;
-  isOverdue?: boolean;
-}
-
-// ==================== Input Types ====================
-
 export interface CreateProjectInput {
   name: string;
   description?: string;
@@ -356,17 +320,6 @@ export interface DocumentWithProject extends Document {
   projectName: string;
 }
 
-// ==================== API Response Types ====================
-
-export type ApiResponse<T> = Promise<T>;
-
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
 // ==================== Detect ====================
 
 export interface DetectedProject {
@@ -482,6 +435,7 @@ export interface AgentSession {
   lastError?: string;
   exitCode?: number;
   updatedAt?: string;
+  firstMessage?: string;
 }
 
 export interface AgentMessage {
@@ -632,4 +586,119 @@ export interface UpdateIntegrationInput {
   accessToken?: string;
   username?: string;
   settings?: string;
+}
+
+// ==================== Memory (Knowledge Base) ====================
+
+export type MemoryType = 'architecture' | 'code' | 'bugfix' | 'rule' | 'session' | 'decision' | 'solution' | 'pattern' | 'prompt' | 'workflow';
+export type MemorySource = 'manual' | 'agent' | 'git' | 'task';
+
+export interface ProjectMemory {
+  id: string;
+  projectId: string | null;
+  type: MemoryType;
+  title: string;
+  content: string;
+  tags: string | null;
+  source: MemorySource;
+  sessionId: string | null;
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Decision {
+  id: string;
+  projectId: string | null;
+  title: string;
+  reason: string;
+  alternatives: string | null;
+  sessionId: string | null;
+  status: 'proposed' | 'accepted' | 'deprecated' | 'superseded';
+  context: string | null;
+  options: string | null;
+  consequences: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface CreateMemoryInput {
+  projectId?: string;
+  memoryType: MemoryType;
+  title: string;
+  content: string;
+  tags?: string;
+  source?: MemorySource;
+  sessionId?: string;
+}
+
+export interface CreateDecisionInput {
+  projectId?: string;
+  title: string;
+  reason: string;
+  alternatives?: string;
+  sessionId?: string;
+  context?: string;
+  options?: string;
+  consequences?: string;
+  status?: Decision['status'];
+}
+
+export interface UpdateDecisionInput {
+  id: string;
+  title?: string;
+  reason?: string;
+  context?: string;
+  options?: string;
+  consequences?: string;
+  status?: Decision['status'];
+}
+
+export interface ContextItem {
+  id: string;
+  source: 'memory' | 'decision';
+  score: number;
+  title: string;
+  content: string;
+  type: MemoryType;
+}
+
+export interface BuildContextResult {
+  packedContext: string;
+  memoryCount: number;
+  decisionCount: number;
+}
+
+// ==================== Knowledge Base ====================
+
+export interface PersonalNote {
+  id: string;
+  projectId: string | null;
+  title: string;
+  content: string;
+  tags: string | null;
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateNoteInput {
+  projectId?: string;
+  title: string;
+  content?: string;
+  tags?: string;
+}
+
+export interface KnowledgeItem {
+  id: string;
+  projectId: string | null;
+  title: string;
+  content: string;
+  tags: string | null;
+  source: 'memory' | 'decision' | 'document' | 'note';
+  category: string;
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+  filePath: string | null;
 }

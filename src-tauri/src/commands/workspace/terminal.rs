@@ -21,7 +21,7 @@ static PROCESSES: std::sync::LazyLock<Mutex<HashMap<String, Child>>> =
 
 struct PtyTerminal {
     child: Box<dyn portable_pty::Child + Send + Sync>,
-    writer: Box<dyn Write + Send>,
+    writer: Option<Box<dyn Write + Send>>,
     master: Box<dyn portable_pty::MasterPty + Send>,
 }
 
@@ -77,7 +77,9 @@ fn spawn_output_reader(
     reader: Box<dyn Read + Send>,
     app: AppHandle,
     terminal_id: String,
+    stream: &str,
 ) {
+    let stream = stream.to_string();
     std::thread::spawn(move || {
         let mut reader = reader;
         let mut decoder = encoding_rs::UTF_8.new_decoder();
@@ -93,7 +95,7 @@ fn spawn_output_reader(
                         TerminalOutput {
                             terminal_id: terminal_id.clone(),
                             data,
-                            stream: "stdout".into(),
+                            stream: stream.clone(),
                         },
                     );
                 }
@@ -146,10 +148,10 @@ pub async fn terminal_start(
 
     // Spawn output readers
     if let Some(stdout) = stdout {
-        spawn_output_reader(Box::new(stdout), app.clone(), terminal_id.clone());
+        spawn_output_reader(Box::new(stdout), app.clone(), terminal_id.clone(), "stdout");
     }
     if let Some(stderr) = stderr {
-        spawn_output_reader(Box::new(stderr), app.clone(), terminal_id.clone());
+        spawn_output_reader(Box::new(stderr), app.clone(), terminal_id.clone(), "stderr");
     }
 
     // Register process in registry
@@ -281,14 +283,14 @@ pub async fn terminal_start_shell(
             terminal_id.clone(),
             PtyTerminal {
                 child,
-                writer,
+                writer: Some(writer),
                 master: pair.master,
             },
         );
     }
 
     // Output reader thread (with UTF-8 remnant handling for CJK characters)
-    spawn_output_reader(reader, app.clone(), terminal_id.clone());
+    spawn_output_reader(reader, app.clone(), terminal_id.clone(), "stdout");
 
     // Exit watcher thread (polling with try_wait, keeps registry entry alive)
     let app_exit = app.clone();
@@ -296,30 +298,31 @@ pub async fn terminal_start_shell(
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(200));
-            let exited = {
-                let mut terminals = recover_lock(&PTY_TERMINALS);
-                match terminals.get_mut(&tid_exit) {
-                    Some(terminal) => terminal.child.try_wait().ok().flatten().is_some(),
-                    None => break,
+            // Single lock acquisition: check if exited AND get exit code together
+            let mut terminals = recover_lock(&PTY_TERMINALS);
+            match terminals.get_mut(&tid_exit) {
+                Some(terminal) => {
+                    if let Ok(Some(status)) = terminal.child.try_wait() {
+                        let code = status.exit_code() as i32;
+                        // Emit exit event BEFORE removing from registry so
+                        // terminal_stop/input/resize can still reach the process
+                        // while the frontend processes the exit.
+                        drop(terminals);
+                        let _ = app_exit.emit(
+                            "terminal-exit",
+                            TerminalExit {
+                                terminal_id: tid_exit.clone(),
+                                code: Some(code),
+                            },
+                        );
+                        let mut terminals = recover_lock(&PTY_TERMINALS);
+                        terminals.remove(&tid_exit);
+                        break;
+                    }
+                    // still running or error — re-lock on next iteration
                 }
-            };
-            if !exited {
-                continue;
+                None => break, // removed externally (e.g. terminal_stop)
             }
-            let code = {
-                let mut terminals = recover_lock(&PTY_TERMINALS);
-                terminals.remove(&tid_exit).and_then(|mut t| {
-                    t.child.try_wait().ok().flatten().map(|s| s.exit_code() as i32)
-                })
-            };
-            let _ = app_exit.emit(
-                "terminal-exit",
-                TerminalExit {
-                    terminal_id: tid_exit.clone(),
-                    code,
-                },
-            );
-            break;
         }
     });
 
@@ -404,14 +407,14 @@ pub async fn terminal_start_agent(
             terminal_id.clone(),
             PtyTerminal {
                 child,
-                writer,
+                writer: Some(writer),
                 master: pair.master,
             },
         );
     }
 
     // Output reader thread (with UTF-8 remnant handling for CJK characters)
-    spawn_output_reader(reader, app.clone(), terminal_id.clone());
+    spawn_output_reader(reader, app.clone(), terminal_id.clone(), "stdout");
 
     // Exit watcher thread (polling with try_wait, keeps registry entry alive
     // so terminal_stop/input/resize can still reach the process while running)
@@ -420,31 +423,31 @@ pub async fn terminal_start_agent(
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(200));
-            let exited = {
-                let mut terminals = recover_lock(&PTY_TERMINALS);
-                match terminals.get_mut(&tid_exit) {
-                    Some(terminal) => terminal.child.try_wait().ok().flatten().is_some(),
-                    None => break, // removed externally (e.g. terminal_stop)
+            // Single lock acquisition: check if exited AND get exit code together
+            let mut terminals = recover_lock(&PTY_TERMINALS);
+            match terminals.get_mut(&tid_exit) {
+                Some(terminal) => {
+                    if let Ok(Some(status)) = terminal.child.try_wait() {
+                        let code = status.exit_code() as i32;
+                        drop(terminals);
+                        // Emit exit event BEFORE removing from registry so
+                        // terminal_stop/input/resize can still reach the process
+                        // while the frontend processes the exit.
+                        let _ = app_exit.emit(
+                            "terminal-exit",
+                            TerminalExit {
+                                terminal_id: tid_exit.clone(),
+                                code: Some(code),
+                            },
+                        );
+                        let mut terminals = recover_lock(&PTY_TERMINALS);
+                        terminals.remove(&tid_exit);
+                        break;
+                    }
+                    // still running or error — re-lock on next iteration
                 }
-            };
-            if !exited {
-                continue;
+                None => break, // removed externally (e.g. terminal_stop)
             }
-            // Process exited — remove from registry and emit exit event
-            let code = {
-                let mut terminals = recover_lock(&PTY_TERMINALS);
-                terminals.remove(&tid_exit).and_then(|mut t| {
-                    t.child.try_wait().ok().flatten().map(|s| s.exit_code() as i32)
-                })
-            };
-            let _ = app_exit.emit(
-                "terminal-exit",
-                TerminalExit {
-                    terminal_id: tid_exit.clone(),
-                    code,
-                },
-            );
-            break;
         }
     });
 
@@ -525,10 +528,10 @@ pub async fn terminal_start_agent_piped(
     let stderr = child.stderr.take();
 
     if let Some(stdout) = stdout {
-        spawn_output_reader(Box::new(stdout), app.clone(), terminal_id.clone());
+        spawn_output_reader(Box::new(stdout), app.clone(), terminal_id.clone(), "stdout");
     }
     if let Some(stderr) = stderr {
-        spawn_output_reader(Box::new(stderr), app.clone(), terminal_id.clone());
+        spawn_output_reader(Box::new(stderr), app.clone(), terminal_id.clone(), "stderr");
     }
 
     // Register process
@@ -573,6 +576,138 @@ pub async fn terminal_start_agent_piped(
     Ok(terminal_id)
 }
 
+// ── Start agent via PTY with stdin_data (streaming-friendly one-shot) ───
+
+/// Like `terminal_start_agent_piped` but uses a PTY instead of pipes.
+/// This gives the child process line-buffered stdout (instead of block-buffered),
+/// enabling real-time streaming of `--output-format stream-json` output.
+/// The `stdin_data` is written to the PTY writer and then dropped to signal EOF.
+#[command]
+pub async fn terminal_start_agent_piped_pty(
+    app: AppHandle,
+    terminal_id: String,
+    command: String,
+    args: Vec<String>,
+    cwd: String,
+    stdin_data: String,
+) -> Result<String, String> {
+    let pty_system = native_pty_system();
+
+    let size = PtySize {
+        rows: 24,
+        cols: 120,
+        pixel_width: 0,
+        pixel_height: 0,
+    };
+
+    let pair = pty_system
+        .openpty(size)
+        .map_err(|e| format!("创建 PTY 失败: {}", e))?;
+
+    #[cfg(target_os = "windows")]
+    let (mut cmd_builder, prompt_file) = {
+        // Write prompt to temp file to avoid cmd.exe quote-stripping issues.
+        // `cmd.exe /C` strips outer quotes, breaking `claude -p "prompt with spaces"`.
+        // Using `< file` redirect lets cmd.exe read the prompt from a file instead.
+        let temp_path = std::env::temp_dir().join(format!("claude_prompt_{}.txt", uuid::Uuid::new_v4()));
+        std::fs::write(&temp_path, &stdin_data)
+            .map_err(|e| format!("写入临时文件失败: {}", e))?;
+
+        let redirect_arg = format!("{} < {}", command, temp_path.display());
+        let mut c = CommandBuilder::new("cmd.exe");
+        c.arg("/C");
+        c.arg(&redirect_arg);
+        for arg in &args {
+            c.arg(arg);
+        }
+        (c, Some(temp_path))
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let (mut cmd_builder, prompt_file): (CommandBuilder, Option<std::path::PathBuf>) = {
+        let mut c = CommandBuilder::new(&command);
+        // On Unix, pass prompt as argument after -p (no cmd.exe quote-stripping)
+        let mut full_args = Vec::new();
+        if let Some(first) = args.first() {
+            full_args.push(first.clone()); // "-p"
+            full_args.push(stdin_data.clone()); // prompt
+            full_args.extend(args[1..].iter().cloned()); // remaining flags
+        }
+        for arg in &full_args {
+            c.arg(arg);
+        }
+        (c, None)
+    };
+
+    cmd_builder.cwd(&cwd);
+    cmd_builder.env("TERM", "dumb");
+    cmd_builder.env("FORCE_COLOR", "0");
+    cmd_builder.env("NO_COLOR", "1");
+
+    let child = pair
+        .slave
+        .spawn_command(cmd_builder)
+        .map_err(|e| format!("启动智能体失败: {} (命令: {})", e, command))?;
+
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("获取 PTY reader 失败: {}", e))?;
+
+    {
+        let mut terminals = recover_lock(&PTY_TERMINALS);
+        terminals.insert(
+            terminal_id.clone(),
+            PtyTerminal {
+                child,
+                writer: None, // writer already consumed and dropped
+                master: pair.master,
+            },
+        );
+    }
+
+    spawn_output_reader(reader, app.clone(), terminal_id.clone(), "stdout");
+
+    let app_exit = app.clone();
+    let tid_exit = terminal_id.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            // Single lock acquisition: check if exited AND get exit code together
+            let mut terminals = recover_lock(&PTY_TERMINALS);
+            match terminals.get_mut(&tid_exit) {
+                Some(terminal) => {
+                    if let Ok(Some(status)) = terminal.child.try_wait() {
+                        let code = status.exit_code() as i32;
+                        drop(terminals);
+                        // Clean up temp prompt file if it exists
+                        if let Some(ref path) = prompt_file {
+                            let _ = std::fs::remove_file(path);
+                        }
+                        // Emit exit event BEFORE removing from registry so
+                        // terminal_stop/input/resize can still reach the process
+                        // while the frontend processes the exit.
+                        let _ = app_exit.emit(
+                            "terminal-exit",
+                            TerminalExit {
+                                terminal_id: tid_exit.clone(),
+                                code: Some(code),
+                            },
+                        );
+                        let mut terminals = recover_lock(&PTY_TERMINALS);
+                        terminals.remove(&tid_exit);
+                        break;
+                    }
+                    // still running or error — re-lock on next iteration
+                }
+                None => break, // removed externally (e.g. terminal_stop)
+            }
+        }
+    });
+
+    Ok(terminal_id)
+}
+
 // ── Input (works for both piped and PTY) ─────────────────────────────────
 
 #[command]
@@ -581,15 +716,17 @@ pub async fn terminal_input(terminal_id: String, data: String) -> Result<(), Str
     {
         let mut terminals = recover_lock(&PTY_TERMINALS);
         if let Some(terminal) = terminals.get_mut(&terminal_id) {
-            terminal
-                .writer
-                .write_all(data.as_bytes())
-                .map_err(|e| format!("写入失败: {}", e))?;
-            terminal
-                .writer
-                .flush()
-                .map_err(|e| format!("刷新失败: {}", e))?;
-            return Ok(());
+            if let Some(ref mut writer) = terminal.writer {
+                writer
+                    .write_all(data.as_bytes())
+                    .map_err(|e| format!("写入失败: {}", e))?;
+                writer
+                    .flush()
+                    .map_err(|e| format!("刷新失败: {}", e))?;
+                return Ok(());
+            } else {
+                return Err("stdin 不可用 (PTY writer 已关闭)".into());
+            }
         }
     }
 
@@ -637,7 +774,7 @@ pub async fn terminal_stop(terminal_id: String) -> Result<(), String> {
         }
     }
 
-    Err("进程不存在或已退出".into())
+    Ok(()) // Already exited and cleaned up
 }
 
 // ── Resize PTY ───────────────────────────────────────────────────────────
@@ -699,4 +836,97 @@ pub fn cleanup_all() {
             terminal.child.kill().ok();
         }
     }
+}
+
+// ── Slash commands (product layer, not model layer) ──────────────
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlashCommandDef {
+    pub name: String,
+    pub description: String,
+    pub icon: String,
+    pub category: String,
+}
+
+fn slash_cmd(name: &str, desc: &str, icon: &str, category: &str) -> SlashCommandDef {
+    SlashCommandDef { name: name.into(), description: desc.into(), icon: icon.into(), category: category.into() }
+}
+
+fn scan_claude_commands(dir: &std::path::Path) -> Vec<SlashCommandDef> {
+    let mut cmds = Vec::new();
+    if !dir.is_dir() { return cmds; }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "md") {
+                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                if name.is_empty() { continue; }
+                let desc = std::fs::read_to_string(&path).ok()
+                    .and_then(|c| c.lines().find(|l| !l.trim().is_empty())
+                        .map(|l| l.trim_start_matches('#').trim().to_string()))
+                    .unwrap_or_else(|| format!("自定义: {}", name));
+                cmds.push(slash_cmd(&format!("/{}", name), &desc, "extension", "custom"));
+            }
+        }
+    }
+    cmds
+}
+
+#[command]
+pub async fn claude_commands_list(project_dir: Option<String>) -> Vec<SlashCommandDef> {
+    let mut cmds = vec![
+        // ── Claude Code built-in ──
+        slash_cmd("/clear", "清空当前会话", "delete_sweep", "claude"),
+        slash_cmd("/compact", "压缩上下文", "compress", "claude"),
+        slash_cmd("/config", "查看/修改配置", "settings", "claude"),
+        slash_cmd("/cost", "查看 token 用量", "paid", "claude"),
+        slash_cmd("/diff", "查看 git diff", "difference", "claude"),
+        slash_cmd("/doctor", "诊断安装", "health_and_safety", "claude"),
+        slash_cmd("/export", "导出会话", "download", "claude"),
+        slash_cmd("/help", "帮助信息", "help", "claude"),
+        slash_cmd("/init", "初始化 CLAUDE.md", "rocket_launch", "claude"),
+        slash_cmd("/login", "登录账号", "login", "claude"),
+        slash_cmd("/logout", "登出账号", "logout", "claude"),
+        slash_cmd("/mcp", "管理 MCP 服务器", "dns", "claude"),
+        slash_cmd("/memory", "查看/编辑记忆", "psychology", "claude"),
+        slash_cmd("/model", "切换模型", "smart_toy", "claude"),
+        slash_cmd("/permissions", "管理权限", "shield", "claude"),
+        slash_cmd("/pr-review", "审查 PR", "rate_review", "claude"),
+        slash_cmd("/resume", "恢复会话", "history", "claude"),
+        slash_cmd("/status", "系统状态", "info", "claude"),
+        slash_cmd("/vim", "vim 模式", "keyboard", "claude"),
+        // ── Skills ──
+        slash_cmd("/review", "审查分支/PR", "grading", "skill"),
+        slash_cmd("/code-review", "代码审查", "rate_review", "skill"),
+        slash_cmd("/security-review", "安全审查", "security", "skill"),
+        slash_cmd("/simplify", "简化代码", "compress", "skill"),
+        slash_cmd("/diagnose", "诊断 bug", "bug_report", "skill"),
+        slash_cmd("/verify", "验证变更", "verified", "skill"),
+        slash_cmd("/run", "启动应用", "play_arrow", "skill"),
+        slash_cmd("/prototype", "构建原型", "build_circle", "skill"),
+        slash_cmd("/brainstorming", "头脑风暴", "lightbulb", "skill"),
+        slash_cmd("/deep-research", "深度研究", "manage_search", "skill"),
+        slash_cmd("/doc-coauthoring", "协作写文档", "edit_note", "skill"),
+        slash_cmd("/design-engineer-3", "界面设计", "palette", "skill"),
+        slash_cmd("/ui-ux-pro-max", "UI/UX 设计", "design_services", "skill"),
+        slash_cmd("/taste-skill", "前端设计优化", "auto_awesome", "skill"),
+        slash_cmd("/redesign-skill", "升级网站", "web", "skill"),
+        slash_cmd("/pdf", "处理 PDF", "picture_as_pdf", "skill"),
+        slash_cmd("/docx", "处理 Word", "description", "skill"),
+        slash_cmd("/xlsx", "处理 Excel", "table_chart", "skill"),
+        slash_cmd("/pptx", "处理 PPT", "slideshow", "skill"),
+        slash_cmd("/webapp-testing", "Web 测试", "web_asset", "skill"),
+        slash_cmd("/image-to-code-skill", "图片转代码", "image", "skill"),
+    ];
+
+    // ── Custom commands from .claude/commands/ ──
+    if let Some(ref dir) = project_dir {
+        cmds.extend(scan_claude_commands(&std::path::Path::new(dir).join(".claude").join("commands")));
+    }
+    if let Some(home) = dirs::home_dir() {
+        cmds.extend(scan_claude_commands(&home.join(".claude").join("commands")));
+    }
+
+    cmds
 }

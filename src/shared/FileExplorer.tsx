@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { Modal, message } from 'antd';
 import { filesApi } from '../api';
@@ -22,15 +22,24 @@ function dirLabel(path: string): string {
   return path.split(/[/\\]/).pop() || path;
 }
 
+function formatModified(iso: string): string {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins}分钟前`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}小时前`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}天前`;
+  return new Date(iso).toLocaleDateString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 interface DirState {
   path: string;
   tree: FileTreeNode[];
   expanded: Set<string>;
   loading: boolean;
-}
-
-interface Props {
-  collapsed: boolean;
 }
 
 // 剪贴板状态
@@ -40,7 +49,15 @@ interface ClipboardState {
   isDir: boolean;
 }
 
-export default function FileExplorer({ collapsed }: Props) {
+interface Props {
+  collapsed: boolean;
+}
+
+export interface FileExplorerHandle {
+  openAddDirectory: () => void;
+}
+
+export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ collapsed }, ref) {
   const isDark = useThemeStore(s => s.mode === 'dark');
   const [dirs, setDirs] = useState<DirState[]>([]);
   const [hoveredDir, setHoveredDir] = useState<string | null>(null);
@@ -64,6 +81,11 @@ export default function FileExplorer({ collapsed }: Props) {
 
   // 剪贴板状态
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
+
+  // Expose methods to parent via ref
+  useImperativeHandle(ref, () => ({
+    openAddDirectory: () => setIsAdding(true),
+  }));
 
   // Persist dir list to localStorage whenever it changes
   useEffect(() => {
@@ -137,12 +159,17 @@ export default function FileExplorer({ collapsed }: Props) {
   // 关闭右键菜单
   useEffect(() => {
     if (!contextMenu) return;
-    const handler = () => setContextMenu(null);
-    document.addEventListener('click', handler);
-    document.addEventListener('contextmenu', handler);
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    const clickHandler = () => setContextMenu(null);
+    document.addEventListener('click', clickHandler);
+    document.addEventListener('contextmenu', clickHandler);
+    window.addEventListener('keydown', handler);
     return () => {
-      document.removeEventListener('click', handler);
-      document.removeEventListener('contextmenu', handler);
+      document.removeEventListener('click', clickHandler);
+      document.removeEventListener('contextmenu', clickHandler);
+      window.removeEventListener('keydown', handler);
     };
   }, [contextMenu]);
 
@@ -618,7 +645,7 @@ export default function FileExplorer({ collapsed }: Props) {
       )}
     </div>
   );
-}
+})
 
 // 右键菜单项类型
 interface ContextMenuItem {
@@ -715,6 +742,11 @@ function ContextMenu({
 
   return (
     <div
+      role="menu"
+      aria-label="文件操作"
+      onKeyDown={e => {
+        if (e.key === 'Escape') onClose();
+      }}
       style={{
         position: 'fixed',
         left: finalX,
@@ -744,6 +776,11 @@ function ContextMenu({
         return (
           <div
             key={item.key}
+            role="menuitem"
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); item.onClick?.(); }
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -753,9 +790,12 @@ function ContextMenu({
               color: item.style?.color || 'var(--md-on-surface)',
               cursor: 'pointer',
               transition: 'background 0.1s',
+              outline: 'none',
             }}
             onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            onFocus={e => { e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
+            onBlur={e => { e.currentTarget.style.background = 'transparent'; }}
             onClick={item.onClick}
           >
             {item.icon}
@@ -768,7 +808,7 @@ function ContextMenu({
 }
 
 // TreeNode 组件
-function TreeNode({
+const TreeNode = memo(function TreeNode({
   node,
   depth,
   collapsed,
@@ -878,9 +918,22 @@ function TreeNode({
               }}
             />
           ) : (
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {node.name}
-            </span>
+            <>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {node.name}
+              </span>
+              {node.modified && !node.isDir && (
+                <span style={{
+                  fontSize: 11,
+                  color: 'var(--md-outline)',
+                  flexShrink: 0,
+                  marginLeft: 4,
+                  whiteSpace: 'nowrap',
+                }}>
+                  {formatModified(node.modified)}
+                </span>
+              )}
+            </>
           )
         )}
       </div>
@@ -952,7 +1005,7 @@ function TreeNode({
       ))}
     </>
   );
-}
+});
 
 function fileIcon(ext?: string): string {
   switch (ext) {

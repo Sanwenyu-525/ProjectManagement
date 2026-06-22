@@ -1,5 +1,4 @@
 import type { ProjectWithStats } from '../../types';
-import { getEffectiveCommand } from '../../lib/launchUtils';
 
 // ── Priority Logic ──
 
@@ -51,44 +50,3 @@ export function extractPortFromCommand(command: string): number | null {
   return 3000;
 }
 
-// ── Launch Hints ──
-
-export function getLaunchHints(project: ProjectWithStats): string[] {
-  const hints: string[] = [];
-  const techStack = project.techStack || [];
-  const command = getEffectiveCommand(project) || '';
-
-  if (techStack.some((t: string) => /react.native|flutter|ionic/i.test(t))) {
-    hints.push('移动端项目：启动后需要在模拟器或真机上运行');
-  }
-
-  if (techStack.some((t: string) => /react.native/i.test(t))) {
-    if (command.includes('android')) hints.push('Android 调试：确保已连接设备或启动模拟器');
-    if (command.includes('ios')) hints.push('iOS 调试：需要在 macOS 上运行，确保 Xcode 已安装');
-    if (!command.includes('android') && !command.includes('ios')) {
-      hints.push('React Native：请确保已启动模拟器或连接真机');
-    }
-  }
-
-  if (techStack.some((t: string) => /flutter/i.test(t))) {
-    hints.push('Flutter：确保 Flutter SDK 已安装，设备已连接');
-  }
-
-  if (techStack.some((t: string) => /electron|tauri/i.test(t))) {
-    hints.push('桌面应用：将启动独立的桌面窗口');
-  }
-
-  if (command.includes('docker')) {
-    hints.push('Docker：确保 Docker Desktop 正在运行');
-  }
-
-  if (command.includes('android')) {
-    hints.push('Android：确保已连接设备或启动模拟器');
-  }
-
-  if (command.includes('ios') && !command.includes('android')) {
-    hints.push('iOS：需要在 macOS 上运行');
-  }
-
-  return hints;
-}

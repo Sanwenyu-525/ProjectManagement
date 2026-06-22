@@ -16,6 +16,7 @@ export interface FileTreeNode {
   children?: FileTreeNode[];
   size?: number;
   extension?: string;
+  modified?: string;
 }
 
 export interface FileContent {
@@ -26,6 +27,7 @@ export interface FileContent {
   lineCount: number;
   isBinary: boolean;
   isWritable: boolean;
+  tooLarge: boolean;
   modified: string;
 }
 
@@ -41,6 +43,7 @@ export interface TerminalApi {
   startShell: (terminalId: string, shell: string, cwd: string, args?: string[]) => Promise<string>;
   startAgent: (terminalId: string, command: string, args: string[], cwd: string) => Promise<string>;
   startAgentPiped: (terminalId: string, command: string, args: string[], cwd: string, stdinData: string) => Promise<string>;
+  startAgentPipedPty: (terminalId: string, command: string, args: string[], cwd: string, stdinData: string) => Promise<string>;
   stop: (terminalId: string) => Promise<void>;
   input: (terminalId: string, data: string) => Promise<void>;
   resize: (terminalId: string, cols: number, rows: number) => Promise<void>;

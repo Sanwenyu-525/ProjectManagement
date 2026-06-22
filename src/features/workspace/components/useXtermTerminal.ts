@@ -10,6 +10,8 @@ import '@xterm/xterm/css/xterm.css';
 interface XtermOptions {
   terminalId: string;
   theme: TerminalTheme;
+  /** 当 false 时不创建终端（用于 terminalId 尚未就绪时）。默认 true */
+  enabled?: boolean;
   /** Called when user types input (terminal stdin). Omit for non-interactive (agent) use. */
   onData?: (data: string) => void;
   /** Called when the PTY process exits. */
@@ -39,10 +41,10 @@ export function useXtermTerminal(
   onCwdChangeRef.current = options.onCwdChange;
   onTitleChangeRef.current = options.onTitleChange;
 
-  const { terminalId, theme } = options;
+  const { terminalId, theme, enabled = true } = options;
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!enabled || !containerRef.current) return;
 
     const term = new Terminal({
       cursorBlink: false,
@@ -204,7 +206,7 @@ export function useXtermTerminal(
       termRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [terminalId, theme]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, terminalId, theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fit when needed (e.g. tab becoming active, status change)
   const refit = () => {
