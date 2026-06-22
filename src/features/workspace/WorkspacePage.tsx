@@ -7,23 +7,20 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useAgentTabStore } from '../../stores/agentTabStore';
 import { useAgentPlanStore } from '../../stores/agentPlanStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import { terminalApi, sessionsApi, gitApi, workspacesApi, agentTasksApi, memoryApi } from '../../api';
+import { terminalApi, sessionsApi, gitApi, workspacesApi } from '../../api';
 import { queryKeys } from '../../api/queryKeys';
 import { TerminalExitEvent, TerminalOutputEvent } from '../../shared/terminalTypes';
-import AgentIdleState from './agent/AgentIdleState';
 import AgentTabBar from './agent/AgentTabBar';
+import AgentTerminalMode from './agent/AgentTerminalMode';
+import type { AgentTerminalModeHandle } from './agent/AgentTerminalMode';
+import AgentToolbar from './agent/AgentToolbar';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { folderName } from './components/terminalFactory';
-import { createProvider } from './agent/providers';
-import { PlanRuntime } from './agent/PlanRuntime';
 
-// Lazy-load heavy components — only needed when agent is running or editor/terminal are open
-const AgentChat = lazy(() => import('./agent/AgentChat'));
+// Lazy-load heavy components — only needed when editor/terminal/right-panel are open
 const CodeEditorPane = lazy(() => import('./editor/CodeEditorPane'));
 const BottomPanel = lazy(() => import('./terminal/BottomPanel'));
 const AgentRightPanel = lazy(() => import('./agent/AgentRightPanel'));
-import type { AgentProvider } from './agent/AgentProvider';
-import type { AgentSession } from '../../types';
 
 let staleSessionsCleanedUp = false; // Run cleanupStale only once per app session
 
@@ -37,21 +34,9 @@ const URL_PATTERNS = [
 
 export default function WorkspacePage() {
   const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
-  const setActiveProvider = useAgentStore(s => s.setActiveProvider);
   const tabs = useAgentTabStore(s => s.tabs);
   const activeTabId = useAgentTabStore(s => s.activeTabId);
-  const switchTab = useAgentTabStore(s => s.switchTab);
   const addTab = useAgentTabStore(s => s.addTab);
-  const setSessionId = useAgentTabStore(s => s.setSessionId);
-  const setLabel = useAgentTabStore(s => s.setLabel);
-  const setTabCwd = useAgentTabStore(s => s.setCwd);
-
-  // Recent sessions for idle state
-  const { data: recentSessions = [] } = useQuery({
-    queryKey: queryKeys.sessions.all,
-    queryFn: () => sessionsApi.list(5),
-    staleTime: 30_000,
-  });
 
   // Workspace stats (tasks, issues, docs)
   const { data: stats } = useQuery({
@@ -60,17 +45,11 @@ export default function WorkspacePage() {
     staleTime: 30_000,
   });
 
-  const appendMessage = useAgentStore(s => s.appendMessage);
-  const startStreaming = useAgentStore(s => s.startStreaming);
   const defaultCwd = useTerminalStore(s => s.defaultCwd);
-  const providersRef = useRef<Map<string, AgentProvider>>(new Map());
 
-  // Derive active tab and its provider
+  // Derive active tab
   const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId]);
-  const activeProvider = useMemo(
-    () => activeTabId ? providersRef.current.get(activeTabId) ?? null : null,
-    [activeTabId, activeTab?.sessionId], // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  const activeTabMode = activeTab?.agentMode || 'xterm';
 
   // Git log for last commit time
   const { data: gitLog } = useQuery({
@@ -103,16 +82,14 @@ export default function WorkspacePage() {
   // Plan mode
   const planMode = useAgentStore(s => s.planMode);
   const setPlanMode = useAgentStore(s => s.setPlanMode);
-  const planRuntimeRef = useRef<PlanRuntime | null>(null);
   const planSessionId = useAgentPlanStore(s => s.sessionId);
   const planCwd = useAgentPlanStore(s => s.cwd);
-  const [idleCwd, setIdleCwd] = useState<string | null>(() => localStorage.getItem('agent_lastCwd'));
 
   // Effective cwd for the right panel: plan's cwd when in plan mode, otherwise active tab's cwd
   const effectiveCwd = useMemo(() => {
     if (planMode && planCwd) return planCwd;
-    return activeTab?.cwd || idleCwd || defaultCwd;
-  }, [planMode, planCwd, activeTab?.cwd, idleCwd, defaultCwd]);
+    return activeTab?.cwd || localStorage.getItem('agent_lastCwd') || defaultCwd;
+  }, [planMode, planCwd, activeTab?.cwd, defaultCwd]);
 
   // On mount, clean up stale sessions (>60 min old with no activity in 30 min) — once per app session
   useEffect(() => {
@@ -120,132 +97,10 @@ export default function WorkspacePage() {
       staleSessionsCleanedUp = true;
       sessionsApi.cleanupStale(60, 30).catch(() => {});
     }
+  }, []);
 
-    // Stop all providers and clear agent state on unmount
-    const currentProviders = providersRef.current;
-    return () => {
-      for (const [, provider] of currentProviders) {
-        provider.stop().catch(() => {});
-      }
-      currentProviders.clear();
-      useAgentStore.getState().clearStreaming();
-      setActiveProvider(null);
-      planRuntimeRef.current?.destroy();
-      planRuntimeRef.current = null;
-    };
-  }, [setActiveProvider]);
-
-  // Start agent and immediately send a message (for idle state input)
-  const handleStartAndSend = useCallback(async (tabId: string, message: string, cwd?: string) => {
-    const workDir = cwd || defaultCwd;
-    localStorage.setItem('agent_lastCwd', workDir);
-    const dangerouslySkipPermissions = localStorage.getItem('agent_dangerouslySkipPermissions') === 'true';
-    const permissionMode = dangerouslySkipPermissions ? 'dangerously-skip-permissions' : 'default';
-
-    // Create session in DB
-    const sessionId = await sessionsApi.start('claude', 'claude', undefined, workDir, permissionMode);
-
-    // Create provider
-    const provider = createProvider('claude');
-    await provider.start({ sessionId, cwd: workDir, dangerouslySkipPermissions, mode: 'oneshot' });
-    setActiveProvider('claude');
-    providersRef.current.set(tabId, provider);
-
-    // Update tab with session
-    setSessionId(tabId, sessionId);
-    setTabCwd(tabId, workDir);
-    setLabel(tabId, message.length > 20 ? message.slice(0, 20) + '…' : message);
-
-    // Record user message and start streaming before sending
-    appendMessage(sessionId, 'user', message);
-    sessionsApi.appendMessage(sessionId, 'user', message).catch(() => {});
-    startStreaming(sessionId);
-
-    // Build memory context and inject into first message
-    let enrichedMessage = message;
-    try {
-      const ctx = await memoryApi.buildContext();
-      if (ctx.packedContext && ctx.packedContext.length > 0) {
-        enrichedMessage = `${ctx.packedContext}\n\n---\n\n${message}`;
-      }
-    } catch { /* context injection is best-effort */ }
-
-    try {
-      await provider.send(enrichedMessage);
-    } catch (e) {
-      console.error('[WorkspacePage] Failed to start agent:', e);
-      provider.stop().catch(() => {});
-      providersRef.current.delete(tabId);
-      useAgentStore.getState().clearStreaming();
-      setActiveProvider(null);
-      setSessionId(tabId, ''); // Reset tab to empty
-    }
-  }, [defaultCwd, setActiveProvider, setSessionId, setTabCwd, setLabel, appendMessage, startStreaming]);
-
-  // Start a plan: parse goal → create tasks → execute steps sequentially
-  const handleStartPlan = useCallback(async (goal: string, cwd: string) => {
-    // Clean up any existing plan
-    planRuntimeRef.current?.destroy();
-    const runtime = new PlanRuntime();
-    planRuntimeRef.current = runtime;
-
-    try {
-      // Parse goal into steps
-      const parsed = await runtime.parseGoal(goal, cwd);
-
-      // Create session for the plan
-      const planSessionId = await sessionsApi.start('plan', 'claude', undefined, cwd, 'dangerously-skip-permissions');
-
-      // Create root task (the plan itself)
-      const rootTask = await agentTasksApi.create(planSessionId, {
-        title: parsed.goal,
-        priority: 'high',
-      });
-
-      // Create step tasks
-      const stepInputs = parsed.steps.map((s, i) => ({
-        title: s.title,
-        parentId: rootTask.id,
-        sortOrder: i,
-      }));
-      const createdSteps = await agentTasksApi.bulkCreate(planSessionId, stepInputs);
-
-      // Set up plan store state
-      const planStore = useAgentPlanStore.getState();
-      planStore.setPlanTaskId(rootTask.id);
-      planStore.setSessionId(planSessionId);
-      planStore.setGoal(parsed.goal);
-      planStore.setCwd(cwd);
-      planStore.setSteps(createdSteps.map((s, i) => ({
-        taskId: s.id,
-        title: s.title,
-        description: parsed.steps[i]?.description || '',
-        status: 'pending' as const,
-        sessionId: null,
-        error: null,
-      })));
-      planStore.setMode('executing');
-      setPlanMode(true);
-
-      // Execute steps sequentially (non-blocking)
-      runtime.execute(cwd).catch(err => {
-        console.error('[WorkspacePage] Plan execution error:', err);
-        useAgentPlanStore.getState().setError(err instanceof Error ? err.message : String(err));
-      });
-    } catch (err) {
-      console.error('[WorkspacePage] Failed to start plan:', err);
-      useAgentPlanStore.getState().setError(err instanceof Error ? err.message : String(err));
-      useAgentPlanStore.getState().setMode('error');
-    }
-  }, [setPlanMode]);
-
-  // Close a tab: stop provider + end DB session, then close the tab
+  // Close a tab — the AgentTerminal handles its own cleanup via unmount
   const handleTabClose = useCallback((tabId: string) => {
-    const provider = providersRef.current.get(tabId);
-    if (provider) {
-      provider.stop().catch(() => {});
-      providersRef.current.delete(tabId);
-    }
     const tab = tabs.find(t => t.id === tabId);
     if (tab?.sessionId) {
       sessionsApi.end(tab.sessionId).catch(() => {});
@@ -253,38 +108,16 @@ export default function WorkspacePage() {
     useAgentTabStore.getState().closeTab(tabId);
   }, [tabs]);
 
-  // Resume an existing session — switch to existing tab if open, otherwise create new tab
-  const handleResumeSession = useCallback((session: AgentSession) => {
-    // If a tab with this session already exists, just switch to it
-    const existingTab = tabs.find(t => t.sessionId === session.id);
-    if (existingTab) {
-      switchTab(existingTab.id);
-      return;
-    }
+  // Auto-create a tab when none is active
+  useEffect(() => {
+    if (!activeTabId) addTab();
+  }, [activeTabId, addTab]);
 
-    const dangerouslySkipPermissions = localStorage.getItem('agent_dangerouslySkipPermissions') === 'true';
-    const sessionCwd = session.cwd || defaultCwd;
-    localStorage.setItem('agent_lastCwd', sessionCwd);
-    const tabId = addTab();
-
-    const provider = createProvider('claude');
-    provider.start({
-      sessionId: session.id,
-      cwd: session.cwd || defaultCwd,
-      dangerouslySkipPermissions,
-      providerSessionId: session.providerSessionId,
-      mode: 'oneshot',
-    }).then(() => {
-      setActiveProvider('claude');
-      providersRef.current.set(tabId, provider);
-      setSessionId(tabId, session.id);
-      setTabCwd(tabId, sessionCwd);
-      setLabel(tabId, `会话 ${new Date(session.startedAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
-      switchTab(tabId);
-    }).catch((e) => {
-      console.error('[WorkspacePage] Failed to resume session:', e);
-    });
-  }, [tabs, defaultCwd, setActiveProvider, addTab, setSessionId, setTabCwd, setLabel, switchTab]);
+  // Ref for AgentTerminal to handle directory switching
+  const agentTerminalRef = useRef<AgentTerminalModeHandle>(null);
+  const handleCwdChange = useCallback((newCwd: string) => {
+    agentTerminalRef.current?.switchCwd(newCwd);
+  }, []);
 
   // Divider drag handlers
   const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
@@ -361,7 +194,7 @@ export default function WorkspacePage() {
   useEffect(() => {
     const unlistenExit = listen<TerminalExitEvent>('terminal-exit', (event) => {
       const { terminalId, code } = event.payload;
-      if (terminalId.startsWith('claude-')) return;
+      if (terminalId.startsWith('agent-')) return;
       useTerminalStore.getState().updateTerminal(terminalId, { status: code === 0 ? 'exited' : 'error' });
       usePreviewStore.getState().removePreviewsByTerminal(terminalId);
     });
@@ -466,35 +299,8 @@ export default function WorkspacePage() {
               flex: editorOpen ? `0 0 ${splitRatio * 100}%` : '1 1 100%',
             }}>
               <AgentTabBar onCloseTab={handleTabClose} />
-              {activeTab?.sessionId ? (
-                <Suspense fallback={<div style={styles.loadingFallback}>Loading...</div>}>
-                  <AgentChat
-                    provider={activeProvider}
-                    activeSessionId={activeTab.sessionId}
-                    tabId={activeTab.id}
-                    onStartAndSend={(msg) => handleStartAndSend(activeTab.id, msg)}
-                  />
-                </Suspense>
-              ) : activeTabId ? (
-                <AgentIdleState
-                  onStartAndSend={(msg, cwd) => handleStartAndSend(activeTabId, msg, cwd)}
-                  onResumeSession={handleResumeSession}
-                  recentSessions={recentSessions}
-                  onStartPlan={handleStartPlan}
-                  onCwdChange={setIdleCwd}
-                />
-              ) : (
-                <AgentIdleState
-                  onStartAndSend={async (msg, cwd) => {
-                    const newTabId = useAgentTabStore.getState().addTab();
-                    await handleStartAndSend(newTabId, msg, cwd);
-                  }}
-                  onResumeSession={handleResumeSession}
-                  recentSessions={recentSessions}
-                  onStartPlan={handleStartPlan}
-                  onCwdChange={setIdleCwd}
-                />
-              )}
+              <AgentToolbar onCwdChange={handleCwdChange} />
+              <AgentTerminalMode ref={agentTerminalRef} mode={activeTabMode} />
             </div>
 
             {/* Draggable divider */}
