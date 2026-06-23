@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense, lazy } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useQuery } from '@tanstack/react-query';
+import { useThemeStore } from '../../stores/themeStore';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { usePreviewStore } from '../../stores/previewStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -13,7 +14,6 @@ import { TerminalExitEvent, TerminalOutputEvent } from '../../shared/terminalTyp
 import AgentTabBar from './agent/AgentTabBar';
 import AgentTerminalMode from './agent/AgentTerminalMode';
 import type { AgentTerminalModeHandle } from './agent/AgentTerminalMode';
-import AgentToolbar from './agent/AgentToolbar';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { folderName } from './components/terminalFactory';
 
@@ -49,7 +49,6 @@ export default function WorkspacePage() {
 
   // Derive active tab
   const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId]);
-  const activeTabMode = activeTab?.agentMode || 'xterm';
 
   // Git log for last commit time
   const { data: gitLog } = useQuery({
@@ -71,10 +70,26 @@ export default function WorkspacePage() {
     return `${days}d ago`;
   })();
 
+  // Git branches for current branch display
+  const { data: branches } = useQuery({
+    queryKey: queryKeys.git.branches(defaultCwd),
+    queryFn: () => gitApi.branches(defaultCwd),
+    enabled: !!defaultCwd,
+    staleTime: 60_000,
+  });
+  const currentBranch = useMemo(() => {
+    if (!Array.isArray(branches)) return '';
+    return branches.find((b: { current: boolean }) => b.current)?.name ?? '';
+  }, [branches]);
+
+  // Density
+  const density = useThemeStore(s => s.density);
+  const isCompact = density === 'compact' || density === 'dense';
+
   const projectName = folderName(defaultCwd);
 
   // Terminal expand/collapse state
-  const [terminalExpanded, setTerminalExpanded] = useState(false);
+  const [terminalExpanded, _setTerminalExpanded] = useState(false);
 
   // Agent ↔ Editor split ratio (0.2 – 0.8)
   const [splitRatio, setSplitRatio] = useState(0.5);
@@ -113,10 +128,14 @@ export default function WorkspacePage() {
     if (!activeTabId) addTab();
   }, [activeTabId, addTab]);
 
-  // Ref for AgentTerminal to handle directory switching
-  const agentTerminalRef = useRef<AgentTerminalModeHandle>(null);
-  const handleCwdChange = useCallback((newCwd: string) => {
-    agentTerminalRef.current?.switchCwd(newCwd);
+  // Ref map for all tab terminal instances — keyed by tabId
+  const terminalRefs = useRef<Map<string, AgentTerminalModeHandle>>(new Map());
+  const registerTerminalRef = useCallback((tabId: string, handle: AgentTerminalModeHandle | null) => {
+    if (handle) {
+      terminalRefs.current.set(tabId, handle);
+    } else {
+      terminalRefs.current.delete(tabId);
+    }
   }, []);
 
   // Divider drag handlers
@@ -250,43 +269,80 @@ export default function WorkspacePage() {
       {/* Agent area */}
       <div style={styles.agentArea}>
         {/* Project summary bar */}
-        <div style={styles.summaryBar}>
-          <span style={styles.projectName}>{projectName}</span>
-          <div style={styles.summaryStats}>
-            <span>Tasks: <strong style={{ color: 'var(--md-on-surface)' }}>{stats?.tasks ?? '—'}</strong></span>
-            <span>Issues: <strong style={{ color: 'var(--md-error)' }}>{stats?.issues ?? '—'}</strong></span>
-            <span>Docs: <strong style={{ color: 'var(--md-on-surface)' }}>{stats?.docs ?? '—'}</strong></span>
-            {lastCommitTime && (
-              <span>Last Commit: <strong style={{ color: 'var(--md-on-surface)' }}>{lastCommitTime}</strong></span>
-            )}
+        <div style={{
+          ...styles.summaryBar,
+          height: isCompact ? (density === 'dense' ? 32 : 38) : 52,
+          padding: isCompact ? '0 var(--space-3)' : '0 var(--space-5)',
+        }}>
+          {/* Project name */}
+          <span style={{
+            ...styles.projectName,
+            fontSize: isCompact ? 'var(--text-sm)' : 'var(--text-base)',
+          }}>{projectName}</span>
+
+          {/* Git branch — compact only */}
+          {isCompact && currentBranch && (
+            <>
+              <div style={{ width: 1, height: 14, background: 'var(--color-divider)' }} />
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                padding: '1px 5px',
+                borderRadius: 3,
+                background: 'var(--color-primary-light)',
+                color: 'var(--md-primary)',
+              }}>
+                ⎇ {currentBranch}
+              </span>
+            </>
+          )}
+
+          {isCompact && <div style={{ width: 1, height: 14, background: 'var(--color-divider)' }} />}
+
+          {/* Stats */}
+          <div style={{
+            ...styles.summaryStats,
+            gap: isCompact ? 8 : 16,
+            fontSize: isCompact ? 11 : undefined,
+          }}>
+            <span>Tasks {stats?.tasks ?? '—'}</span>
+            <span>Issues {stats?.issues ?? '—'}</span>
+            <span>Docs {stats?.docs ?? '—'}</span>
           </div>
-          <div style={styles.summaryStatus} aria-live="polite" aria-atomic="true">
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%',
-              background: activeTab?.sessionId ? 'var(--md-tertiary-container)' : 'var(--md-outline-variant)',
+
+          <div style={{ flex: 1 }} />
+
+          {/* Last active — compact only */}
+          {isCompact && lastCommitTime && (
+            <>
+              <span style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', whiteSpace: 'nowrap' as const }}>
+                {lastCommitTime}
+              </span>
+              <div style={{ width: 1, height: 14, background: 'var(--color-divider)' }} />
+            </>
+          )}
+
+          {/* Agent status */}
+          <div style={{
+            ...styles.summaryStatus,
+            marginLeft: isCompact ? 0 : 'auto',
+            gap: isCompact ? 4 : 6,
+          }}>
+            <div style={{
+              width: isCompact ? 5 : 8,
+              height: isCompact ? 5 : 8,
+              borderRadius: '50%',
+              background: activeTab?.sessionId
+                ? 'var(--md-tertiary-container)'
+                : 'var(--md-outline-variant)',
               flexShrink: 0,
-            }} />
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--md-on-surface-variant)' }}>
-              {activeTab?.sessionId ? 'Agent Running' : 'Agent Ready'}
+            }} aria-hidden="true" />
+            <span style={{
+              fontSize: isCompact ? 11 : 'var(--text-xs)',
+              color: 'var(--md-on-surface-variant)',
+            }}>
+              {activeTab?.sessionId ? 'Agent' : 'Ready'}
             </span>
-            <span
-              className="material-symbols-outlined"
-              onClick={() => setTerminalExpanded(!terminalExpanded)}
-              role="button"
-              aria-label={terminalExpanded ? '收起终端' : '展开终端'}
-              style={{
-                fontSize: 18,
-                cursor: 'pointer',
-                color: terminalExpanded ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
-                marginLeft: 4,
-                padding: 5,
-                borderRadius: 'var(--radius-xs)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              title={terminalExpanded ? '收起终端' : '展开终端'}
-            >terminal</span>
           </div>
         </div>
 
@@ -299,15 +355,40 @@ export default function WorkspacePage() {
               flex: editorOpen ? `0 0 ${splitRatio * 100}%` : '1 1 100%',
             }}>
               <AgentTabBar onCloseTab={handleTabClose} />
-              <AgentToolbar onCwdChange={handleCwdChange} />
-              <AgentTerminalMode ref={agentTerminalRef} mode={activeTabMode} />
+              {tabs.map(tab => (
+                <div
+                  key={tab.id}
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: tab.id === activeTabId ? 'flex' : 'none',
+                    flexDirection: 'column',
+                  }}
+                >
+                  <AgentTerminalMode
+                    ref={h => registerTerminalRef(tab.id, h)}
+                    mode={tab.agentMode}
+                    tabId={tab.id}
+                    style={{ flex: 1, minHeight: 0 }}
+                  />
+                </div>
+              ))}
             </div>
 
             {/* Draggable divider */}
             {editorOpen && (
               <div
                 className="resize-divider"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="调整编辑器宽度"
+                tabIndex={0}
                 onMouseDown={handleDividerMouseDown}
+                onKeyDown={e => {
+                  if (e.key === 'ArrowLeft') setSplitRatio(r => Math.max(0.2, r - 0.05));
+                  if (e.key === 'ArrowRight') setSplitRatio(r => Math.min(0.8, r + 0.05));
+                }}
                 style={{
                   width: 6,
                   flexShrink: 0,
@@ -352,11 +433,13 @@ export default function WorkspacePage() {
                   </span>
                   <span
                     className="material-symbols-outlined"
+                    role="button"
+                    aria-label="关闭编辑器"
                     onClick={() => setEditorOpen(false)}
-                    style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 2 }}
+                    style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 8, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >close</span>
                 </div>
-                <Suspense fallback={<div style={styles.loadingFallback}>Loading editor...</div>}>
+                <Suspense fallback={<div style={styles.loadingFallback} role="status">Loading editor...</div>}>
                   <CodeEditorPane onEmpty={() => setEditorOpen(false)} />
                 </Suspense>
               </div>
@@ -367,7 +450,7 @@ export default function WorkspacePage() {
         {/* Expanded terminal */}
         {terminalExpanded && (
           <div style={styles.terminalExpanded}>
-            <Suspense fallback={<div style={styles.loadingFallback}>Loading terminal...</div>}>
+            <Suspense fallback={<div style={styles.loadingFallback} role="status">Loading terminal...</div>}>
               <BottomPanel defaultHeight={240} />
             </Suspense>
           </div>
@@ -386,14 +469,16 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
     width: '100%',
-    height: '100%',
-    background: 'var(--md-surface-container-lowest)',
+    flex: 1,
+    minHeight: 0,
+    background: 'var(--color-bg-content)',
     overflow: 'hidden',
   },
   agentArea: {
     display: 'flex',
     flexDirection: 'column',
     flex: 1,
+    minHeight: 0,
     minWidth: 0,
     overflow: 'hidden',
   },
@@ -403,7 +488,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 'var(--space-4)',
     height: 52,
     padding: '0 var(--space-5)',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--color-divider)',
     flexShrink: 0,
   },
   projectName: {
@@ -441,7 +526,9 @@ const styles: Record<string, React.CSSProperties> = {
   agentPane: {
     display: 'flex',
     flexDirection: 'column',
+    minHeight: 0,
     minWidth: 0,
+    overflow: 'hidden',
   },
   editorPane: {
     display: 'flex',
@@ -454,7 +541,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '6px 12px',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--color-divider)',
     flexShrink: 0,
     background: 'var(--md-surface-container-low)',
   },
