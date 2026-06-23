@@ -44,7 +44,6 @@ const navGroups: Array<{
 
 // ── Settings content panels ──
 function GeneralSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
   const [defaultCmd, setDefaultCmd] = useState(localStorage.getItem('devhub_default_open_cmd') || 'code {path}');
 
   const handleSave = () => {
@@ -54,7 +53,7 @@ function GeneralSettings() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title="应用信息" />
         <div style={{ padding: '16px 24px 20px' }}>
           <div style={{ display: 'grid', gap: 12 }}>
@@ -65,12 +64,12 @@ function GeneralSettings() {
         </div>
       </GlassCard>
 
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title="平台集成" />
         <IntegrationSettings />
       </GlassCard>
 
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title="偏好设置" />
         <div style={{ padding: '16px 24px 20px' }}>
           <Form layout="vertical">
@@ -80,7 +79,7 @@ function GeneralSettings() {
                 onChange={e => setDefaultCmd(e.target.value)}
                 placeholder="code {path}"
               />
-              <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 12, marginTop: 4 }}>
+              <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-sm)', marginTop: 4 }}>
                 {'{path}'} 会被替换为项目本地路径。常用: code {'{path}'}、webstorm {'{path}'}
               </div>
             </Form.Item>
@@ -105,22 +104,158 @@ function GeneralSettings() {
   );
 }
 
+// ── Accent color / font size option definitions ──
+
+const ACCENT_OPTIONS: Array<{ key: 'default' | 'blue' | 'violet' | 'rose'; label: string; color: string; colorDark: string }> = [
+  { key: 'default', label: 'Teal', color: '#006b5f', colorDark: '#4fdbc8' },
+  { key: 'blue', label: 'Blue', color: '#2563eb', colorDark: '#60a5fa' },
+  { key: 'violet', label: 'Violet', color: '#7c3aed', colorDark: '#a78bfa' },
+  { key: 'rose', label: 'Rose', color: '#e11d48', colorDark: '#fb7185' },
+];
+
+const FONT_SIZE_OPTIONS: Array<{ key: 'sm' | 'base' | 'lg'; label: string; desc: string }> = [
+  { key: 'sm', label: '小', desc: 'Smaller text' },
+  { key: 'base', label: '默认', desc: 'Default size' },
+  { key: 'lg', label: '大', desc: 'Larger text' },
+];
+
+const DENSITY_OPTIONS: Array<{ key: 'comfortable' | 'compact' | 'dense'; label: string; desc: string }> = [
+  { key: 'comfortable', label: '宽松', desc: 'Comfortable spacing' },
+  { key: 'compact', label: '紧凑', desc: 'Compact spacing' },
+  { key: 'dense', label: '密集', desc: 'Dense layout' },
+];
+
 function AppearanceSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
   const toggle = useThemeStore(s => s.toggle);
   const mode = useThemeStore(s => s.mode);
+  const accent = useThemeStore(s => s.accent);
+  const setAccent = useThemeStore(s => s.setAccent);
+  const fontSize = useThemeStore(s => s.fontSize);
+  const setFontSize = useThemeStore(s => s.setFontSize);
+  const density = useThemeStore(s => s.density);
+  const setDensity = useThemeStore(s => s.setDensity);
+  const isDark = mode === 'dark';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title="外观设置" />
-        <div style={{ padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Dark mode toggle */}
           <ToggleRow
             label="深色模式"
             description="使用深色界面主题"
-            checked={mode === 'dark'}
+            checked={isDark}
             onChange={toggle}
           />
+
+          {/* Accent color */}
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>主题色</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>选择应用的强调色</div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              {ACCENT_OPTIONS.map(opt => {
+                const active = accent === opt.key;
+                const swatchColor = isDark ? opt.colorDark : opt.color;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setAccent(opt.key)}
+                    title={opt.label}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: '50%',
+                      border: active ? `2px solid ${swatchColor}` : '2px solid var(--border)',
+                      background: swatchColor,
+                      cursor: 'pointer',
+                      position: 'relative',
+                      transition: 'border-color 0.15s, transform 0.15s',
+                      transform: active ? 'scale(1.1)' : 'scale(1)',
+                      padding: 0,
+                    }}
+                  >
+                    {active && (
+                      <span className="material-symbols-outlined" style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        fontSize: 18,
+                        color: '#fff',
+                      }}>
+                        check
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Font size */}
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>字体大小</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>调整全局文字大小</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {FONT_SIZE_OPTIONS.map(opt => {
+                const active = fontSize === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setFontSize(opt.key)}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: 8,
+                      border: '1px solid',
+                      borderColor: active ? 'var(--md-primary)' : 'var(--border)',
+                      background: active ? 'var(--md-primary-container)' : 'transparent',
+                      color: active ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                      cursor: 'pointer',
+                      fontSize: 'var(--text-sm)',
+                      fontWeight: active ? 500 : 400,
+                      fontFamily: 'var(--font-sans)',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Density */}
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>界面密度</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>控制间距和信息密度</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {DENSITY_OPTIONS.map(opt => {
+                const active = density === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setDensity(opt.key)}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: 8,
+                      border: '1px solid',
+                      borderColor: active ? 'var(--md-primary)' : 'var(--border)',
+                      background: active ? 'var(--md-primary-container)' : 'transparent',
+                      color: active ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                      cursor: 'pointer',
+                      fontSize: 'var(--text-sm)',
+                      fontWeight: active ? 500 : 400,
+                      fontFamily: 'var(--font-sans)',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </GlassCard>
     </div>
@@ -130,18 +265,17 @@ function AppearanceSettings() {
 // ── Placeholder for not-yet-implemented settings ──
 
 function PlaceholderSettings({ icon, title, description, badge, hint }: { icon: string; title: string; description: string; badge?: string; hint?: string }) {
-  const isDark = useThemeStore(s => s.mode === 'dark');
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title={title} badge={badge} />
         <div style={{ padding: '16px 24px 20px', textAlign: 'center' }}>
           <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--md-outline-variant)', display: 'block', marginBottom: 8 }}>{icon}</span>
-          <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 13 }}>
+          <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-sm)' }}>
             {description}
           </div>
           {hint && (
-            <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 11, marginTop: 4, opacity: 0.6 }}>
+            <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-xs)', marginTop: 4, opacity: 0.6 }}>
               {hint}
             </div>
           )}
@@ -160,7 +294,6 @@ function McpServersSettings() {
 }
 
 function TerminalSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
   const [terminalShell, setTerminalShell] = useState(localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL);
   const [defaultCwd, setDefaultCwd] = useState(localStorage.getItem('devhub_terminal_default_cwd') || DEFAULT_CWD);
 
@@ -173,7 +306,7 @@ function TerminalSettings() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title="终端设置" />
         <div style={{ padding: '16px 24px 20px' }}>
           <Form layout="vertical">
@@ -184,7 +317,7 @@ function TerminalSettings() {
                 options={SHELL_OPTIONS.map(o => ({ ...o, label: o.value === DEFAULT_SHELL ? `${o.label}（默认）` : o.label }))}
                 style={{ width: 220 }}
               />
-              <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 12, marginTop: 4 }}>
+              <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-sm)', marginTop: 4 }}>
                 新建终端时使用的 Shell。修改后需重新打开终端面板生效。
               </div>
             </Form.Item>
@@ -210,7 +343,7 @@ function TerminalSettings() {
                   选择
                 </Button>
               </div>
-              <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 12, marginTop: 4 }}>
+              <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-sm)', marginTop: 4 }}>
                 点击全局终端按钮时打开的默认路径。启动项目时会使用项目路径。
               </div>
             </Form.Item>
@@ -233,7 +366,6 @@ function BuildSettings() {
 }
 
 function DataManagementSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
   const handleExport = async () => {
     try {
       const data = {
@@ -255,10 +387,10 @@ function DataManagementSettings() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title="数据导出" />
         <div style={{ padding: '16px 24px 20px' }}>
-          <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 14, marginBottom: 12 }}>
+          <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-base)', marginBottom: 12 }}>
             导出本地偏好设置。项目数据存储在服务端数据库中。
           </div>
           <Button onClick={handleExport}>导出设置</Button>
@@ -278,7 +410,6 @@ const PROVIDER_TYPE_OPTIONS = [
 ];
 
 function AgentConfigsSettings() {
-  const isDark = useThemeStore(s => s.mode === 'dark');
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [configs, setConfigs] = useState<AgentConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -327,8 +458,9 @@ function AgentConfigsSettings() {
       providerForm.resetFields();
       setEditingProvider(null);
       loadData();
-    } catch {
-      // validation or API error
+    } catch (err) {
+      if (typeof err === 'object' && err !== null && 'errorFields' in err) return; // form validation
+      message.error(`保存 Provider 失败: ${String(err)}`);
     }
   };
 
@@ -371,8 +503,9 @@ function AgentConfigsSettings() {
       configForm.resetFields();
       setEditingConfig(null);
       loadData();
-    } catch {
-      // validation or API error
+    } catch (err) {
+      if (typeof err === 'object' && err !== null && 'errorFields' in err) return; // form validation
+      message.error(`保存 Agent 配置失败: ${String(err)}`);
     }
   };
 
@@ -464,8 +597,14 @@ function AgentConfigsSettings() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title="Model Providers" />
+        <div style={{ padding: '4px 16px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>info</span>
+            API 密钥以明文存储在本地数据库中，请勿共享数据库文件
+          </div>
+        </div>
         <div style={{ padding: '12px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
             <Button
@@ -486,13 +625,13 @@ function AgentConfigsSettings() {
             locale={{ emptyText: '暂无 Provider，点击上方按钮添加' }}
             onRow={(record) => ({
               onClick: () => setSelectedProviderId(selectedProviderId === record.id ? null : record.id),
-              style: { cursor: 'pointer', background: selectedProviderId === record.id ? 'rgba(20,184,166,0.06)' : undefined },
+              style: { cursor: 'pointer', background: selectedProviderId === record.id ? 'var(--md-primary-container)' : undefined },
             })}
           />
         </div>
       </GlassCard>
 
-      <GlassCard isDark={isDark}>
+      <GlassCard>
         <CardHeader title={selectedProviderId ? `Agent 配置 — ${providers.find(p => p.id === selectedProviderId)?.name ?? ''}` : 'Agent 配置'} />
         <div style={{ padding: '12px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
@@ -615,13 +754,13 @@ export default function SettingsPage() {
         flexShrink: 0,
         padding: '16px 8px',
         overflowY: 'auto',
-        borderRight: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'var(--color-border)'}`,
+        borderRight: '1px solid var(--border)',
         background: isDark ? 'var(--md-surface)' : 'transparent',
       }}>
         {/* Page title */}
         <div style={{
           padding: '8px 12px 16px',
-          fontSize: 18,
+          fontSize: 'var(--text-xl)',
           fontWeight: 600,
           color: 'var(--md-on-surface)',
           letterSpacing: '-0.01em',
@@ -634,7 +773,7 @@ export default function SettingsPage() {
           <div key={group.title} style={{ marginBottom: 16 }}>
             <div style={{
               padding: '4px 12px 6px',
-              fontSize: 11,
+              fontSize: 'var(--text-xs)',
               fontWeight: 600,
               color: 'var(--md-on-surface-variant)',
               fontFamily: 'var(--font-label)',
@@ -659,14 +798,14 @@ export default function SettingsPage() {
                     border: 'none',
                     borderRadius: 8,
                     background: isActive
-                      ? 'rgba(20, 184, 166, 0.10)'
+                      ? 'var(--md-primary-container)'
                       : 'transparent',
                     color: isActive ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
                     cursor: 'pointer',
                     fontFamily: 'var(--font-sans)',
-                    fontSize: 14,
+                    fontSize: 'var(--text-base)',
                     textAlign: 'left',
-                    transition: 'all 0.15s ease',
+                    transition: 'background 0.15s, color 0.15s',
                   }}
                   onMouseEnter={e => {
                     if (!isActive) {
@@ -692,7 +831,7 @@ export default function SettingsPage() {
                       background: 'var(--md-primary)',
                       color: 'var(--md-on-primary)',
                       fontFamily: 'var(--font-label)',
-                      fontSize: 9,
+                      fontSize: 'var(--text-xs)',
                       fontWeight: 600,
                       padding: '1px 6px',
                       borderRadius: 3,
