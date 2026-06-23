@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { DndContext, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -13,7 +13,7 @@ import ProjectIcon from '../../shared/ProjectIcon';
 import QuickLaunchModal from '../../shared/QuickLaunchModal';
 import HealthBadge from '../../shared/HealthBadge';
 import { launchHistoryStorage } from '../../lib/launchProfiles';
-import { projectsApi } from '../../api';
+import { projectsApi, gitApi } from '../../api';
 import { STATUS_COLORS, PROJECT_STATUSES, PRIORITY_OPTIONS } from '../../lib/constants';
 import { buildLaunchRequests } from '../../lib/launchUtils';
 import { getProjectPriority, getPriorityLabel, getPriorityColor } from './projectUtils';
@@ -47,12 +47,12 @@ function SortableProjectCard({ project, isDark, navigate }: { project: ProjectWi
         style={{
           padding: '10px 12px',
           borderRadius: 8,
-          background: isDark ? 'var(--md-surface-container)' : '#ffffff',
-          border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+          background: 'var(--color-bg-card)',
+          border: '1px solid var(--color-border)',
           cursor: 'grab',
           transition: 'all 0.15s ease',
         }}
-        onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'; }}
+        onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
         onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
@@ -85,6 +85,8 @@ export default function ProjectsPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban'>('grid');
   const [sortBy, setSortBy] = useState<'name' | 'status' | 'updated'>('updated');
   const isDark = useThemeStore(s => s.mode === 'dark');
+  const density = useThemeStore(s => s.density);
+  const isCompact = density === 'compact' || density === 'dense';
 
   // ── Queries ──
   const projectsParams: Record<string, string | undefined> = {};
@@ -106,6 +108,32 @@ export default function ProjectsPage() {
   const deleteProject = useDeleteProject();
   const detectLocal = useDetectLocal();
   const detectGit = useDetectGit();
+
+  // Fetch current git branch for projects with local paths
+  const [branchMap, setBranchMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const fetchBranches = async () => {
+      const projectsWithPath = projects.filter(p => p.localPath);
+      const results = await Promise.allSettled(
+        projectsWithPath.map(async (p) => {
+          try {
+            const branches = await gitApi.branches(p.localPath!);
+            const current = Array.isArray(branches) ? branches.find((b: { current: boolean }) => b.current) : null;
+            return { id: p.id, branch: current?.name ?? '' };
+          } catch {
+            return { id: p.id, branch: '' };
+          }
+        })
+      );
+      const map: Record<string, string> = {};
+      results.forEach(r => {
+        if (r.status === 'fulfilled') map[r.value.id] = r.value.branch;
+      });
+      setBranchMap(map);
+    };
+    if (projects.length > 0) fetchBranches();
+  }, [projects]);
 
   const batch = useBatchLaunch({
     projects,
@@ -419,7 +447,7 @@ export default function ProjectsPage() {
         justifyContent: 'space-between',
         gap: 16,
         paddingBottom: 16,
-        borderBottom: `1px solid ${isDark ? 'rgba(187, 202, 198, 0.15)' : 'rgba(187, 202, 198, 0.4)'}`,
+        borderBottom: '1px solid var(--color-divider)',
         marginBottom: 24,
       }}>
         <div>
@@ -448,11 +476,10 @@ export default function ProjectsPage() {
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            background: isDark ? 'var(--md-surface-container-lowest)' : '#ffffff',
-            border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+            background: 'var(--color-bg-card)',
             borderRadius: 8,
             padding: '2px 4px',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+            boxShadow: 'var(--shadow-xs)',
             gap: 2,
           }}>
             <Select
@@ -466,7 +493,7 @@ export default function ProjectsPage() {
               suffixIcon={<span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-on-surface-variant)' }}>filter_list</span>}
               options={PROJECT_STATUSES.map(s => ({ value: s, label: s }))}
             />
-            <div style={{ width: 1, height: 16, background: isDark ? 'var(--md-outline-variant)' : '#E2E8F0' }} />
+            <div style={{ width: 1, height: 16, background: 'var(--color-divider)' }} />
             <Select
               value={sortBy}
               onChange={setSortBy}
@@ -486,24 +513,24 @@ export default function ProjectsPage() {
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            background: isDark ? 'var(--md-surface-container-lowest)' : '#ffffff',
-            border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+            background: 'var(--color-bg-card)',
             borderRadius: 8,
             padding: 4,
-            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+            boxShadow: 'var(--shadow-xs)',
           }}>
             {(['grid', 'list', 'kanban'] as const).map(mode => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
+                aria-label={mode === 'grid' ? '网格视图' : mode === 'list' ? '列表视图' : '看板视图'}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: 32, height: 32, borderRadius: 6, border: 'none',
+                  width: 36, height: 36, borderRadius: 6, border: 'none',
                   background: viewMode === mode
-                    ? (isDark ? 'var(--md-primary-container)' : 'rgba(0, 107, 95, 0.10)')
+                    ? 'var(--md-primary-container)'
                     : 'transparent',
                   color: viewMode === mode ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
-                  cursor: 'pointer', transition: 'all 0.15s ease',
+                  cursor: 'pointer', transition: 'background 0.15s, color 0.15s',
                 }}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
@@ -518,12 +545,12 @@ export default function ProjectsPage() {
             onClick={() => navigate('/projects/new')}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 16px', borderRadius: 8, border: 'none',
-              background: 'var(--md-primary)', color: '#ffffff',
+              padding: '8px 16px', borderRadius: 8, border: 'none',
+              background: 'var(--md-primary)', color: 'var(--md-on-primary)',
               cursor: 'pointer', fontFamily: 'var(--font-label)',
               fontSize: 12, fontWeight: 500, letterSpacing: '0.02em',
-              boxShadow: '0 2px 8px rgba(0, 107, 95, 0.22)',
-              transition: 'all 0.15s ease',
+              boxShadow: '0 2px 8px var(--md-primary-container)',
+              transition: 'opacity 0.15s',
             }}
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; }}
             onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
@@ -543,8 +570,10 @@ export default function ProjectsPage() {
         /* ── Grid View ── */
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: 16,
+          gridTemplateColumns: isCompact
+            ? 'repeat(auto-fill, minmax(260px, 1fr))'
+            : 'repeat(auto-fill, minmax(300px, 1fr))',
+          gap: isCompact ? 12 : 16,
         }}>
           {sortedProjects.map(project => {
             const statusColor = getStatusColorVar(project.status);
@@ -555,40 +584,42 @@ export default function ProjectsPage() {
                 key={project.id}
                 onClick={() => navigate(`/projects/${project.id}`)}
                 style={{
-                  background: isDark ? 'var(--md-surface-container-lowest)' : '#ffffff',
-                  borderRadius: 12,
-                  border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                  background: 'var(--color-bg-card)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  borderRadius: isCompact ? 10 : 12,
+                  border: '1px solid var(--color-border)',
+                  boxShadow: 'var(--card-shadow)',
                   cursor: 'pointer',
-                  transition: 'all 0.2s ease',
+                  transition: 'box-shadow 0.2s, transform 0.2s',
                   overflow: 'hidden',
                   position: 'relative',
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.08)';
+                  e.currentTarget.style.boxShadow = 'var(--card-shadow-hover)';
                   e.currentTarget.style.transform = 'translateY(-2px)';
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
+                  e.currentTarget.style.boxShadow = 'var(--card-shadow)';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
                 {/* Top accent bar */}
-                <div style={{ height: 3, background: statusColor }} />
+                <div style={{ height: isCompact ? 2 : 3, background: statusColor }} />
 
-                <div style={{ padding: '20px 20px 16px' }}>
+                <div style={{ padding: isCompact ? (density === 'dense' ? '10px 12px' : '14px 16px') : '20px 20px 16px' }}>
                   {/* Header: Icon + Name + Menu */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isCompact ? 8 : 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: isCompact ? 8 : 12 }}>
                       <div style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 8,
-                        background: isDark ? 'var(--md-surface-container)' : 'var(--md-surface-container)',
+                        width: isCompact ? (density === 'dense' ? 22 : 28) : 40,
+                        height: isCompact ? (density === 'dense' ? 22 : 28) : 40,
+                        borderRadius: isCompact ? 6 : 8,
+                        background: 'var(--md-surface-container)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.5)'}`,
+                        border: '1px solid var(--color-border-subtle)',
                         flexShrink: 0,
                         overflow: 'hidden',
                       }}>
@@ -598,14 +629,14 @@ export default function ProjectsPage() {
                           iconType={project.iconType}
                           iconUrl={project.iconUrl}
                           iconColor={project.iconColor}
-                          size={40}
+                          size={isCompact ? (density === 'dense' ? 22 : 28) : 40}
                         />
                       </div>
                       <div>
                         <div style={{
                           fontWeight: 600,
-                          fontSize: 18,
-                          lineHeight: '24px',
+                          fontSize: isCompact ? (density === 'dense' ? 12 : 13) : 18,
+                          lineHeight: isCompact ? '20px' : '24px',
                           letterSpacing: '-0.01em',
                           color: 'var(--md-on-surface)',
                           transition: 'color 0.15s ease',
@@ -629,6 +660,32 @@ export default function ProjectsPage() {
                           }}>
                             {project.status}
                           </span>
+                          {isCompact && (project.frontendStatus === 'running' || project.backendStatus === 'running') && (
+                            <span style={{
+                              fontSize: 9,
+                              padding: '1px 4px',
+                              borderRadius: 3,
+                              background: 'rgba(34, 197, 94, 0.15)',
+                              color: 'var(--color-success, #22c55e)',
+                              fontFamily: 'var(--font-mono)',
+                              whiteSpace: 'nowrap' as const,
+                            }}>
+                              running
+                            </span>
+                          )}
+                          {isCompact && (project.frontendStatus === 'error' || project.backendStatus === 'error') && (
+                            <span style={{
+                              fontSize: 9,
+                              padding: '1px 4px',
+                              borderRadius: 3,
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              color: 'var(--md-error)',
+                              fontFamily: 'var(--font-mono)',
+                              whiteSpace: 'nowrap' as const,
+                            }}>
+                              error
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -639,11 +696,12 @@ export default function ProjectsPage() {
                     >
                       <button
                         onClick={(e) => e.stopPropagation()}
+                        aria-label="项目操作菜单"
                         style={{
-                          width: 28, height: 28, borderRadius: 6, border: 'none',
+                          width: 32, height: 32, borderRadius: 6, border: 'none',
                           background: 'transparent', color: 'var(--md-outline)',
                           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 0.15s ease',
+                          transition: 'background 0.15s, color 0.15s',
                         }}
                         onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; e.currentTarget.style.color = 'var(--md-on-surface)'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--md-outline)'; }}
@@ -661,7 +719,7 @@ export default function ProjectsPage() {
                       color: 'var(--md-on-surface-variant)',
                       margin: '0 0 12px 0',
                       display: '-webkit-box',
-                      WebkitLineClamp: 2,
+                      WebkitLineClamp: density === 'dense' ? 1 : isCompact ? 1 : 2,
                       WebkitBoxOrient: 'vertical',
                       overflow: 'hidden',
                     }}>
@@ -670,70 +728,118 @@ export default function ProjectsPage() {
                   )}
 
                   {/* Tech stack */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 'auto', paddingTop: 4 }}>
-                    {project.techStack?.slice(0, 3).map(tech => (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: isCompact ? 4 : 6, marginTop: 'auto', paddingTop: isCompact ? 2 : 4 }}>
+                    {project.techStack?.slice(0, isCompact ? 2 : 3).map(tech => (
                       <span key={tech} style={{
-                        padding: '4px 8px',
+                        padding: isCompact ? (density === 'dense' ? '1px 4px' : '2px 6px') : '4px 8px',
                         borderRadius: 6,
-                        background: isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)',
+                        background: 'var(--md-surface-container-low)',
                         color: 'var(--md-on-surface-variant)',
                         fontFamily: 'var(--font-mono)',
-                        fontSize: 12,
+                        fontSize: isCompact ? (density === 'dense' ? 9 : 10) : 12,
                         fontWeight: 450,
                         lineHeight: '16px',
-                        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.3)'}`,
+                        border: '1px solid var(--color-border-subtle)',
                       }}>
                         {tech}
                       </span>
                     ))}
-                    {(project.techStack?.length || 0) > 3 && (
+                    {(project.techStack?.length || 0) > (isCompact ? 2 : 3) && (
                       <span style={{
-                        padding: '4px 6px',
-                        fontSize: 12,
+                        padding: isCompact ? '1px 3px' : '4px 6px',
+                        fontSize: isCompact ? 9 : 12,
                         color: 'var(--md-on-surface-variant)',
                         fontFamily: 'var(--font-mono)',
                       }}>
-                        +{project.techStack.length - 3}
+                        +{project.techStack.length - (isCompact ? 2 : 3)}
                       </span>
                     )}
                   </div>
 
                   {/* Footer stats */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    paddingTop: 16,
-                    marginTop: 12,
-                    borderTop: `1px solid ${isDark ? 'rgba(187, 202, 198, 0.12)' : 'rgba(187, 202, 198, 0.4)'}`,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--md-on-surface-variant)' }}>
-                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>folder_open</span>
-                        <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500, letterSpacing: '0.02em' }}>
-                          {project.repoCount}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--md-on-surface-variant)' }}>
-                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>smart_toy</span>
-                        <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500, letterSpacing: '0.02em' }}>
-                          {project.taskCount}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {hasHealth ? (
-                        <HealthBadge result={healthResults[project.id]} />
-                      ) : (
-                        <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-tertiary)' }}>
-                          check_circle
+                  {isCompact ? (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingTop: density === 'dense' ? 6 : 8,
+                      marginTop: density === 'dense' ? 6 : 8,
+                      borderTop: '1px solid var(--color-divider)',
+                      fontSize: 11,
+                      color: 'var(--md-on-surface-variant)',
+                    }}>
+                      {branchMap[project.id] && (
+                        <span style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 10,
+                          padding: '1px 5px',
+                          borderRadius: 3,
+                          background: 'var(--md-primary-container)',
+                          color: 'var(--md-primary)',
+                          whiteSpace: 'nowrap' as const,
+                        }}>
+                          {branchMap[project.id]}
                         </span>
                       )}
-                      <span style={{ fontSize: 13, color: 'var(--md-on-surface-variant)' }}>
+                      <span style={{ fontFamily: 'var(--font-label)', fontSize: 11, fontWeight: 500 }}>
+                        {project.taskCount} tasks
+                      </span>
+                      <div style={{
+                        flex: 1,
+                        height: isCompact ? 2 : 3,
+                        background: 'var(--color-divider)',
+                        borderRadius: 1,
+                        overflow: 'hidden',
+                        minWidth: 30,
+                      }}>
+                        <div style={{
+                          width: project.taskCount > 0 ? '60%' : '0%',
+                          height: '100%',
+                          background: 'var(--md-primary)',
+                          borderRadius: 1,
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 10, whiteSpace: 'nowrap' as const }}>
                         {formatRelativeTime(project.updatedAt)}
                       </span>
                     </div>
-                  </div>
+                  ) : (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingTop: 16,
+                      marginTop: 12,
+                      borderTop: '1px solid var(--color-divider)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--md-on-surface-variant)' }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>folder_open</span>
+                          <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500, letterSpacing: '0.02em' }}>
+                            {project.repoCount}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--md-on-surface-variant)' }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>smart_toy</span>
+                          <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500, letterSpacing: '0.02em' }}>
+                            {project.taskCount}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {hasHealth ? (
+                          <HealthBadge result={healthResults[project.id]} />
+                        ) : (
+                          <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-tertiary)' }}>
+                            check_circle
+                          </span>
+                        )}
+                        <span style={{ fontSize: 13, color: 'var(--md-on-surface-variant)' }}>
+                          {formatRelativeTime(project.updatedAt)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -756,7 +862,7 @@ export default function ProjectsPage() {
                   borderRadius: 10,
                   background: 'transparent',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'background 0.15s',
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.background = isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)';
@@ -776,7 +882,7 @@ export default function ProjectsPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
                   {project.techStack?.slice(0, 2).map(tech => (
-                    <span key={tech} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)', color: 'var(--md-on-surface-variant)', fontFamily: 'var(--font-mono)' }}>
+                    <span key={tech} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'var(--md-surface-container-high)', color: 'var(--md-on-surface-variant)', fontFamily: 'var(--font-mono)' }}>
                       {tech}
                     </span>
                   ))}
@@ -785,7 +891,7 @@ export default function ProjectsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--md-on-surface-variant)' }}>
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>folder_open</span>
                   <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500 }}>{project.repoCount}</span>
-                  <span style={{ width: 1, height: 16, background: isDark ? 'var(--md-outline-variant)' : '#E2E8F0', margin: '0 4px' }} />
+                  <span style={{ width: 1, height: 16, background: 'var(--color-divider)', margin: '0 4px' }} />
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>smart_toy</span>
                   <span style={{ fontFamily: 'var(--font-label)', fontSize: 12, fontWeight: 500 }}>{project.taskCount}</span>
                 </div>
@@ -795,7 +901,8 @@ export default function ProjectsPage() {
                 <div style={{ display: 'flex', gap: 2 }}>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleLaunchProject(project); }}
-                    style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                    aria-label="启动项目"
+                    style={{ width: 32, height: 32, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s' }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                     title="启动"
@@ -810,7 +917,8 @@ export default function ProjectsPage() {
                         navigate('/');
                       }
                     }}
-                    style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                    aria-label="打开终端"
+                    style={{ width: 32, height: 32, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s' }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                     title="终端"
@@ -819,7 +927,8 @@ export default function ProjectsPage() {
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDelete(project.id); }}
-                    style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                    aria-label="删除项目"
+                    style={{ width: 32, height: 32, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--md-on-surface-variant)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s, color 0.15s' }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; e.currentTarget.style.color = 'var(--md-error)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--md-on-surface-variant)'; }}
                     title="删除"
@@ -887,9 +996,9 @@ export default function ProjectsPage() {
               <div style={{
                 padding: '10px 12px',
                 borderRadius: 8,
-                background: isDark ? 'var(--md-surface-container)' : '#ffffff',
+                background: 'var(--color-bg-card)',
                 border: '1px solid var(--md-primary)',
-                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                boxShadow: 'var(--shadow-xl)',
                 transform: 'rotate(1.5deg)',
                 maxWidth: 260,
               }}>
@@ -1074,8 +1183,8 @@ export default function ProjectsPage() {
               <div key={projectId} style={{
                 display: 'flex', alignItems: 'center', gap: 12,
                 padding: '10px 12px', borderRadius: 8,
-                background: progress.status === 'success' ? 'rgba(34, 197, 94, 0.05)' :
-                           progress.status === 'failed' ? 'rgba(239, 68, 68, 0.05)' : 'transparent',
+                background: progress.status === 'success' ? 'var(--color-success-light, rgba(34, 197, 94, 0.05))' :
+                           progress.status === 'failed' ? 'var(--color-error-light, rgba(239, 68, 68, 0.05))' : 'transparent',
                 marginBottom: 4,
               }}>
                 <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
