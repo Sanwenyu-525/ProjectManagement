@@ -1,4 +1,4 @@
-/** Shared tool display utilities used by AgentChat, AgentActivityBar, and AgentContextPanel. */
+/** Shared tool display utilities used by agent components. */
 
 /** Get the Material Symbols icon name for a tool. */
 export function getToolIcon(toolName: string): string {
@@ -12,20 +12,6 @@ export function getToolIcon(toolName: string): string {
   if (n === 'todowrite' || n === 'task') return 'checklist';
   if (n === 'webfetch' || n === 'websearch') return 'language';
   return 'build';
-}
-
-/** Get the theme color variable for a tool. */
-export function getToolColor(toolName: string): string {
-  const n = toolName.toLowerCase();
-  if (n === 'bash' || n === 'bashcommand') return 'var(--md-tertiary)';
-  if (n === 'read' || n === 'read_file') return 'var(--md-primary)';
-  if (n === 'edit' || n === 'edit_file') return 'var(--md-secondary)';
-  if (n === 'write' || n === 'write_file') return 'var(--md-secondary)';
-  if (n === 'glob') return 'var(--md-primary)';
-  if (n === 'grep') return 'var(--md-primary)';
-  if (n === 'todowrite' || n === 'task') return 'var(--md-tertiary)';
-  if (n === 'webfetch' || n === 'websearch') return 'var(--md-primary)';
-  return 'var(--md-outline)';
 }
 
 /** Get a human-readable summary from a tool's input parameters. */

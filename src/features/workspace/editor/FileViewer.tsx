@@ -173,6 +173,7 @@ function TextEditor({ content, language, isDark, onChange, onSave, onCreateEdito
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
   const composingRef = useRef(false);
+  const pendingValueRef = useRef<string | null>(null);
   const autoCopyRef = useRef(autoCopy);
   autoCopyRef.current = autoCopy;
   const [viewReady, setViewReady] = useState(false);
@@ -224,7 +225,10 @@ function TextEditor({ content, language, isDark, onChange, onSave, onCreateEdito
   // Suppress onChange during IME composition to prevent React re-renders from
   // interrupting the browser's IME state (root cause of Chinese input requiring two attempts).
   const handleChange = useCallback((value: string) => {
-    if (!composingRef.current) {
+    if (composingRef.current) {
+      // Store latest value so we can flush on compositionEnd
+      pendingValueRef.current = value;
+    } else {
       onChangeRef.current?.(value);
     }
   }, []);
@@ -239,6 +243,13 @@ function TextEditor({ content, language, isDark, onChange, onSave, onCreateEdito
       onCompositionStart={() => { composingRef.current = true; }}
       onCompositionEnd={() => {
         composingRef.current = false;
+        // Flush value captured during composition so onChange fires for IME input
+        // (e.g. Chinese semicolons). Without this, handleChange blocks the value
+        // because composingRef is still true when CodeMirror fires onChange.
+        if (pendingValueRef.current !== null) {
+          onChangeRef.current?.(pendingValueRef.current);
+          pendingValueRef.current = null;
+        }
       }}
       style={{ height: '100%' }}
     >
@@ -251,7 +262,7 @@ function TextEditor({ content, language, isDark, onChange, onSave, onCreateEdito
           lineNumbers: true,
           highlightActiveLineGutter: true,
           highlightActiveLine: true,
-          foldGutter: true,
+          foldGutter: false,
           bracketMatching: true,
           closeBrackets: true,
           autocompletion: false,

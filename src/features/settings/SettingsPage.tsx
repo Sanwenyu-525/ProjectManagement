@@ -755,7 +755,7 @@ export default function SettingsPage() {
         padding: '16px 8px',
         overflowY: 'auto',
         borderRight: '1px solid var(--border)',
-        background: isDark ? 'var(--md-surface)' : 'transparent',
+        background: 'transparent',
       }}>
         {/* Page title */}
         <div style={{
@@ -794,8 +794,9 @@ export default function SettingsPage() {
                     alignItems: 'center',
                     gap: 10,
                     width: '100%',
-                    padding: '8px 12px',
+                    padding: '8px 12px 8px 10px',
                     border: 'none',
+                    borderLeft: isActive ? '2px solid var(--md-primary)' : '2px solid transparent',
                     borderRadius: 8,
                     background: isActive
                       ? 'var(--md-primary-container)'

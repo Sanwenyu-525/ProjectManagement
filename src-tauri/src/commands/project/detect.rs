@@ -4,6 +4,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::command;
 
+/// Run a synchronous blocking function on Tokio's blocking thread pool.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("检测任务失败: {}", e))?
+}
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectedProject {
@@ -44,7 +51,7 @@ pub struct ScanResult {
 /// Detect project info from a local directory path.
 #[command]
 pub async fn detect_local_project(path: String) -> Result<DetectedProject, String> {
-    detect_local_project_inner(&path)
+    blocking(move || detect_local_project_inner(&path)).await
 }
 
 /// Synchronous project detection logic (used by both single detect and scan).
@@ -276,51 +283,57 @@ fn detect_local_project_inner(path: &str) -> Result<DetectedProject, String> {
 /// Clones to a temp directory, scans, then cleans up.
 #[command]
 pub async fn detect_git_repo(repo_url: String) -> Result<DetectedProject, String> {
-    let temp_dir = std::env::temp_dir().join(format!("devhub_detect_{}", uuid::Uuid::new_v4()));
+    blocking(move || {
+        let temp_dir = std::env::temp_dir().join(format!("devhub_detect_{}", uuid::Uuid::new_v4()));
 
-    // Clone (shallow, single branch)
-    let output = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", "--single-branch", &repo_url, temp_dir.to_str().unwrap_or_default()])
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+        // Clone (shallow, single branch)
+        let output = std::process::Command::new("git")
+            .args(["clone", "--depth", "1", "--single-branch", &repo_url, temp_dir.to_str().unwrap_or_default()])
+            .output()
+            .map_err(|e| format!("Failed to run git: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Git clone failed: {}", stderr));
-    }
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Git clone failed: {}", stderr));
+        }
 
-    // Detect
-    let mut detected = detect_local_project_inner(&temp_dir.to_string_lossy())?;
+        // Detect
+        let mut detected = detect_local_project_inner(&temp_dir.to_string_lossy())?;
 
-    // Set source to Remote
-    detected.source = "Remote".into();
-    detected.local_path = None;
-    detected.repo_url = Some(repo_url.clone());
-    detected.repo_platform = detect_platform(&repo_url);
+        // Set source to Remote
+        detected.source = "Remote".into();
+        detected.local_path = None;
+        detected.repo_url = Some(repo_url.clone());
+        detected.repo_platform = detect_platform(&repo_url);
 
-    // Cleanup
-    let _ = fs::remove_dir_all(&temp_dir);
+        // Cleanup
+        let _ = fs::remove_dir_all(&temp_dir);
 
-    Ok(detected)
+        Ok(detected)
+    })
+    .await
 }
 
 /// Scan a directory for all projects within it, with relationship detection.
 #[command]
 pub async fn detect_scan_directory(path: String, max_depth: Option<usize>) -> Result<ScanResult, String> {
-    let root = PathBuf::from(&path);
-    if !root.is_dir() {
-        return Err("Path is not a directory".into());
-    }
+    blocking(move || {
+        let root = PathBuf::from(&path);
+        if !root.is_dir() {
+            return Err("Path is not a directory".into());
+        }
 
-    let depth = max_depth.unwrap_or(1);
-    let mut projects = Vec::new();
+        let depth = max_depth.unwrap_or(1);
+        let mut projects = Vec::new();
 
-    scan_directory(&root, depth, &mut projects);
+        scan_directory(&root, depth, &mut projects);
 
-    // Detect relationships
-    let groups = detect_relationships(&mut projects);
+        // Detect relationships
+        let groups = detect_relationships(&mut projects);
 
-    Ok(ScanResult { projects, groups })
+        Ok(ScanResult { projects, groups })
+    })
+    .await
 }
 
 /// Recursively scan for project directories.
@@ -1750,17 +1763,20 @@ fn detect_icon_from_exe(_dir: &Path) -> Option<ProjectIconInfo> {
 /// Returns a map of command name → whether it exists.
 #[command]
 pub async fn detect_installed_agents(commands: Vec<String>) -> Result<std::collections::HashMap<String, bool>, String> {
-    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
-    let mut result = std::collections::HashMap::new();
+    blocking(move || {
+        let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+        let mut result = std::collections::HashMap::new();
 
-    for cmd_name in &commands {
-        let output = std::process::Command::new(which_cmd)
-            .arg(cmd_name)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-        result.insert(cmd_name.clone(), output.map(|s| s.success()).unwrap_or(false));
-    }
+        for cmd_name in &commands {
+            let output = std::process::Command::new(which_cmd)
+                .arg(cmd_name)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            result.insert(cmd_name.clone(), output.map(|s| s.success()).unwrap_or(false));
+        }
 
-    Ok(result)
+        Ok(result)
+    })
+    .await
 }

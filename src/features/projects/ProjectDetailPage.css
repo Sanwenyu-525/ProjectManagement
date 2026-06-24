@@ -21,14 +21,15 @@
   background: var(--color-border-subtle) !important;
 }
 
-/* Glass panel - reusable for header card and tabs panel */
+/* Glass panel - matches glass-card from glassmorphism.css */
 .glass-panel {
   background: var(--color-bg-card);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
-  box-shadow: 0 4px 16px var(--color-divider), inset 0 1px 0 var(--color-bg-card);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: all 0.2s ease;
 }
 
 /* Action buttons with gradient backgrounds and hover lift */

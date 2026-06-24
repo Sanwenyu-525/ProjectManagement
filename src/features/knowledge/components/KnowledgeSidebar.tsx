@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dropdown, Modal, Input, Select, message } from 'antd';
 import { useState, useCallback } from 'react';
 import { knowledgeApi, notesApi, memoryApi, decisionsApi } from '../../../api';
@@ -25,6 +25,7 @@ const CATEGORY_GROUPS: CategoryGroup[] = [
     title: 'AI 知识',
     items: [
       { key: 'memory', label: '记忆', icon: 'smart_toy', group: 'ai' },
+      { key: 'experience', label: '经验', icon: 'school', group: 'ai' },
       { key: 'prompt', label: '提示词', icon: 'psychology', group: 'ai' },
       { key: 'rule', label: '规则', icon: 'rule', group: 'ai' },
     ],
@@ -49,6 +50,7 @@ const CATEGORY_GROUPS: CategoryGroup[] = [
 ];
 
 const NEW_ITEMS = [
+  { key: 'import', label: '导入文件', icon: 'upload_file' },
   { key: 'memory', label: '记忆', icon: 'smart_toy' },
   { key: 'decision', label: '决策', icon: 'gavel' },
   { key: 'document', label: '文档', icon: 'description' },
@@ -65,6 +67,7 @@ const MEMORY_TYPE_OPTIONS: { value: MemoryType; label: string }[] = [
   { value: 'pattern', label: '代码模式' },
   { value: 'prompt', label: '高价值提示词' },
   { value: 'workflow', label: '开发流程' },
+  { value: 'experience', label: '经验沉淀' },
 ];
 
 export default function KnowledgeSidebar() {
@@ -76,6 +79,29 @@ export default function KnowledgeSidebar() {
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [newType, setNewType] = useState<string>('memory');
+
+  const queryClient = useQueryClient();
+
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const paths = await open({
+        multiple: true,
+        title: '选择文件',
+        filters: [{ name: '文档', extensions: ['md', 'txt'] }],
+      });
+      if (!paths) return null;
+      const arr = Array.isArray(paths) ? paths : [paths];
+      return knowledgeApi.importFiles(arr);
+    },
+    onSuccess: (result) => {
+      if (result) {
+        queryClient.invalidateQueries({ queryKey: ['knowledge'] });
+        message.success(`已导入 ${result.length} 个文件`);
+      }
+    },
+    onError: () => message.error('导入失败'),
+  });
 
   // Fetch counts
   const { data: countsData = [] } = useQuery({
@@ -97,9 +123,13 @@ export default function KnowledgeSidebar() {
   }, [setSelectedCategory, setSelectedId]);
 
   const handleNewClick = useCallback((type: string) => {
+    if (type === 'import') {
+      importMutation.mutate();
+      return;
+    }
     setNewType(type);
     setShowNewModal(true);
-  }, []);
+  }, [importMutation]);
 
   return (
     <div style={styles.sidebar}>
@@ -113,12 +143,17 @@ export default function KnowledgeSidebar() {
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="搜索知识..."
+          aria-label="搜索知识"
           style={styles.searchInput}
         />
         {searchQuery && (
           <span
             className="material-symbols-outlined"
-            style={{ fontSize: 14, color: 'var(--md-outline)', cursor: 'pointer' }}
+            role="button"
+            aria-label="清除搜索"
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSearchQuery(''); } }}
+            style={{ fontSize: 14, color: 'var(--md-outline)', cursor: 'pointer', padding: 4, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             onClick={() => setSearchQuery('')}
           >close</span>
         )}
@@ -129,7 +164,7 @@ export default function KnowledgeSidebar() {
         {/* Top items */}
         <div style={styles.navGroup}>
           <NavItem
-            icon="push_pin"
+            icon="star"
             label="收藏"
             count={null}
             active={selectedCategory === '_pinned'}
@@ -204,23 +239,27 @@ export default function KnowledgeSidebar() {
 
 // ── NavItem ──
 
-function NavItem({ icon, label, count, active, onClick }: {
+function NavItem({ icon, label, count, active, onClick, unicode }: {
   icon: string;
   label: string;
   count: number | null;
   active: boolean;
   onClick: () => void;
+  unicode?: boolean;
 }) {
   return (
     <button
+      aria-current={active ? 'true' : undefined}
       style={{
         ...styles.navItem,
         ...(active ? styles.navItemActive : {}),
       }}
       onClick={onClick}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--color-primary-light)'; }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
     >
       <span
-        className="material-symbols-outlined"
+        className={unicode ? undefined : "material-symbols-outlined"}
         style={{ fontSize: 18, color: active ? 'var(--md-primary)' : 'var(--md-outline)', flexShrink: 0 }}
       >{icon}</span>
       <span style={{
@@ -441,7 +480,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 34,
     fontSize: 13,
     fontWeight: 500,
-    color: '#fff',
+    color: 'var(--md-on-primary)',
     background: 'var(--md-primary)',
     border: 'none',
     borderRadius: 'var(--radius-sm)',

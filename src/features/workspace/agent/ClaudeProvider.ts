@@ -3,6 +3,8 @@ import { terminalApi, sessionsApi, gitApi } from '../../../api';
 import type { TerminalOutputEvent, TerminalExitEvent } from '../../../shared/terminalTypes';
 import type { AgentProvider, AgentStreamEvent, StartOptions } from './AgentProvider';
 import { extractJsonObjects, type StreamJsonEvent } from '../../../lib/parseStreamJson';
+import { trackToolFileAccess } from '../../../lib/trackAgentFileAccess';
+import { useAgentStore } from '../../../stores/agentStore';
 
 /**
  * ClaudeProvider — one-shot mode per message.
@@ -123,8 +125,7 @@ export class ClaudeProvider implements AgentProvider {
       const terminalId = `claude-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       this.activeTerminalId = terminalId;
 
-      const args: string[] = ['--output-format', 'stream-json', '--verbose'];
-      if (this.config.dangerouslySkipPermissions) args.push('--dangerously-skip-permissions');
+      const args: string[] = ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
       if (this.cliSessionId) args.push('--resume', this.cliSessionId);
 
       const cwd = this.config.cwd || '';
@@ -189,8 +190,7 @@ export class ClaudeProvider implements AgentProvider {
     this.pendingEvents = [];
 
     const enrichedMessage = await this.buildContextMessage(message);
-    const args = ['-p', '--output-format', 'stream-json', '--verbose'];
-    if (this.config.dangerouslySkipPermissions) args.push('--dangerously-skip-permissions');
+    const args = ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
     if (this.cliSessionId) args.push('--resume', this.cliSessionId);
 
     const cwd = this.config.cwd || '';
@@ -250,6 +250,11 @@ export class ClaudeProvider implements AgentProvider {
     this.pendingPartial = '';
     this.stderrBuffer = '';
     this.pendingEvents = [];
+  }
+
+  /** Clear stored CLI session ID so next send() starts a fresh session (e.g. after cwd change). */
+  resetSession(): void {
+    this.cliSessionId = null;
   }
 
   private clearRetryTimer(): void {
@@ -418,6 +423,10 @@ export class ClaudeProvider implements AgentProvider {
               toolName: block.name,
               input: block.input || {},
             });
+            // 记录文件操作到上下文面板
+            if (this.config?.sessionId) {
+              trackToolFileAccess(this.config.sessionId, block.name, block.input || {});
+            }
           }
         }
         break;
@@ -474,6 +483,9 @@ export class ClaudeProvider implements AgentProvider {
   }
 
   private emit(event: AgentStreamEvent): void {
+    if (event.type === 'error' && this.config?.sessionId) {
+      useAgentStore.getState().markSessionError(this.config.sessionId);
+    }
     if (this.listeners.size === 0) {
       // Buffer all events so they're not lost if AgentChat hasn't subscribed yet
       // (previously only done/error were buffered, causing token events to be silently dropped)

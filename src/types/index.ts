@@ -19,9 +19,6 @@ export type DocumentType = 'Doc' | 'Note' | 'README' | 'API' | 'Architecture';
 // Milestone status
 export type MilestoneStatus = 'Pending' | 'InProgress' | 'Completed';
 
-// Health status
-export type HealthStatus = 'healthy' | 'needs_attention' | 'critical';
-
 // Runtime status
 export type RuntimeStatus = 'stopped' | 'starting' | 'running' | 'error';
 
@@ -53,10 +50,12 @@ export interface Project {
   lastLaunchTime?: ISODateTime;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
+  deletedAt?: ISODateTime;
 }
 
 export interface ProjectWithStats extends Project {
   taskCount: number;
+  completedTaskCount: number;
   docCount: number;
   repoCount: number;
 }
@@ -175,11 +174,6 @@ export interface OutdatedDep {
   current: string;
   wanted: string;
   latest: string;
-}
-
-export interface HealthCheckSummary {
-  results: ProjectHealthResult[];
-  changedProjects: string[];
 }
 
 export interface CreateProjectInput {
@@ -590,7 +584,7 @@ export interface UpdateIntegrationInput {
 
 // ==================== Memory (Knowledge Base) ====================
 
-export type MemoryType = 'architecture' | 'code' | 'bugfix' | 'rule' | 'session' | 'decision' | 'solution' | 'pattern' | 'prompt' | 'workflow';
+export type MemoryType = 'architecture' | 'code' | 'bugfix' | 'rule' | 'session' | 'decision' | 'solution' | 'pattern' | 'prompt' | 'workflow' | 'experience';
 export type MemorySource = 'manual' | 'agent' | 'git' | 'task';
 
 export interface ProjectMemory {
@@ -701,4 +695,83 @@ export interface KnowledgeItem {
   createdAt: string;
   updatedAt: string;
   filePath: string | null;
+}
+
+// ==================== Project Graph ====================
+
+export interface GraphNode {
+  id: UUID;
+  projectId: UUID;
+  filePath: string;
+  fileName: string;
+  language: string;
+  directory: string;
+  lineCount: number;
+}
+
+export interface GraphEdge {
+  id: UUID;
+  projectId: UUID;
+  sourceNodeId: UUID;
+  targetNodeId: UUID;
+  importPath: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface GraphSummary {
+  nodeCount: number;
+  edgeCount: number;
+  languageCounts: Record<string, number>;
+  scanDurationMs: number;
+}
+
+export interface FileDepCount {
+  filePath: string;
+  fileName: string;
+  count: number;
+}
+
+export interface GraphStats {
+  totalNodes: number;
+  totalEdges: number;
+  orphanFiles: string[];
+  topDependencies: FileDepCount[];
+  topImporters: FileDepCount[];
+  languageBreakdown: Record<string, number>;
+  directoryBreakdown: Record<string, number>;
+}
+
+// ==================== Feature Groups ====================
+
+export interface FeatureGroup {
+  id: UUID;
+  projectId: UUID;
+  name: string;
+  description?: string;
+  color?: string;
+  createdAt: ISODateTime;
+  fileCount: number;
+}
+
+export interface GroupMembership {
+  groupId: UUID;
+  nodeId: UUID;
+  color?: string;
+}
+
+export interface SuggestedGroup {
+  name: string;
+  reason: string;
+  nodeIds: UUID[];
+  filePaths: string[];
+}
+
+export interface CreateGroupInput {
+  name: string;
+  description?: string;
+  color?: string;
 }

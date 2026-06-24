@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import { LigaturesAddon } from '@xterm/addon-ligatures';
 import { listen } from '@tauri-apps/api/event';
 import { terminalApi } from '../../../api';
 import { getThemeColors } from '../../../shared/terminalThemes';
@@ -47,19 +50,35 @@ export function useXtermTerminal(
     if (!enabled || !containerRef.current) return;
 
     const term = new Terminal({
-      cursorBlink: false,
+      cursorBlink: true,
+      cursorStyle: 'bar',
+      cursorWidth: 2,
       fontSize: 13,
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace",
       theme: getThemeColors(theme).colors,
       allowProposedApi: true,
       scrollback: 10000,
+      lineHeight: 1.2,
+      letterSpacing: 0.5,
+      drawBoldTextInBrightColors: true,
+      minimumContrastRatio: 1,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(containerRef.current);
+    term.focus();
     termRef.current = term;
     fitAddonRef.current = fitAddon;
+
+    // Load enhanced addons (fail gracefully if unavailable)
+    try { term.loadAddon(new WebLinksAddon()); } catch { /* optional */ }
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => { webgl.dispose(); });
+      term.loadAddon(webgl);
+    } catch { /* fallback to canvas renderer */ }
+    try { term.loadAddon(new LigaturesAddon()); } catch { /* optional */ }
 
     // IME composition guard — suppress onData during IME candidate selection
     let composing = false;
@@ -92,13 +111,46 @@ export function useXtermTerminal(
       return true;
     });
 
+    // Helper: send pasted text to PTY (via onData) if available, else write to display
+    const sendPaste = (text: string) => {
+      if (onDataRef.current) {
+        onDataRef.current(text);
+      } else {
+        termRef.current?.write(text);
+      }
+    };
+
+    // Track whether xterm has focus to gate document-level paste
+    let xtermFocused = false;
+    const onFocus = () => { xtermFocused = true; };
+    const onBlur = () => { xtermFocused = false; };
+    if (term.textarea) {
+      term.textarea.addEventListener('focus', onFocus);
+      term.textarea.addEventListener('blur', onBlur);
+    }
+
+    // Document-level paste — only forward to PTY when xterm has focus.
+    // Without the focus guard, pasting into the text editor would also
+    // send text to xterm via this global listener.
+    const onDocPaste = (e: ClipboardEvent) => {
+      if (!termRef.current) return;
+      if (!xtermFocused) return;
+      const text = e.clipboardData?.getData('text');
+      if (text) {
+        e.preventDefault();
+        sendPaste(text);
+      }
+    };
+    document.addEventListener('paste', onDocPaste);
+
     // Right-click paste (only when no text is selected)
     const onContextMenu = (e: MouseEvent) => {
       const selection = termRef.current?.getSelection();
       if (!selection) {
         e.preventDefault();
+        // Try Clipboard API first; fall back silently if permission denied
         navigator.clipboard.readText()
-          .then(text => { if (text && termRef.current) termRef.current.write(text); })
+          .then(text => { if (text) sendPaste(text); })
           .catch(() => {});
       }
     };
@@ -107,23 +159,52 @@ export function useXtermTerminal(
       term.textarea.addEventListener('contextmenu', onContextMenu);
     }
 
+    // Ctrl+V keyboard fallback — some Tauri WebView builds intercept the paste
+    // event before xterm's textarea receives it. Reading the clipboard directly
+    // on keydown ensures paste works regardless of WebView quirks.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && xtermFocused) {
+        navigator.clipboard.readText()
+          .then(text => { if (text) sendPaste(text); })
+          .catch(() => {});
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    // Fit after flex layout settles (tab switch / first render)
     const fitTimer = setTimeout(() => {
       fitAddon.fit();
-      // Immediately sync PTY dimensions so child process sees correct size from the start
       const dims = fitAddon.proposeDimensions();
       if (dims) terminalApi.resize(terminalId, dims.cols, dims.rows).catch(() => {});
     }, 350);
 
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    const observer = new ResizeObserver(() => {
+    // Second fit for slow layout settling
+    const fitTimer2 = setTimeout(() => {
       if (fitAddonRef.current && termRef.current) {
         fitAddonRef.current.fit();
-        if (resizeTimer) clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-          const dims = fitAddonRef.current?.proposeDimensions();
-          if (dims) terminalApi.resize(terminalId, dims.cols, dims.rows).catch(() => {});
-        }, 100);
+        const dims = fitAddonRef.current.proposeDimensions();
+        if (dims) terminalApi.resize(terminalId, dims.cols, dims.rows).catch(() => {});
       }
+    }, 1000);
+
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let rafId = 0;
+    const observer = new ResizeObserver(() => {
+      // Cancel any pending fit so only the latest resize triggers one
+      if (rafId) cancelAnimationFrame(rafId);
+      // Double-rAF: first frame lets browser flush layout, second reads final dimensions
+      rafId = requestAnimationFrame(() => {
+        rafId = requestAnimationFrame(() => {
+          if (fitAddonRef.current && termRef.current) {
+            fitAddonRef.current.fit();
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+              const dims = fitAddonRef.current?.proposeDimensions();
+              if (dims) terminalApi.resize(terminalId, dims.cols, dims.rows).catch(() => {});
+            }, 50);
+          }
+        });
+      });
     });
     observer.observe(containerRef.current);
 
@@ -189,7 +270,9 @@ export function useXtermTerminal(
 
     return () => {
       clearTimeout(fitTimer);
+      clearTimeout(fitTimer2);
       if (resizeTimer) clearTimeout(resizeTimer);
+      if (rafId) cancelAnimationFrame(rafId);
       if (cwdDebounce) clearTimeout(cwdDebounce);
       if (titleDebounce) clearTimeout(titleDebounce);
       observer.disconnect();
@@ -201,7 +284,11 @@ export function useXtermTerminal(
         term.textarea.removeEventListener('compositionend', onCompositionEnd);
         term.textarea.removeEventListener('compositionupdate', onCompositionUpdate);
         term.textarea.removeEventListener('contextmenu', onContextMenu);
+        term.textarea.removeEventListener('focus', onFocus);
+        term.textarea.removeEventListener('blur', onBlur);
       }
+      document.removeEventListener('paste', onDocPaste);
+      document.removeEventListener('keydown', onKeyDown);
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;

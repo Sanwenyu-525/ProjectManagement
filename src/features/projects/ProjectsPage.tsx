@@ -2,17 +2,18 @@ import { useState, useMemo, useEffect } from 'react';
 import { DndContext, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useNavigate } from 'react-router-dom';
-import { Button, Input, Select, Tag, Modal, Form, message, Empty, Spin, Table, InputNumber, Dropdown } from 'antd';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Button, Input, Select, Tag, Modal, Form, Empty, Spin, Table, InputNumber, Dropdown } from 'antd';
 import { FolderOpenOutlined, ScanOutlined, LinkOutlined, FolderOutlined, PlayCircleOutlined, DeleteOutlined, CodeOutlined, ReloadOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, HolderOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
-import { useProjects, useCreateProject, useDeleteProject, useDetectLocal, useDetectGit } from '../../hooks/useProjects';
+import { useProjects, useCreateProject, useDeleteProject, useRestoreProject, useDetectLocal, useDetectGit } from '../../hooks/useProjects';
 import { useAllHealth } from '../../hooks/useHealth';
 import type { CreateProjectInput, ProjectWithStats, ProjectStatus, ProjectPriority, DetectedProject, ScanGroup, ProjectHealthResult } from '../../types';
 import ProjectIcon from '../../shared/ProjectIcon';
 import QuickLaunchModal from '../../shared/QuickLaunchModal';
 import HealthBadge from '../../shared/HealthBadge';
 import { launchHistoryStorage } from '../../lib/launchProfiles';
+import { toastSuccess, toastError, toastWarning } from '../../lib/toast';
 import { projectsApi, gitApi } from '../../api';
 import { STATUS_COLORS, PROJECT_STATUSES, PRIORITY_OPTIONS } from '../../lib/constants';
 import { buildLaunchRequests } from '../../lib/launchUtils';
@@ -80,6 +81,15 @@ export default function ProjectsPage() {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [modalOpen, setModalOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+
+  // Open new project modal when navigated with ?new=true (Ctrl+N shortcut)
+  useEffect(() => {
+    if (searchParams.get('new') === 'true') {
+      setModalOpen(true);
+    }
+  }, [searchParams]);
+
   const [form] = Form.useForm();
   const [quickLaunchModalOpen, setQuickLaunchModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban'>('grid');
@@ -106,6 +116,7 @@ export default function ProjectsPage() {
   // ── Mutations ──
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
+  const restoreProject = useRestoreProject();
   const detectLocal = useDetectLocal();
   const detectGit = useDetectGit();
 
@@ -150,7 +161,7 @@ export default function ProjectsPage() {
     const repoUrl = form.getFieldValue('repoUrl')?.trim();
 
     if (!localPath && !repoUrl) {
-      message.warning('请输入本地路径或 Git 仓库地址');
+      toastWarning('请输入本地路径或 Git 仓库地址');
       return;
     }
 
@@ -172,9 +183,9 @@ export default function ProjectsPage() {
       if (result.openCommand) updates.openCommand = result.openCommand;
       form.setFieldsValue(updates);
 
-      message.success(`检测完成，识别到 ${result.techStack?.length || 0} 项技术栈`);
+      toastSuccess(`检测完成，识别到 ${result.techStack?.length || 0} 项技术栈`);
     } catch (err: unknown) {
-      message.error(`检测失败: ${String(err)}`);
+      toastError(`检测失败: ${String(err)}`);
     }
   };
 
@@ -218,11 +229,11 @@ export default function ProjectsPage() {
         techStack,
       };
       await createProject.mutateAsync(payload);
-      message.success('项目创建成功');
+      toastSuccess('项目创建成功');
       setModalOpen(false);
       form.resetFields();
     } catch (e: unknown) {
-      message.error(`创建失败: ${String(e)}`);
+      toastError(`创建失败: ${String(e)}`);
     }
   };
 
@@ -230,7 +241,7 @@ export default function ProjectsPage() {
     const confirmed = await new Promise<boolean>((resolve) => {
       Modal.confirm({
         title: '删除项目',
-        content: '确定要删除这个项目吗？此操作不可恢复。',
+        content: '确定要删除这个项目吗？可在 5 秒内撤销。',
         okText: '删除',
         okType: 'danger',
         cancelText: '取消',
@@ -241,9 +252,11 @@ export default function ProjectsPage() {
     if (confirmed) {
       try {
         await deleteProject.mutateAsync(id);
-        message.success('项目已删除');
+        toastSuccess('项目已删除', () => {
+          restoreProject.mutateAsync(id);
+        });
       } catch (e: unknown) {
-        message.error(`删除失败: ${String(e)}`);
+        toastError(`删除失败: ${String(e)}`);
       }
     }
   };
@@ -264,7 +277,7 @@ export default function ProjectsPage() {
           useTerminalStore.getState().requestLaunch({ cwd: project.localPath, label: project.name, projectId: project.id });
           navigate('/');
         } else {
-          message.warning('项目没有本地路径');
+          toastWarning('项目没有本地路径');
         }
       },
     },
@@ -286,7 +299,7 @@ export default function ProjectsPage() {
         scan.setScanPath(selected as string);
       }
     } catch {
-      message.error('无法打开文件夹选择器');
+      toastError('无法打开文件夹选择器');
     }
   };
 
@@ -298,7 +311,7 @@ export default function ProjectsPage() {
         form.setFieldsValue({ localPath: selected as string });
       }
     } catch {
-      message.error('无法打开文件夹选择器');
+      toastError('无法打开文件夹选择器');
     }
   };
 
@@ -306,13 +319,13 @@ export default function ProjectsPage() {
 
   const handleLaunchProject = async (project: ProjectWithStats) => {
     if (!project.localPath) {
-      message.warning('请先设置项目本地路径');
+      toastWarning('请先设置项目本地路径');
       return;
     }
     const localPath = project.localPath;
     const requests = buildLaunchRequests({ ...project, localPath });
     if (requests.length === 0) {
-      message.warning('请先设置启动命令');
+      toastWarning('请先设置启动命令');
       return;
     }
 
@@ -325,7 +338,7 @@ export default function ProjectsPage() {
           projectId: project.id,
         });
       }
-      message.success(`${project.name} 已启动`);
+      toastSuccess(`${project.name} 已启动`);
       // Navigate to workspace to show the launching terminals
       navigate('/');
       // Record launch
@@ -337,7 +350,7 @@ export default function ProjectsPage() {
       });
       refetch();
     } catch (e: unknown) {
-      message.error(`启动失败: ${String(e)}`);
+      toastError(`启动失败: ${String(e)}`);
     }
   };
 
@@ -563,7 +576,30 @@ export default function ProjectsPage() {
 
       {/* ── Project Grid ── */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isCompact
+            ? 'repeat(auto-fill, minmax(260px, 1fr))'
+            : 'repeat(auto-fill, minmax(300px, 1fr))',
+          gap: isCompact ? 12 : 16,
+        }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} style={{
+              borderRadius: isCompact ? 10 : 12,
+              border: '1px solid var(--color-border)',
+              overflow: 'hidden',
+              background: 'var(--color-bg-card)',
+            }}>
+              <div className="skeleton" style={{ height: isCompact ? 2 : 3, borderRadius: 0 }} />
+              <div style={{ padding: isCompact ? 14 : 20 }}>
+                <div className="skeleton" style={{ width: '70%', height: 16, marginBottom: 8 }} />
+                <div className="skeleton" style={{ width: '100%', height: 12, marginBottom: 6 }} />
+                <div className="skeleton" style={{ width: '40%', height: 12, marginBottom: 12 }} />
+                <div className="skeleton" style={{ width: '50%', height: 10 }} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : projects.length === 0 ? (
         <Empty description={statusFilter ? `没有${statusFilter === 'active' ? '进行中' : statusFilter === 'completed' ? '已完成' : statusFilter === 'paused' ? '已暂停' : ''}的项目` : '暂无项目'} />
       ) : viewMode === 'grid' ? (
@@ -575,9 +611,10 @@ export default function ProjectsPage() {
             : 'repeat(auto-fill, minmax(300px, 1fr))',
           gap: isCompact ? 12 : 16,
         }}>
-          {sortedProjects.map(project => {
+          {sortedProjects.map((project, index) => {
             const statusColor = getStatusColorVar(project.status);
             const hasHealth = !!healthResults[project.id];
+            const isRecent = Date.now() - new Date(project.updatedAt).getTime() < 24 * 60 * 60 * 1000;
 
             return (
               <div
@@ -589,18 +626,20 @@ export default function ProjectsPage() {
                   WebkitBackdropFilter: 'blur(16px)',
                   borderRadius: isCompact ? 10 : 12,
                   border: '1px solid var(--color-border)',
-                  boxShadow: 'var(--card-shadow)',
+                  boxShadow: isRecent ? 'var(--card-shadow-elevated)' : 'var(--card-shadow)',
                   cursor: 'pointer',
-                  transition: 'box-shadow 0.2s, transform 0.2s',
+                  transition: 'box-shadow 0.25s var(--ease-spring), transform 0.25s var(--ease-spring)',
                   overflow: 'hidden',
                   position: 'relative',
+                  animation: `cardEnter 0.3s var(--ease-spring) both`,
+                  animationDelay: `${index * 30}ms`,
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.boxShadow = 'var(--card-shadow-hover)';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.transform = 'translateY(-3px)';
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.boxShadow = 'var(--card-shadow)';
+                  e.currentTarget.style.boxShadow = isRecent ? 'var(--card-shadow-elevated)' : 'var(--card-shadow)';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
@@ -697,6 +736,7 @@ export default function ProjectsPage() {
                       <button
                         onClick={(e) => e.stopPropagation()}
                         aria-label="项目操作菜单"
+                        aria-haspopup="menu"
                         style={{
                           width: 32, height: 32, borderRadius: 6, border: 'none',
                           background: 'transparent', color: 'var(--md-outline)',
@@ -793,7 +833,7 @@ export default function ProjectsPage() {
                         minWidth: 30,
                       }}>
                         <div style={{
-                          width: project.taskCount > 0 ? '60%' : '0%',
+                          width: project.taskCount > 0 ? `${Math.round(project.completedTaskCount / project.taskCount * 100)}%` : '0%',
                           height: '100%',
                           background: 'var(--md-primary)',
                           borderRadius: 1,

@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { Modal, message } from 'antd';
+import { listen } from '@tauri-apps/api/event';
 import { filesApi } from '../api';
 import { useTerminalStore } from '../stores/terminalStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useThemeStore } from '../stores/themeStore';
-import type { FileTreeNode } from '../api';
+import type { FileTreeNode, FileChangedEvent } from '../api';
 
 const STORAGE_KEY = 'devhub_explorer_dirs';
 
@@ -67,7 +68,11 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
   const popoverRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const fetchingRef = useRef(new Set<string>());
-  const initializedRef = useRef(false);
+  const loadedRef = useRef(false);
+  const changeDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const suppressWatcherRef = useRef(new Set<string>());
+  const dirsRef = useRef(dirs);
+  dirsRef.current = dirs;
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string; isDir: boolean } | null>(null);
@@ -89,8 +94,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
 
   // Persist dir list to localStorage whenever it changes
   useEffect(() => {
-    // 跳过初始空数组，避免覆盖 localStorage
-    if (dirs.length === 0 && !initializedRef.current) return;
+    if (!loadedRef.current) return;
     saveDirs(dirs.map(d => d.path));
   }, [dirs]);
 
@@ -98,7 +102,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
   useEffect(() => {
     const saved = loadDirs();
     if (saved.length === 0) {
-      initializedRef.current = true;
+      loadedRef.current = true;
       return;
     }
     const initial = saved.map(path => ({
@@ -108,9 +112,12 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       loading: true,
     }));
     setDirs(initial);
-    // Fetch trees for all saved dirs in parallel
-    initial.forEach(dir => fetchTree(dir.path));
-    initializedRef.current = true;
+    // Fetch trees for all saved dirs in parallel, register watchers
+    initial.forEach(dir => {
+      fetchTree(dir.path);
+      filesApi.watcherAddRoot(dir.path).catch(() => {});
+    });
+    loadedRef.current = true;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchTree = useCallback((path: string) => {
@@ -129,6 +136,45 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       })
       .finally(() => { fetchingRef.current.delete(path); });
   }, []);
+
+  // Listen for filesystem change events from backend watcher
+  useEffect(() => {
+    const unlisten = listen<FileChangedEvent>('file-changed', (event) => {
+      const { rootPath } = event.payload;
+      // Suppress events triggered by user-initiated mutations
+      if (suppressWatcherRef.current.has(rootPath)) {
+        suppressWatcherRef.current.delete(rootPath);
+        return;
+      }
+      // Debounce: clear existing timer, set new one (500ms)
+      const existing = changeDebounceRef.current.get(rootPath);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        changeDebounceRef.current.delete(rootPath);
+        fetchingRef.current.delete(rootPath);
+        setDirs(prev => {
+          if (prev.some(d => d.path === rootPath)) fetchTree(rootPath);
+          return prev;
+        });
+      }, 500);
+      changeDebounceRef.current.set(rootPath, timer);
+    });
+
+    return () => {
+      unlisten.then(fn => fn());
+      changeDebounceRef.current.forEach(timer => clearTimeout(timer));
+      changeDebounceRef.current.clear();
+    };
+  }, [fetchTree]);
+
+  // Cleanup watchers on unmount
+  useEffect(() => {
+    return () => {
+      dirsRef.current.forEach(d => {
+        filesApi.watcherRemoveRoot(d.path).catch(() => {});
+      });
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Focus input when popover opens
   useEffect(() => {
@@ -183,6 +229,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
     setInputPath('');
     setIsAdding(false);
     fetchTree(trimmed);
+    filesApi.watcherAddRoot(trimmed).catch(() => {});
   }, [fetchTree]);
 
   const handleBrowse = useCallback(async () => {
@@ -195,6 +242,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
 
   const removeDir = useCallback((path: string) => {
     setDirs(prev => prev.filter(d => d.path !== path));
+    filesApi.watcherRemoveRoot(path).catch(() => {});
   }, []);
 
   const toggleDir = useCallback((path: string) => {
@@ -306,7 +354,10 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
         const rootDir = prev.find(d =>
           d.path === path || path.startsWith(d.path + '/') || path.startsWith(d.path + '\\')
         );
-        if (rootDir) fetchTree(rootDir.path);
+        if (rootDir) {
+          suppressWatcherRef.current.add(rootDir.path);
+          fetchTree(rootDir.path);
+        }
         return prev;
       });
     } catch (err) {
@@ -328,12 +379,17 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
     try {
       await filesApi.rename(oldPath, newPath);
       message.success('已重命名');
+      // Notify editor of the path change
+      useWorkspaceStore.getState().setRenamedFile({ oldPath, newPath });
       // 找到根目录并刷新
       setDirs(prev => {
         const rootDir = prev.find(d =>
           d.path === oldPath || oldPath.startsWith(d.path + '/') || oldPath.startsWith(d.path + '\\')
         );
-        if (rootDir) fetchTree(rootDir.path);
+        if (rootDir) {
+          suppressWatcherRef.current.add(rootDir.path);
+          fetchTree(rootDir.path);
+        }
         return prev;
       });
     } catch (err) {
@@ -361,7 +417,10 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
             const rootDir = prev.find(d =>
               d.path === path || path.startsWith(d.path + '/') || path.startsWith(d.path + '\\')
             );
-            if (rootDir) fetchTree(rootDir.path);
+            if (rootDir) {
+              suppressWatcherRef.current.add(rootDir.path);
+              fetchTree(rootDir.path);
+            }
             return prev;
           });
         } catch (err) {
@@ -412,13 +471,19 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
         const rootDir = prev.find(d =>
           d.path === targetDir || targetDir.startsWith(d.path + '/') || targetDir.startsWith(d.path + '\\')
         );
-        if (rootDir) fetchTree(rootDir.path);
+        if (rootDir) {
+          suppressWatcherRef.current.add(rootDir.path);
+          fetchTree(rootDir.path);
+        }
         // 如果是剪切，也需要刷新源目录
         if (clipboard.type === 'cut') {
           const srcRoot = prev.find(d =>
             d.path === clipboard.path || clipboard.path.startsWith(d.path + '/') || clipboard.path.startsWith(d.path + '\\')
           );
-          if (srcRoot) fetchTree(srcRoot.path);
+          if (srcRoot) {
+            suppressWatcherRef.current.add(srcRoot.path);
+            fetchTree(srcRoot.path);
+          }
         }
         return prev;
       });
@@ -426,6 +491,31 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       message.error(`粘贴失败: ${err}`);
     }
   }, [clipboard, fetchTree]);
+
+  // 从系统剪贴板粘贴
+  const handleSystemPaste = useCallback(async (targetDir: string) => {
+    try {
+      const result = await filesApi.pasteFromSystemClipboard(targetDir);
+      if (result.kind === 'empty') {
+        message.info(result.message);
+        return;
+      }
+      message.success(result.message);
+      // 刷新目标目录
+      setDirs(prev => {
+        const rootDir = prev.find(d =>
+          d.path === targetDir || targetDir.startsWith(d.path + '/') || targetDir.startsWith(d.path + '\\')
+        );
+        if (rootDir) {
+          suppressWatcherRef.current.add(rootDir.path);
+          fetchTree(rootDir.path);
+        }
+        return prev;
+      });
+    } catch (err) {
+      message.error(`粘贴失败: ${err}`);
+    }
+  }, [fetchTree]);
 
   return (
     <div style={{ padding: collapsed ? '12px 0 0' : '0', position: 'relative' }}>
@@ -440,7 +530,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
             left: 8,
             zIndex: 10,
             background: isDark ? 'var(--md-surface-container-high)' : '#fff',
-            border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.6)'}`,
+            border: '1px solid var(--border)',
             borderRadius: 8,
             padding: 12,
             boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
@@ -464,7 +554,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
               fontFamily: 'var(--font-mono)',
               color: 'var(--md-on-surface)',
               background: isDark ? 'var(--md-surface-container-lowest)' : 'var(--md-surface-container-lowest)',
-              border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.6)'}`,
+              border: '1px solid var(--border)',
               borderRadius: 6,
               outline: 'none',
               boxSizing: 'border-box',
@@ -479,7 +569,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
                 height: 30, fontSize: 12, fontWeight: 500,
                 color: 'var(--md-on-surface-variant)',
                 background: isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)',
-                border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.6)'}`,
+                border: '1px solid var(--border)',
                 borderRadius: 6, cursor: 'pointer',
               }}
             >
@@ -570,6 +660,47 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
             )}
           </div>
 
+          {/* 根目录创建输入框 — TreeNode 不覆盖根目录本身 */}
+          {!collapsed && creatingInDir?.path === dir.path && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 8px',
+              marginLeft: 16,
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 16, flexShrink: 0 }}>
+                {creatingInDir.isDir ? 'folder' : 'description'}
+              </span>
+              <input
+                ref={(el) => { if (el) el.focus(); }}
+                type="text"
+                value={creatingValue}
+                onChange={(e) => setCreatingValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreate(dir.path, creatingInDir.isDir, creatingValue);
+                  if (e.key === 'Escape') setCreatingInDir(null);
+                  e.stopPropagation();
+                }}
+                onBlur={() => handleCreate(dir.path, creatingInDir.isDir, creatingValue)}
+                onClick={(e) => e.stopPropagation()}
+                placeholder={creatingInDir.isDir ? '文件夹名称' : '文件名称'}
+                style={{
+                  flex: 1,
+                  height: 20,
+                  padding: '0 4px',
+                  fontSize: 12,
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--md-on-surface)',
+                  background: isDark ? 'var(--md-surface-container-lowest)' : '#fff',
+                  border: '1px solid var(--md-primary)',
+                  borderRadius: 3,
+                  outline: 'none',
+                }}
+              />
+            </div>
+          )}
+
           {/* Children */}
           {!collapsed && dir.expanded.has(dir.path) && (
             <div>
@@ -639,6 +770,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
           onCopy={handleCopy}
           onCut={handleCut}
           onPaste={handlePaste}
+          onSystemPaste={handleSystemPaste}
           onRemoveDir={removeDir}
         />,
         document.body
@@ -662,7 +794,7 @@ function ContextMenu({
   x, y, path, isDir, clipboard,
   onClose, onCopyPath, onCopyName, onOpenInExplorer, onOpenInTerminal,
   onRefresh, onCreateFile, onCreateFolder, onRename, onDelete,
-  onCopy, onCut, onPaste, onRemoveDir,
+  onCopy, onCut, onPaste, onSystemPaste, onRemoveDir,
 }: {
   x: number; y: number; path: string; isDir: boolean;
   clipboard: ClipboardState | null;
@@ -679,15 +811,24 @@ function ContextMenu({
   onCopy: (path: string, isDir: boolean) => void;
   onCut: (path: string, isDir: boolean) => void;
   onPaste: (targetDir: string) => void;
+  onSystemPaste: (targetDir: string) => void;
   onRemoveDir: (path: string) => void;
 }) {
   const isDark = useThemeStore(s => s.mode === 'dark');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuX, setMenuX] = useState(x);
+  const [menuY, setMenuY] = useState(y);
 
-  // 计算菜单位置，确保不超出视口
-  const menuWidth = 200;
-  const menuHeight = isDir ? 300 : 240;
-  const finalX = Math.min(x, window.innerWidth - menuWidth - 8);
-  const finalY = Math.min(y, window.innerHeight - menuHeight - 8);
+  // After render, measure actual menu size and clamp to viewport
+  useEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width - 8;
+    const maxY = window.innerHeight - rect.height - 8;
+    if (x > maxX) setMenuX(Math.max(0, maxX));
+    if (y > maxY) setMenuY(Math.max(0, maxY));
+  }, [x, y]);
 
   const items: ContextMenuItem[] = [];
 
@@ -704,11 +845,15 @@ function ContextMenu({
     { key: 'cut', label: '剪切', icon: <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_cut</span>, onClick: () => { onCut(path, isDir); onClose(); } },
   );
 
-  if (isDir && clipboard) {
+  if (clipboard) {
     items.push(
-      { key: 'paste', label: '粘贴', icon: <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_paste</span>, onClick: () => { onPaste(path); onClose(); } },
+      { key: 'paste', label: '粘贴', icon: <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_paste</span>, onClick: () => { onPaste(isDir ? path : path.replace(/[\\/][^\\/]+$/, '')); onClose(); } },
     );
   }
+
+  items.push(
+    { key: 'systemPaste', label: '从系统剪贴板粘贴', icon: <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_paste_go</span>, onClick: () => { onSystemPaste(isDir ? path : path.replace(/[\\/][^\\/]+$/, '')); onClose(); } },
+  );
 
   items.push(
     { type: 'divider' },
@@ -742,6 +887,7 @@ function ContextMenu({
 
   return (
     <div
+      ref={menuRef}
       role="menu"
       aria-label="文件操作"
       onKeyDown={e => {
@@ -749,11 +895,11 @@ function ContextMenu({
       }}
       style={{
         position: 'fixed',
-        left: finalX,
-        top: finalY,
+        left: menuX,
+        top: menuY,
         zIndex: 1000,
         background: isDark ? 'var(--md-surface-container-high)' : '#fff',
-        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : 'rgba(187, 202, 198, 0.6)'}`,
+        border: '1px solid var(--border)',
         borderRadius: 8,
         padding: '4px 0',
         boxShadow: '0 8px 24px rgba(0,0,0,0.15)',

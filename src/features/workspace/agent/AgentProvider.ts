@@ -18,8 +18,6 @@ export interface StartOptions {
   sessionId: string;
   projectId?: string;
   cwd?: string;
-  /** When true, pass --dangerously-skip-permissions to Claude CLI. Disabled by default. */
-  dangerouslySkipPermissions?: boolean;
   /** CLI session ID for --resume (from a previous session's providerSessionId). */
   providerSessionId?: string;
   /** 运行模式：interactive（交互式持久 PTY）或 oneshot（一次性 -p）。默认 interactive */

@@ -8,7 +8,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }
   Planning: { bg: 'rgba(24, 144, 255, 0.12)', text: 'var(--color-info)', border: 'rgba(24, 144, 255, 0.24)' },
   Active: { bg: 'rgba(0, 107, 95, 0.12)', text: 'var(--md-primary)', border: 'rgba(0, 107, 95, 0.24)' },
   Completed: { bg: 'rgba(0, 108, 73, 0.12)', text: 'var(--md-tertiary)', border: 'rgba(0, 108, 73, 0.24)' },
-  Archived: { bg: 'var(--md-surface-container-high)', text: 'var(--md-on-surface-variant)', border: 'var(--md-outline-variant)' },
+  Archived: { bg: 'var(--md-surface-container-high)', text: 'var(--md-on-surface-variant)', border: 'var(--border)' },
 };
 
 const styles = {

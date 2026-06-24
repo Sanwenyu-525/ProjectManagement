@@ -496,7 +496,10 @@ pub async fn brain_analyze_project(
     let local_path = project
         .get("localPath")
         .and_then(|v| v.as_str())
-        .ok_or("NO_LOCAL_PATH: 项目没有本地路径")?;
+        .ok_or("NO_LOCAL_PATH: 项目没有本地路径")?
+        .to_string();
 
-    analyze_inner(local_path)
+    tokio::task::spawn_blocking(move || analyze_inner(&local_path))
+        .await
+        .map_err(|e| format!("分析任务失败: {}", e))?
 }

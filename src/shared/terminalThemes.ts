@@ -76,7 +76,7 @@ function buildDarkTheme(): TerminalThemeConfig {
       magenta: tc.purple || '#a78bfa',
       cyan: tc.primary || '#4fdbc8',
       white: '#d9e5ef',
-      brightBlack: tc.textSecondary || '#526174',
+      brightBlack: tc.textSecondary || '#7a8fa3',
       brightRed: '#fca5a5',
       brightGreen: '#4ade80',
       brightYellow: '#fbbf24',

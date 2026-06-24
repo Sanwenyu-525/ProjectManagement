@@ -42,12 +42,14 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
   const activeTerminalIdRef = useRef<string | null>(null);
   const sessionCreatedRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(0);
   const unlistenOutputRef = useRef<(() => void) | null>(null);
   const unlistenExitRef = useRef<(() => void) | null>(null);
   const rawOutputRef = useRef('');      // non-JSON output for error surfacing
   const gotValidEventRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastSentTextRef = useRef('');
 
   const isDark = useThemeStore(s => s.mode === 'dark');
   const density = useThemeStore(s => s.density);
@@ -63,6 +65,11 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Track previous message count for entry animations
+  useEffect(() => {
+    prevCountRef.current = messages.length;
   }, [messages]);
 
   // Auto-resize textarea to fit content
@@ -115,6 +122,40 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
     };
   }, [cleanupListeners]);
 
+  // Load messages from DB for restored tabs (sessionId exists but no messages loaded)
+  useEffect(() => {
+    const sid = useAgentTabStore.getState().tabs.find(t => t.id === tabId)?.sessionId;
+    if (!sid) return;
+    sessionsApi.messages(sid).then(dbMessages => {
+      if (dbMessages.length === 0) return;
+      const loaded: ChatMessage[] = dbMessages.map(m => {
+        const role = (m.role === 'output' ? 'assistant' : m.role === 'input' ? 'user' : m.role) as 'user' | 'assistant';
+        let content = m.content;
+        // Assistant messages may be stored as v2 JSON blocks — extract text
+        if (role === 'assistant') {
+          try {
+            const parsed = JSON.parse(content);
+            if (parsed.v === 2 && Array.isArray(parsed.blocks)) {
+              content = parsed.blocks
+                .filter((b: { type: string }) => b.type === 'text')
+                .map((b: { text: string }) => b.text)
+                .join('');
+            }
+          } catch { /* plain text */ }
+        }
+        return {
+          id: `db-${m.timestamp}-${Math.random().toString(36).slice(2, 6)}`,
+          role,
+          content,
+          streaming: false,
+          timestamp: new Date(m.timestamp).getTime(),
+        };
+      });
+      setMessages(loaded);
+      sessionCreatedRef.current = true; // mark as restored — don't create new session
+    }).catch(() => {});
+  }, [tabId]);
+
   const processStreamEvent = useCallback((event: StreamJsonEvent) => {
     gotValidEventRef.current = true;
     switch (event.type) {
@@ -159,9 +200,18 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
 
       case 'result': {
         // Finalize streaming
-        setMessages(prev => prev.map(m =>
-          m.streaming ? { ...m, streaming: false } : m
-        ));
+        setMessages(prev => {
+          const finalized = prev.map(m => m.streaming ? { ...m, streaming: false } : m);
+          // Persist last assistant response to DB
+          const lastAssistant = [...finalized].reverse().find(m => m.role === 'assistant');
+          if (lastAssistant?.content) {
+            const sid = useAgentTabStore.getState().tabs.find(t => t.id === tabId)?.sessionId;
+            if (sid) {
+              sessionsApi.appendMessage(sid, 'output', lastAssistant.content).catch(() => {});
+            }
+          }
+          return finalized;
+        });
         if (event.is_error) {
           setError(event.result || 'Unknown error');
         }
@@ -194,6 +244,7 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
     const text = input.trim();
     if (!text || streaming) return;
 
+    lastSentTextRef.current = text;
     setError(null);
     setInput('');
     setStreaming(true);
@@ -212,6 +263,12 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
       timestamp: Date.now(),
     };
     setMessages(prev => [...prev, userMsg]);
+
+    // Persist user message to DB
+    const existingSid = useAgentTabStore.getState().tabs.find(t => t.id === tabId)?.sessionId;
+    if (existingSid) {
+      sessionsApi.appendMessage(existingSid, 'input', text).catch(() => {});
+    }
 
     const terminalId = `gui-${Date.now().toString(36)}`;
     terminalIdRef.current = terminalId;
@@ -254,10 +311,18 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
           const raw = rawOutputRef.current.trim();
           setError(raw || 'Claude 未返回有效响应');
         }
-        // Finalize
-        setMessages(prev => prev.map(m =>
-          m.streaming ? { ...m, streaming: false } : m
-        ));
+        // Finalize and persist
+        setMessages(prev => {
+          const finalized = prev.map(m => m.streaming ? { ...m, streaming: false } : m);
+          const lastAssistant = [...finalized].reverse().find(m => m.role === 'assistant');
+          if (lastAssistant?.content) {
+            const sid = useAgentTabStore.getState().tabs.find(t => t.id === tabId)?.sessionId;
+            if (sid) {
+              sessionsApi.appendMessage(sid, 'output', lastAssistant.content).catch(() => {});
+            }
+          }
+          return finalized;
+        });
         setStreaming(false);
         useAgentStore.getState().finishStreaming(
           useAgentTabStore.getState().tabs.find(t => t.id === tabId)?.sessionId ?? '__gui__',
@@ -315,6 +380,13 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
     ));
   }, [cleanupListeners, tabId]);
 
+  const handleRetry = useCallback(() => {
+    if (lastSentTextRef.current) {
+      setInput(lastSentTextRef.current);
+      setError(null);
+    }
+  }, []);
+
   const styles = useMemo(() => buildStyles(isDark, isCompact, density), [isDark, isCompact, density]);
 
   return (
@@ -332,11 +404,12 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
           </div>
         )}
 
-        {messages.map(msg => (
+        {messages.map((msg, index) => (
           <div key={msg.id} style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
+            ...(index >= prevCountRef.current ? { animation: 'slideUpFade 0.2s ease both' } : {}),
           }}>
             {isCompact && (
               <div style={{
@@ -366,19 +439,39 @@ export default function AgentGUIPanel({ cwd: propCwd, tabId, style: extraStyle }
           </div>
         ))}
 
+        {streaming && (messages.length === 0 || messages[messages.length - 1].role === 'user') && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <div style={styles.assistantBubble}>
+              <span className="thinking-dots" style={styles.thinkingDots}>
+                <span className="dot" /><span className="dot" /><span className="dot" />
+              </span>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div style={styles.errorRow} role="alert">
             <div style={styles.errorBubble}>
-              <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-error)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-error)', flexShrink: 0 }}>
                 error
               </span>
               <span style={styles.errorText}>{error}</span>
+              {lastSentTextRef.current && (
+                <span
+                  className="material-symbols-outlined"
+                  role="button"
+                  aria-label="重试"
+                  onClick={handleRetry}
+                  style={{ fontSize: 14, color: 'var(--md-primary)', cursor: 'pointer', flexShrink: 0, padding: 2, borderRadius: 'var(--radius-xs)' }}
+                  title="重试"
+                >refresh</span>
+              )}
               <span
                 className="material-symbols-outlined"
                 role="button"
                 aria-label="关闭错误提示"
                 onClick={() => setError(null)}
-                style={{ fontSize: 14, color: 'var(--md-on-surface-variant)', cursor: 'pointer', marginLeft: 4, padding: 2, borderRadius: 'var(--radius-xs)' }}
+                style={{ fontSize: 14, color: 'var(--md-on-surface-variant)', cursor: 'pointer', flexShrink: 0, padding: 2, borderRadius: 'var(--radius-xs)' }}
               >close</span>
             </div>
           </div>
@@ -491,6 +584,11 @@ function buildStyles(isDark: boolean, isCompact: boolean, density: string): Reco
       verticalAlign: 'text-bottom',
       animation: 'blink 1s step-end infinite',
     },
+    thinkingDots: {
+      display: 'flex',
+      alignItems: 'center',
+      padding: '4px 0',
+    },
     errorRow: {
       display: 'flex',
       justifyContent: 'center',
@@ -503,6 +601,8 @@ function buildStyles(isDark: boolean, isCompact: boolean, density: string): Reco
       borderRadius: 8,
       background: 'var(--md-error-container)',
       border: '1px solid var(--md-error)',
+      maxHeight: 200,
+      overflow: 'auto',
     },
     errorText: {
       fontSize: 12,

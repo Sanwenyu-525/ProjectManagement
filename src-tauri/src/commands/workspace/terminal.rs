@@ -54,6 +54,84 @@ fn decode_stream_chunk(
     output
 }
 
+// ── Resolve claude CLI to its .exe path (Windows only) ─────────────────
+
+/// Resolve a CLI command name (like "claude") to its .exe path.
+/// npm installs create `claude` (shell script), `claude.cmd`, and the actual
+/// `claude.exe` lives in `node_modules/@anthropic-ai/claude-code/bin/`.
+/// We need the .exe for direct PTY spawning (bypassing cmd.exe).
+#[cfg(target_os = "windows")]
+fn resolve_claude_exe(command: &str) -> Result<String, String> {
+    // If the command is already an absolute .exe path, use it directly
+    if command.ends_with(".exe") && std::path::Path::new(command).exists() {
+        return Ok(command.to_string());
+    }
+
+    // Try `where` to find the command in PATH
+    if let Ok(output) = std::process::Command::new("cmd")
+        .args(["/C", "where", &format!("{}.exe", command)])
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Some(first_line) = stdout.lines().next() {
+            let path = first_line.trim();
+            if !path.is_empty() && std::path::Path::new(path).exists() {
+                return Ok(path.to_string());
+            }
+        }
+    }
+
+    // Fallback: check the same directory as the command (npm puts claude,
+    // claude.cmd, and the .exe in the same bin directory or nearby node_modules)
+    if let Some(parent) = std::path::Path::new(command).parent() {
+        if !parent.as_os_str().is_empty() {
+            let candidate = parent.join("claude.exe");
+            if candidate.exists() {
+                return Ok(candidate.to_string_lossy().to_string());
+            }
+            let candidate = parent.join("node_modules").join("@anthropic-ai")
+                .join("claude-code").join("bin").join("claude.exe");
+            if candidate.exists() {
+                return Ok(candidate.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Fallback: resolve command via PATH using `where`, then check siblings
+    if let Ok(output) = std::process::Command::new("cmd")
+        .args(["/C", "where", command])
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Some(first_line) = stdout.lines().next() {
+            let path = first_line.trim();
+            if let Some(parent) = std::path::Path::new(path).parent() {
+                let candidate = parent.join("node_modules").join("@anthropic-ai")
+                    .join("claude-code").join("bin").join("claude.exe");
+                if candidate.exists() {
+                    return Ok(candidate.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Fallback: try common npm global install locations
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        let candidate = std::path::PathBuf::from(&appdata)
+            .join("npm")
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("bin")
+            .join("claude.exe");
+        if candidate.exists() {
+            return Ok(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    Err(format!("无法找到 {}.exe，请确保 claude 已正确安装", command))
+}
+
 // ── Event payloads ───────────────────────────────────────────────────────
 
 #[derive(Clone, Serialize)]
@@ -604,39 +682,31 @@ pub async fn terminal_start_agent_piped_pty(
         .openpty(size)
         .map_err(|e| format!("创建 PTY 失败: {}", e))?;
 
+    // On Windows, cmd.exe + batch file + stdin redirection is unreliable in ConPTY
+    // (the PTY implementation used by portable_pty on Windows). Instead, resolve
+    // the claude CLI to its .exe path and spawn it directly, piping the prompt
+    // through PTY stdin. This avoids cmd.exe entirely.
     #[cfg(target_os = "windows")]
-    let (mut cmd_builder, prompt_file) = {
-        // Write prompt to temp file to avoid cmd.exe quote-stripping issues.
-        // `cmd.exe /C` strips outer quotes, breaking `claude -p "prompt with spaces"`.
-        // Using `< file` redirect lets cmd.exe read the prompt from a file instead.
-        let temp_path = std::env::temp_dir().join(format!("claude_prompt_{}.txt", uuid::Uuid::new_v4()));
-        std::fs::write(&temp_path, &stdin_data)
-            .map_err(|e| format!("写入临时文件失败: {}", e))?;
-
-        let redirect_arg = format!("{} < {}", command, temp_path.display());
-        let mut c = CommandBuilder::new("cmd.exe");
-        c.arg("/C");
-        c.arg(&redirect_arg);
+    let mut cmd_builder = {
+        // Resolve claude to claude.exe — npm creates both `claude` (shell script)
+        // and `claude.cmd` in the same directory, and `claude.exe` lives inside
+        // node_modules. Try `where` first, then fall back to common npm paths.
+        let claude_exe = resolve_claude_exe(&command)
+            .map_err(|e| format!("找不到 claude 可执行文件: {}", e))?;
+        let mut c = CommandBuilder::new(&claude_exe);
         for arg in &args {
             c.arg(arg);
         }
-        (c, Some(temp_path))
+        c
     };
 
     #[cfg(not(target_os = "windows"))]
-    let (mut cmd_builder, prompt_file): (CommandBuilder, Option<std::path::PathBuf>) = {
+    let mut cmd_builder = {
         let mut c = CommandBuilder::new(&command);
-        // On Unix, pass prompt as argument after -p (no cmd.exe quote-stripping)
-        let mut full_args = Vec::new();
-        if let Some(first) = args.first() {
-            full_args.push(first.clone()); // "-p"
-            full_args.push(stdin_data.clone()); // prompt
-            full_args.extend(args[1..].iter().cloned()); // remaining flags
-        }
-        for arg in &full_args {
+        for arg in &args {
             c.arg(arg);
         }
-        (c, None)
+        c
     };
 
     cmd_builder.cwd(&cwd);
@@ -654,13 +724,27 @@ pub async fn terminal_start_agent_piped_pty(
         .try_clone_reader()
         .map_err(|e| format!("获取 PTY reader 失败: {}", e))?;
 
+    // Write prompt to PTY stdin then close (signals EOF).
+    // Writer is moved into a background thread and dropped there.
+    {
+        let mut writer = pair.master.take_writer()
+            .map_err(|e| format!("获取 PTY writer 失败: {}", e))?;
+        let prompt = stdin_data.clone();
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = writer.write_all(prompt.as_bytes());
+            let _ = writer.flush();
+            // writer dropped here → EOF on PTY stdin
+        });
+    }
+
     {
         let mut terminals = recover_lock(&PTY_TERMINALS);
         terminals.insert(
             terminal_id.clone(),
             PtyTerminal {
                 child,
-                writer: None, // writer already consumed and dropped
+                writer: None, // stdin is one-shot; not needed after prompt delivery
                 master: pair.master,
             },
         );
@@ -673,20 +757,12 @@ pub async fn terminal_start_agent_piped_pty(
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(200));
-            // Single lock acquisition: check if exited AND get exit code together
             let mut terminals = recover_lock(&PTY_TERMINALS);
             match terminals.get_mut(&tid_exit) {
                 Some(terminal) => {
                     if let Ok(Some(status)) = terminal.child.try_wait() {
                         let code = status.exit_code() as i32;
                         drop(terminals);
-                        // Clean up temp prompt file if it exists
-                        if let Some(ref path) = prompt_file {
-                            let _ = std::fs::remove_file(path);
-                        }
-                        // Emit exit event BEFORE removing from registry so
-                        // terminal_stop/input/resize can still reach the process
-                        // while the frontend processes the exit.
                         let _ = app_exit.emit(
                             "terminal-exit",
                             TerminalExit {
@@ -698,9 +774,8 @@ pub async fn terminal_start_agent_piped_pty(
                         terminals.remove(&tid_exit);
                         break;
                     }
-                    // still running or error — re-lock on next iteration
                 }
-                None => break, // removed externally (e.g. terminal_stop)
+                None => break,
             }
         }
     });
@@ -871,6 +946,19 @@ fn scan_claude_commands(dir: &std::path::Path) -> Vec<SlashCommandDef> {
         }
     }
     cmds
+}
+
+// ── Open external terminal ────────────────────────────────────────────
+
+#[command]
+pub async fn terminal_open_external(cwd: String, skip_permissions: bool) -> Result<(), String> {
+    let perm_flag = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
+    let cmd_str = format!("cd /d {} && claude{}", cwd, perm_flag);
+    Command::new("cmd")
+        .args(["/C", "start", "cmd.exe", "/K", &cmd_str])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[command]

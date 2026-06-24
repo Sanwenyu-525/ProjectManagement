@@ -24,9 +24,10 @@ pub async fn projects_list(
     let mut sql = String::from(
         "SELECT p.*,
             (SELECT COUNT(*) FROM tasks WHERE projectId = p.id) as taskCount,
+            (SELECT COUNT(*) FROM tasks WHERE projectId = p.id AND status = 'Done') as completedTaskCount,
             (SELECT COUNT(*) FROM documents WHERE projectId = p.id) as docCount,
             (SELECT COUNT(*) FROM remote_repos WHERE projectId = p.id) as repoCount
-         FROM projects p WHERE 1=1",
+         FROM projects p WHERE p.deletedAt IS NULL",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
     let mut param_idx = 1u32;
@@ -327,11 +328,24 @@ pub async fn projects_delete(
     id: String,
 ) -> Result<(), String> {
     db.execute_returning_changes(
-        "DELETE FROM projects WHERE id = ?1",
+        "UPDATE projects SET deletedAt = datetime('now') WHERE id = ?1 AND deletedAt IS NULL",
         rusqlite::params![id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[command]
+pub async fn projects_restore(
+    db: State<'_, Database>,
+    id: String,
+) -> Result<JsonValue, String> {
+    db.execute_returning_changes(
+        "UPDATE projects SET deletedAt = NULL WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    projects_get_by_id(db, id).await
 }
 
 #[command]

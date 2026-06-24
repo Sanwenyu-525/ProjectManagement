@@ -1,6 +1,6 @@
 // Barrel re-export — all existing imports from '../../api' continue to work
 export { cmd } from './client';
-export type { FileEntry, FileTreeNode } from './types';
+export type { FileEntry, FileTreeNode, FileChangedEvent } from './types';
 
 // Project domain (projects, tasks, repos, documents, milestones, tags, timeline, search, health, dependencies, detect, brain)
 export {
@@ -15,6 +15,7 @@ export {
   detectApi,
   healthApi,
   brainApi,
+  graphApi,
   gitApi,
 } from './project';
 
@@ -34,7 +35,7 @@ export type { SlashCommandDef } from './terminal';
 export { buildsApi, templatesApi, integrationsApi } from './build';
 
 // Memory (knowledge base)
-export { memoryApi, decisionsApi, memoryRelationsApi } from './memory';
+export { memoryApi, decisionsApi } from './memory';
 
 // Notes + Knowledge
 export { notesApi } from './notes';

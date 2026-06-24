@@ -1,5 +1,5 @@
 import { cmd } from './client';
-import type { TerminalApi, FileEntry, FileTreeNode, FileContent } from './types';
+import type { TerminalApi, FileEntry, FileTreeNode, FileContent, SystemClipboardPasteResult, ContentSearchMatch } from './types';
 
 export interface SlashCommandDef {
   name: string;
@@ -27,6 +27,8 @@ export const terminalApi: TerminalApi = {
     cmd('terminal_input', { terminalId, data }),
   resize: (terminalId: string, cols: number, rows: number) =>
     cmd('terminal_resize', { terminalId, cols, rows }),
+  openExternal: (cwd: string, skipPermissions: boolean) =>
+    cmd<void>('terminal_open_external', { cwd, skipPermissions }),
 };
 
 // ==================== Files ====================
@@ -50,11 +52,15 @@ export const filesApi = {
     cmd<void>('files_rename', { oldPath, newPath }),
   delete: (path: string) =>
     cmd<void>('files_delete', { path }),
+  searchAcrossProjects: (query: string, maxResults?: number) =>
+    cmd<FileEntry[]>('files_search_across_projects', { query, maxResults: maxResults ?? 20 }),
+  searchContent: (query: string, maxResults?: number) =>
+    cmd<ContentSearchMatch[]>('files_search_content', { query, maxResults: maxResults ?? 15 }),
+  pasteFromSystemClipboard: (targetDir: string) =>
+    cmd<SystemClipboardPasteResult>('files_paste_from_system_clipboard', { targetDir }),
+  watcherAddRoot: (path: string) =>
+    cmd<void>('file_watcher_add_root', { path }),
+  watcherRemoveRoot: (path: string) =>
+    cmd<void>('file_watcher_remove_root', { path }),
 };
 
-// ==================== Claude Code Commands ====================
-
-export const claudeCommandsApi = {
-  list: (projectDir?: string) =>
-    cmd<SlashCommandDef[]>('claude_commands_list', { projectDir: projectDir ?? null }),
-};

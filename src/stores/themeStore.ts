@@ -52,11 +52,14 @@ interface ThemeState {
   accent: AccentColor;
   fontSize: FontSize;
   density: Density;
+  shortcutsModalOpen: boolean;
   toggle: () => void;
   setMode: (m: ThemeMode) => void;
   setAccent: (a: AccentColor) => void;
   setFontSize: (fs: FontSize) => void;
   setDensity: (d: Density) => void;
+  setShortcutsModalOpen: (open: boolean) => void;
+  toggleShortcutsModal: () => void;
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
@@ -64,6 +67,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
   accent: (localStorage.getItem('app_accent') as AccentColor) || 'default',
   fontSize: (localStorage.getItem('app_fontSize') as FontSize) || 'base',
   density: (localStorage.getItem('app_density') as Density) || 'comfortable',
+  shortcutsModalOpen: false,
 
   toggle: () =>
     set((s) => {
@@ -94,6 +98,9 @@ export const useThemeStore = create<ThemeState>((set) => ({
     applyDensityToDOM(d);
     set({ density: d });
   },
+
+  setShortcutsModalOpen: (open) => set({ shortcutsModalOpen: open }),
+  toggleShortcutsModal: () => set((s) => ({ shortcutsModalOpen: !s.shortcutsModalOpen })),
 }));
 
 // Apply persisted values on load (called from Root component)

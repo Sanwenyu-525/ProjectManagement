@@ -13,6 +13,7 @@ const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const TimelinePage = lazy(() => import('./features/workspace/timeline/TimelinePage'));
 const DataScreenPage = lazy(() => import('./features/workspace/data-screen/DataScreenPage'));
 const KnowledgeBasePage = lazy(() => import('./features/knowledge/KnowledgeBasePage'));
+const GraphPage = lazy(() => import('./features/projects/GraphPage'));
 
 function PageFallback() {
   return (
@@ -68,6 +69,7 @@ export default function App() {
               <Route path="timeline" element={<TimelinePage />} />
               <Route path="data-screen" element={<DataScreenPage />} />
               <Route path="knowledge" element={<KnowledgeBasePage />} />
+              <Route path="graph" element={<GraphPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -39,7 +39,7 @@ html {
 .ant-btn-primary:hover {
   background: var(--color-accent-hover) !important;
   border-color: var(--color-accent-hover) !important;
-  box-shadow: 0 4px 16px var(--color-primary-glow), 0 1px 4px rgba(0, 107, 95, 0.12) !important;
+  box-shadow: var(--btn-shadow-primary-hover) !important;
   transform: translateY(-1px);
 }
 
@@ -59,7 +59,7 @@ html {
 }
 
 .ant-btn-default:active {
-  background: rgba(0, 107, 95, 0.14) !important;
+  background: var(--color-primary-active) !important;
   box-shadow: var(--shadow-xs) !important;
   transform: scale(0.98);
 }
@@ -71,7 +71,7 @@ html {
 }
 
 .ant-btn-text:active {
-  background: rgba(0, 107, 95, 0.14) !important;
+  background: var(--color-primary-active) !important;
   transform: scale(0.98);
 }
 
@@ -94,7 +94,7 @@ html {
 }
 
 .ant-btn-default.ant-btn-dangerous:active {
-  background: rgba(186, 26, 26, 0.14) !important;
+  background: var(--color-danger-active) !important;
   transform: scale(0.98);
 }
 
@@ -104,12 +104,12 @@ html {
 }
 
 .ant-btn-text.ant-btn-dangerous:active {
-  background: rgba(186, 26, 26, 0.14) !important;
+  background: var(--color-danger-active) !important;
   transform: scale(0.98);
 }
 
 .ant-btn-primary.ant-btn-dangerous:hover {
-  box-shadow: 0 4px 16px rgba(186, 26, 26, 0.24), 0 1px 4px rgba(186, 26, 26, 0.12) !important;
+  box-shadow: var(--btn-shadow-danger-hover) !important;
   transform: translateY(-1px);
 }
 
@@ -191,54 +191,54 @@ html {
 }
 
 [data-theme="dark"] .glass-panel {
-  background-color: rgba(37, 43, 42, 0.72);
+  background-color: var(--md-surface-container-high);
   border-color: var(--md-outline-variant);
 }
 
 /* ===== Button Dark Mode Overrides ===== */
 
 [data-theme="dark"] .ant-btn-primary:hover {
-  box-shadow: 0 4px 16px rgba(79, 219, 200, 0.20), 0 1px 4px rgba(79, 219, 200, 0.10) !important;
+  box-shadow: var(--btn-shadow-primary-hover) !important;
 }
 
 [data-theme="dark"] .ant-btn-primary:active {
-  box-shadow: 0 1px 4px rgba(79, 219, 200, 0.14) !important;
+  box-shadow: var(--btn-shadow-primary-active) !important;
 }
 
 [data-theme="dark"] .ant-btn-default:hover {
-  background: rgba(79, 219, 200, 0.08) !important;
+  background: var(--color-hover) !important;
 }
 
 [data-theme="dark"] .ant-btn-default:active {
-  background: rgba(79, 219, 200, 0.13) !important;
+  background: var(--color-primary-active) !important;
 }
 
 [data-theme="dark"] .ant-btn-text:hover {
-  background: rgba(79, 219, 200, 0.08) !important;
+  background: var(--color-hover) !important;
 }
 
 [data-theme="dark"] .ant-btn-text:active {
-  background: rgba(79, 219, 200, 0.13) !important;
+  background: var(--color-primary-active) !important;
 }
 
 [data-theme="dark"] .ant-btn-primary.ant-btn-dangerous:hover {
-  box-shadow: 0 4px 16px rgba(255, 180, 171, 0.20), 0 1px 4px rgba(255, 180, 171, 0.10) !important;
+  box-shadow: var(--btn-shadow-danger-hover) !important;
 }
 
 [data-theme="dark"] .ant-btn-default.ant-btn-dangerous:hover {
-  background: rgba(255, 180, 171, 0.08) !important;
+  background: var(--color-danger-active) !important;
 }
 
 [data-theme="dark"] .ant-btn-text.ant-btn-dangerous:hover {
-  background: rgba(255, 180, 171, 0.08) !important;
+  background: var(--color-danger-active) !important;
 }
 
 [data-theme="dark"] .ant-btn-dashed:hover {
-  background: rgba(79, 219, 200, 0.08) !important;
+  background: var(--color-hover) !important;
 }
 
 [data-theme="dark"] .ant-btn-icon-only:not(.ant-btn-primary):not(.ant-btn-default.ant-btn-dangerous):hover {
-  background: rgba(79, 219, 200, 0.08) !important;
+  background: var(--color-hover) !important;
 }
 
 /* ===== Reduced Motion ===== */

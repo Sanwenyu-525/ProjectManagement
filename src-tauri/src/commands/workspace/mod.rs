@@ -1,5 +1,6 @@
 pub mod terminal;
 pub mod files;
+pub mod file_watcher;
 pub mod sessions;
 pub mod agent_tasks;
 pub mod agent_configs;

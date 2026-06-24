@@ -40,6 +40,9 @@ pub fn run() {
             let database = Database::new(&db_path).expect("failed to initialize database");
             app.manage(database);
 
+            // Initialize filesystem watcher for file tree auto-refresh
+            commands::workspace::file_watcher::init_watcher(app.handle().clone());
+
             // Kill all child processes when the window is closed
             let window = app.webview_windows().values().next().cloned();
             if let Some(window) = window {
@@ -58,6 +61,7 @@ pub fn run() {
             commands::project::projects::projects_create,
             commands::project::projects::projects_update,
             commands::project::projects::projects_delete,
+            commands::project::projects::projects_restore,
             commands::project::projects::projects_update_status,
             commands::project::projects::projects_get_stats,
             commands::project::projects::projects_open,
@@ -101,6 +105,17 @@ pub fn run() {
             commands::project::detect::detect_scan_directory,
             commands::project::detect::detect_installed_agents,
             commands::project::brain::brain_analyze_project,
+            // Project graph
+            commands::project::graph::graph_scan_project,
+            commands::project::graph::graph_get,
+            commands::project::graph::graph_get_stats,
+            commands::project::graph::graph_create_group,
+            commands::project::graph::graph_delete_group,
+            commands::project::graph::graph_list_groups,
+            commands::project::graph::graph_add_files_to_group,
+            commands::project::graph::graph_remove_file_from_group,
+            commands::project::graph::graph_get_group_memberships,
+            commands::project::graph::graph_suggest_groups,
             // Agent sessions & browser memory
             commands::workspace::sessions::sessions_start,
             commands::workspace::sessions::sessions_append_message,
@@ -137,6 +152,7 @@ pub fn run() {
             commands::workspace::terminal::terminal_start_agent_piped,
             commands::workspace::terminal::terminal_start_agent_piped_pty,
             commands::workspace::terminal::terminal_resize,
+            commands::workspace::terminal::terminal_open_external,
             commands::workspace::terminal::claude_commands_list,
             // File operations
             commands::workspace::files::files_list_directory,
@@ -148,6 +164,12 @@ pub fn run() {
             commands::workspace::files::files_create,
             commands::workspace::files::files_rename,
             commands::workspace::files::files_delete,
+            commands::workspace::files::files_search_across_projects,
+            commands::workspace::files::files_search_content,
+            commands::workspace::files::files_paste_from_system_clipboard,
+            // File watcher
+            commands::workspace::file_watcher::file_watcher_add_root,
+            commands::workspace::file_watcher::file_watcher_remove_root,
             // Git operations
             commands::git::git::git_status,
             commands::git::git::git_log,
@@ -234,6 +256,8 @@ pub fn run() {
             // Knowledge file operations
             commands::workspace::knowledge::knowledge_import_files,
             commands::workspace::knowledge::knowledge_create_note,
+            commands::workspace::knowledge::knowledge_extract,
+            commands::workspace::knowledge::knowledge_seed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

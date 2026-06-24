@@ -1,5 +1,9 @@
 -- Add isPinned to decisions (align with other knowledge tables)
+-- Note: wrapped in run_migration_safe() in db.rs for idempotency
 ALTER TABLE "decisions" ADD COLUMN "isPinned" INTEGER NOT NULL DEFAULT 0;
+
+-- Add isPinned to documents (required by knowledge_items VIEW)
+ALTER TABLE "documents" ADD COLUMN "isPinned" INTEGER NOT NULL DEFAULT 0;
 
 -- Rebuild knowledge_items VIEW with category column
 DROP VIEW IF EXISTS "knowledge_items";

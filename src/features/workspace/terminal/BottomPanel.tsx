@@ -6,6 +6,7 @@ import { usePreviewStore } from '../../../stores/previewStore';
 import { terminalApi } from '../../../api';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../../lib/constants';
 import TerminalInstance from '../../../shared/TerminalInstance';
+import ResizeHandle from '../../../shared/ResizeHandle';
 import type { TerminalExitEvent } from '../../../shared/terminalTypes';
 
 type BottomTab = 'terminal' | 'preview' | 'logs';
@@ -37,7 +38,6 @@ export default function BottomPanel({ defaultHeight = 280, onHeightChange }: Bot
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const createdRef = useRef(false);
-  const resizingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Create default terminal on mount
@@ -108,30 +108,21 @@ export default function BottomPanel({ defaultHeight = 280, onHeightChange }: Bot
   const activeTerminal = useTerminalStore(s => s.terminals.find(t => t.id === activeTerminalId));
   const detectedPreview = previews.length > 0 ? previews[previews.length - 1] : null;
 
-  // Resize handle
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    resizingRef.current = true;
     const startY = e.clientY;
     const startHeight = height;
 
     const onMouseMove = (ev: MouseEvent) => {
-      if (!resizingRef.current) return;
       const delta = startY - ev.clientY;
       const newHeight = Math.min(600, Math.max(120, startHeight + delta));
       setHeight(newHeight);
       onHeightChange?.(newHeight);
     };
     const onMouseUp = () => {
-      resizingRef.current = false;
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
     };
 
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }, [height, onHeightChange]);
@@ -139,18 +130,10 @@ export default function BottomPanel({ defaultHeight = 280, onHeightChange }: Bot
   return (
     <div ref={containerRef} style={{ ...styles.container, height }}>
       {/* Resize handle */}
-      <div
-        style={styles.resizeHandle}
-        onMouseDown={handleResizeStart}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-primary-container)'; }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-      >
-        <div style={{ display: 'flex', gap: 3, opacity: 0.4 }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{ width: 2, height: 2, borderRadius: '50%', background: 'var(--md-on-surface-variant)' }} />
-          ))}
-        </div>
-      </div>
+      <ResizeHandle
+        orientation="vertical"
+        onResizeStart={handleResizeStart}
+      />
 
       {/* Tab bar */}
       <div style={styles.tabBar}>
@@ -256,24 +239,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     flexShrink: 0,
     borderRadius: 12,
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
     background: 'var(--term-bg)',
     overflow: 'hidden',
     position: 'relative',
-  },
-  resizeHandle: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 8,
-    cursor: 'row-resize',
-    zIndex: 10,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'transparent',
-    transition: 'background 0.15s',
   },
   tabBar: {
     display: 'flex',

@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-Agent 聊天界面 UI 本地化（英文→中文）已完成。当前无进行中的任务。
+UI 优化全阶段（P0-P3）+ 已知限制修复全部完成。主要新增：密度模式（comfortable/compact/dense）、微交互动画、Toast/Undo、soft-delete、快捷键面板、`react-transition-group` 路由过渡、`prefers-reduced-motion` 支持。
 
 ## Commands
 
@@ -32,12 +32,15 @@ cd src-tauri && cargo check # 检查 Rust 编译（快，不生成二进制）
 
 ### 页面路由
 
-**工作区是首页** (`/workspace`)。侧边栏三项：
+**工作区是首页** (`/workspace`)。侧边栏六项：
 - **工作区** (`/workspace`) — Agent + 终端 + 编辑器 + 浏览器
 - **项目** (`/projects`, `/projects/:id`) — 项目 CRUD 和详情
-- **设置** (`/settings`)
+- **时间线** (`/timeline`)
+- **数据大屏** (`/data-screen`)
+- **文件浏览器** — 侧边栏面板（无独立路由）
+- **知识库** (`/knowledge`)
 
-隐藏路由（可 URL 访问但不在侧边栏）：`/timeline`、`/data-screen`。根路径 `/` 重定向到 `/workspace`。
+隐藏路由：`/settings`（仅从顶栏齿轮图标访问）。根路径 `/` 重定向到 `/workspace`。
 
 ### 前端目录结构
 
@@ -45,7 +48,7 @@ cd src-tauri && cargo check # 检查 Rust 编译（快，不生成二进制）
 src/features/
   workspace/           — 工作区页面及所有子功能
     WorkspacePage.tsx  — 主工作区视图（首页）
-    agent/             — AgentChat, AgentTabBar, AgentIdleState, AgentProvider, ClaudeProvider, providers
+    agent/             — AgentGUIPanel, AgentTabBar, AgentProvider, ClaudeProvider, providers
     terminal/          — TerminalPane, BottomPanel
     editor/            — CodeEditorPane, FileEditor, FileViewer
     browser/           — BrowserWorkspacePage
@@ -55,8 +58,14 @@ src/features/
     timeline/          — TimelinePage
     data-screen/       — DataScreenPage
     components/        — WorkspaceHeader, StatusDot, cmTheme, terminalFactory
-  project/             — ProjectsPage, ProjectDetailPage, NewProjectWizard
+  projects/            — ProjectsPage, ProjectDetailPage, NewProjectWizard
+  knowledge/           — KnowledgeBasePage（独立知识库页面）
   settings/            — SettingsPage
+src/shared/            — 跨领域共享组件（SearchBox, ShortcutsModal, MainLayout, FileExplorer, ProjectIcon 等）
+src/stores/            — Zustand store（themeStore, terminalStore, workspaceStore, agentStore 等）
+src/api/               — Tauri IPC 封装（project.ts, terminal.ts, memory.ts, knowledge.ts 等）
+src/lib/               — 工具函数（toast.tsx, normalize.ts, constants.ts, launchUtils.ts 等）
+src/hooks/             — 自定义 hooks（useProjects.ts, useHealth.ts 等）
 ```
 
 ### Agent Provider System
@@ -72,7 +81,7 @@ src/features/
 
 ```
 Frontend: projectsApi.list()
-  → src/api/index.ts: cmd('projects_list', args)
+  → src/api/project.ts: cmd('projects_list', args)
     → src-tauri/src/commands/project/projects.rs    // #[command] fn
       → src-tauri/src/db.rs: db.query_json(sql)     // SQLite via rusqlite
         → returns serde_json::Value
@@ -85,8 +94,8 @@ Frontend: projectsApi.list()
 ### Backend Pattern (Rust)
 
 每个领域一个 command 模块：`src-tauri/src/commands/<domain>/`
-- `workspace/` — terminal, files, sessions, agent_tasks, workspaces
-- `project/` — projects, tasks, repos, documents, milestones, tags, search, timeline, detect, brain, dependencies, health
+- `project/` — projects, tasks, repos, documents, milestones, tags, search, timeline, detect, brain, dependencies, health, feature_groups
+- `workspace/` — terminal, files, sessions, agent_tasks, workspaces, memory, knowledge
 - `git/` — git 操作
 - `build/` — builds, templates, integrations
 
@@ -97,12 +106,14 @@ Frontend: projectsApi.list()
 - 部分更新用 `macro_rules! add_field!` 构建动态 SET 子句
 - 重要状态变更调用 `db.log_activity()` 写入 timeline
 
-数据库：SQLite，路径 `{app_data_dir}/devhub.db`，11 张表，TEXT UUID，ON DELETE CASCADE。
-Schema：`src-tauri/migrations/001_init.sql` ~ `008_browser_memory.sql`。
+数据库：SQLite，路径 `{app_data_dir}/devhub.db`，TEXT UUID，ON DELETE CASCADE。
+Schema：`src-tauri/migrations/001_init.sql` ~ `022_project_soft_delete.sql`（22 个迁移）。
+项目表支持 soft-delete（`deletedAt` 列），`projects_list` 自动过滤已删除记录，`projects_restore` 可恢复。
 
 ### Frontend Pattern
 
-- **API 层** (`src/api/index.ts`)：领域对象封装 `cmd()`，每个后端命令一个方法
+- **API 层** (`src/api/`)：按领域拆分文件（`project.ts`, `terminal.ts`, `memory.ts` 等），统一通过 `cmd()` 封装 Tauri IPC
+- **自定义 hooks** (`src/hooks/`)：`useProjects.ts` 封装 react-query 查询和 mutation（`useCreateProject`, `useDeleteProject`, `useRestoreProject` 等）
 - **状态管理** (`src/stores/`)：按领域组织的 Zustand store
 - **路径别名**：`@/` → `./src/`（tsconfig.json + vite.config.ts）
 - **单用户，无认证**：硬编码 `default-user`
@@ -120,7 +131,10 @@ Schema：`src-tauri/migrations/001_init.sql` ~ `008_browser_memory.sql`。
 ### Styling
 
 Glassmorphism 浅色主题——无 Tailwind，无 CSS Modules：
-- CSS 变量在 `src/index.css`（设计 token）
+- **设计 token**：`src/shared/styles/variables.css`（CSS 变量 + 密度模式覆写）
+- **玻璃效果**：`src/shared/styles/glassmorphism.css`（`.glass`/`.glass-strong`/`.glass-card`）
+- **动画**：`src/shared/styles/animations.css`（`animate-in`、`hover-lift`、`clickable`，含 `prefers-reduced-motion` 支持）
+- **密度模式**：三档（comfortable/compact/dense），`[data-density]` 类选择器覆写 `--space-*` token，`themeStore` 持久化
 - Ant Design `ConfigProvider` 主题在 `src/main.tsx`
 - 大量 `.ant-*` 覆盖 + `!important` 实现玻璃效果（backdrop-filter, 半透明背景）
 - 组件内大量使用 inline styles，`styles: Record<string, React.CSSProperties>` 对象模式
@@ -139,7 +153,7 @@ Glassmorphism 浅色主题——无 Tailwind，无 CSS Modules：
 ### Architecture Constraints
 - **Feature-first layout**: 新领域逻辑放 `src/features/<domain>/`。跨领域共享代码放 `src/shared/`。工具函数放 `src/lib/`。
 - **禁止新建 src/ 顶层目录**（除非用户明确同意）。
-- **API 层集中化**: 所有 Tauri IPC 调用走 `src/api/index.ts`。组件中禁止直接调 `tauriInvoke()`。
+- **API 层集中化**: 所有 Tauri IPC 调用走 `src/api/` 下按领域拆分的文件。组件中禁止直接调 `tauriInvoke()`。
 - **类型集中化**: 领域类型在 `src/types/index.ts`，API 类型在 `src/api/types/index.ts`。禁止为 API payload 创建内联类型。
 
 ### Type Safety

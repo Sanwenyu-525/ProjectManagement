@@ -2,7 +2,9 @@ use serde::Serialize;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
-use tauri::command;
+use tauri::{command, State};
+
+use crate::db::Database;
 
 // ── Types ──
 
@@ -43,12 +45,21 @@ pub struct FileContent {
     pub modified: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemClipboardPasteResult {
+    pub kind: String,
+    pub count: usize,
+    pub image_path: Option<String>,
+    pub message: String,
+}
+
 // ── Constants ──
 
 const MAX_FILE_SIZE: u64 = 1_048_576; // 1 MB
 const BINARY_CHECK_SIZE: usize = 8192; // 8 KB
 
-const SKIP_DIRS: &[&str] = &[
+pub const SKIP_DIRS: &[&str] = &[
     ".git",
     "node_modules",
     "target",
@@ -345,6 +356,347 @@ pub async fn files_delete(path: String) -> Result<(), String> {
         fs::remove_file(target).map_err(|e| e.to_string())?;
     }
 
+    Ok(())
+}
+
+#[command]
+pub async fn files_search_across_projects(
+    db: State<'_, Database>,
+    query: String,
+    max_results: Option<usize>,
+) -> Result<Vec<FileEntry>, String> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Ok(vec![]);
+    }
+    let cap = max_results.unwrap_or(20);
+
+    // Extract project paths from DB (async context) before moving to blocking
+    let value = db
+        .query_json(
+            "SELECT localPath FROM projects WHERE localPath IS NOT NULL AND localPath != ''",
+            rusqlite::params![],
+        )
+        .unwrap_or(serde_json::json!([]));
+
+    let project_paths: Vec<String> = value
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row.get("localPath")?.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    tokio::task::spawn_blocking(move || {
+        let mut results = Vec::new();
+        for root in &project_paths {
+            let dir = Path::new(root);
+            if dir.is_dir() {
+                search_files_recursive(dir, &q, &mut results, cap);
+            }
+        }
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("搜索任务失败: {}", e))?
+}
+
+fn search_files_recursive(
+    dir: &Path,
+    query: &str,
+    results: &mut Vec<FileEntry>,
+    cap: usize,
+) {
+    if results.len() >= cap {
+        return;
+    }
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        if results.len() >= cap {
+            return;
+        }
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            if SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            search_files_recursive(&path, query, results, cap);
+        } else if name.to_lowercase().contains(query) {
+            let metadata = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let extension = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_string());
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|t| {
+                    let dt: chrono::DateTime<chrono::Local> = t.into();
+                    Some(dt.to_rfc3339())
+                })
+                .unwrap_or_default();
+            results.push(FileEntry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                is_dir: false,
+                size: metadata.len(),
+                modified,
+                extension,
+            });
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentSearchMatch {
+    pub file_name: String,
+    pub file_path: String,
+    pub extension: Option<String>,
+    pub line_number: usize,
+    pub line_text: String,
+}
+
+#[command]
+pub async fn files_search_content(
+    db: State<'_, Database>,
+    query: String,
+    max_results: Option<usize>,
+) -> Result<Vec<ContentSearchMatch>, String> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Ok(vec![]);
+    }
+    let cap = max_results.unwrap_or(15);
+
+    let value = db
+        .query_json(
+            "SELECT localPath FROM projects WHERE localPath IS NOT NULL AND localPath != ''",
+            rusqlite::params![],
+        )
+        .unwrap_or(serde_json::json!([]));
+
+    let project_paths: Vec<String> = value
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row.get("localPath")?.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    tokio::task::spawn_blocking(move || {
+        let mut results = Vec::new();
+        for root in &project_paths {
+            let dir = Path::new(root);
+            if dir.is_dir() {
+                grep_recursive(dir, &q, &mut results, cap);
+            }
+        }
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("内容搜索任务失败: {}", e))?
+}
+
+fn grep_recursive(dir: &Path, query: &str, results: &mut Vec<ContentSearchMatch>, cap: usize) {
+    if results.len() >= cap {
+        return;
+    }
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        if results.len() >= cap {
+            return;
+        }
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            if SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            grep_recursive(&path, query, results, cap);
+            continue;
+        }
+
+        // 只搜文本文件，跳过二进制和大文件
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if metadata.len() > MAX_FILE_SIZE {
+            continue;
+        }
+
+        let content = match fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let extension = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_string());
+
+        for (line_idx, line) in content.lines().enumerate() {
+            if results.len() >= cap {
+                return;
+            }
+            if line.to_lowercase().contains(query) {
+                let line_text = if line.len() > 200 {
+                    // 截取匹配位置附近的内容
+                    let pos = line.to_lowercase().find(query).unwrap_or(0);
+                    let start = pos.saturating_sub(60);
+                    let end = (pos + query.len() + 60).min(line.len());
+                    let prefix = if start > 0 { "..." } else { "" };
+                    let suffix = if end < line.len() { "..." } else { "" };
+                    format!("{}{}{}", prefix, &line[start..end], suffix)
+                } else {
+                    line.to_string()
+                };
+                results.push(ContentSearchMatch {
+                    file_name: name.clone(),
+                    file_path: path.to_string_lossy().to_string(),
+                    extension: extension.clone(),
+                    line_number: line_idx + 1,
+                    line_text: line_text.trim().to_string(),
+                });
+            }
+        }
+    }
+}
+
+#[command]
+pub async fn files_paste_from_system_clipboard(
+    target_dir: String,
+) -> Result<SystemClipboardPasteResult, String> {
+    let target = Path::new(&target_dir);
+    if !target.is_dir() {
+        return Err("目标路径不是目录".into());
+    }
+
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| format!("无法访问剪贴板: {}", e))?;
+
+    // 优先级：图片 > 文件列表 > 文本
+
+    // 1. 尝试读取图片
+    if let Ok(img) = clipboard.get_image() {
+        let mut png_buf = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_buf, img.width as u32, img.height as u32);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
+            writer.write_image_data(&img.bytes).map_err(|e| e.to_string())?;
+        }
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let filename = format!("clipboard_{}.png", ts);
+        let dest = target.join(&filename);
+
+        let tmp = target.join(format!("clipboard_{}.png.tmp", ts));
+        fs::write(&tmp, &png_buf).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, &dest).map_err(|e| {
+            fs::remove_file(&tmp).ok();
+            e.to_string()
+        })?;
+
+        return Ok(SystemClipboardPasteResult {
+            kind: "image".into(),
+            count: 1,
+            image_path: Some(filename),
+            message: "已粘贴剪贴板图片".into(),
+        });
+    }
+
+    // 2. 尝试读取文件列表
+    if let Ok(file_list) = clipboard.get().file_list() {
+        if !file_list.is_empty() {
+            let mut count = 0;
+            for src_path in &file_list {
+                let name = match src_path.file_name() {
+                    Some(n) => n.to_string_lossy().to_string(),
+                    None => continue,
+                };
+                let dest = target.join(&name);
+                if dest.exists() {
+                    continue;
+                }
+                if src_path.is_dir() {
+                    copy_dir_recursive(src_path, &dest).ok();
+                } else {
+                    fs::copy(src_path, &dest).ok();
+                }
+                count += 1;
+            }
+            return Ok(SystemClipboardPasteResult {
+                kind: "files".into(),
+                count,
+                image_path: None,
+                message: format!("已粘贴 {} 个文件", count),
+            });
+        }
+    }
+
+    // 3. 尝试读取文本
+    if let Ok(text) = clipboard.get_text() {
+        if !text.trim().is_empty() {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let filename = format!("clipboard_{}.txt", ts);
+            let dest = target.join(&filename);
+            fs::write(&dest, &text).map_err(|e| e.to_string())?;
+            return Ok(SystemClipboardPasteResult {
+                kind: "text".into(),
+                count: 1,
+                image_path: None,
+                message: "已粘贴剪贴板文本".into(),
+            });
+        }
+    }
+
+    Ok(SystemClipboardPasteResult {
+        kind: "empty".into(),
+        count: 0,
+        image_path: None,
+        message: "系统剪贴板中没有可粘贴的内容".into(),
+    })
+}
+
+fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dest_path)?;
+        } else {
+            fs::copy(&src_path, &dest_path)?;
+        }
+    }
     Ok(())
 }
 

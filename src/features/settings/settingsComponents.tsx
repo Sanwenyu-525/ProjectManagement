@@ -1,13 +1,14 @@
-import { useThemeStore } from '../../stores/themeStore';
-
-export function GlassCard({ children, isDark }: { children: React.ReactNode; isDark: boolean }) {
+export function GlassCard({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      background: isDark ? 'var(--md-surface-container)' : '#ffffff',
+      background: 'var(--color-bg-card)',
+      backdropFilter: 'blur(20px) saturate(1.4)',
+      WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
       borderRadius: 12,
-      border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
-      boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+      border: '1px solid var(--color-border)',
+      boxShadow: 'var(--card-shadow)',
       overflow: 'hidden',
+      transition: 'box-shadow 0.2s ease',
     }}>
       {children}
     </div>
@@ -15,18 +16,17 @@ export function GlassCard({ children, isDark }: { children: React.ReactNode; isD
 }
 
 export function CardHeader({ title, badge }: { title: string; badge?: string }) {
-  const isDark = useThemeStore(s => s.mode === 'dark');
   return (
     <div style={{
       padding: '14px 24px',
-      borderBottom: `1px solid ${isDark ? 'rgba(187, 202, 198, 0.15)' : 'rgba(187, 202, 198, 0.3)'}`,
-      background: isDark ? 'var(--md-surface-container-lowest)' : 'rgba(255,255,255,0.5)',
+      borderBottom: '1px solid var(--color-divider)',
+      background: 'var(--md-surface-container-low)',
       display: 'flex',
       alignItems: 'center',
       gap: 8,
     }}>
       <h3 style={{
-        fontSize: 16,
+        fontSize: 'var(--text-lg)',
         fontWeight: 600,
         color: 'var(--md-on-surface)',
         lineHeight: '24px',
@@ -56,8 +56,8 @@ export function CardHeader({ title, badge }: { title: string; badge?: string }) 
 export function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: 14, color: 'var(--md-on-surface-variant)' }}>{label}</span>
-      <span style={{ fontSize: 14, color: 'var(--md-on-surface)' }}>{value}</span>
+      <span style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface-variant)' }}>{label}</span>
+      <span style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)' }}>{value}</span>
     </div>
   );
 }
@@ -71,8 +71,8 @@ export function ToggleRow({ label, description, checked, onChange }: {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <div>
-        <div style={{ fontSize: 14, color: 'var(--md-on-surface)' }}>{label}</div>
-        <div style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', marginTop: 2 }}>{description}</div>
+        <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)' }}>{label}</div>
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginTop: 2 }}>{description}</div>
       </div>
       <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
         <input
@@ -85,7 +85,7 @@ export function ToggleRow({ label, description, checked, onChange }: {
           width: 36,
           height: 20,
           borderRadius: 10,
-          background: checked ? 'var(--md-primary)' : 'rgba(187, 202, 198, 0.5)',
+          background: checked ? 'var(--md-primary)' : 'var(--md-surface-container-high)',
           position: 'relative',
           transition: 'background 0.2s ease',
         }}>
@@ -93,8 +93,8 @@ export function ToggleRow({ label, description, checked, onChange }: {
             width: 16,
             height: 16,
             borderRadius: '50%',
-            background: '#ffffff',
-            border: '1px solid var(--md-outline-variant)',
+            background: 'var(--md-surface)',
+            border: '1px solid var(--border)',
             position: 'absolute',
             top: 1,
             left: checked ? 17 : 1,

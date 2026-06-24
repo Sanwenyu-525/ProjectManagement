@@ -35,7 +35,7 @@ export default function AgentContextPanel({ sessionId, cwd }: AgentContextPanelP
   if (!sessionId) {
     return (
       <div style={styles.empty}>
-        <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)' }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)', opacity: 0.6 }}>
           folder_open
         </span>
         <p style={styles.emptyText}>启动会话后查看 agent 引用的文件。</p>
@@ -46,7 +46,7 @@ export default function AgentContextPanel({ sessionId, cwd }: AgentContextPanelP
   if (displayFiles.length === 0) {
     return (
       <div style={styles.empty}>
-        <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)' }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)', opacity: 0.6 }}>
           folder_open
         </span>
         <p style={styles.emptyText}>开始对话后，agent 引用的文件会显示在这里。</p>
@@ -125,11 +125,11 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    padding: 24,
+    gap: 6,
+    padding: '32px 16px',
   },
   emptyText: {
-    margin: '8px 0 0',
+    margin: 0,
     fontSize: 12,
     color: 'var(--md-on-surface-variant)',
     textAlign: 'center',
@@ -140,7 +140,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 4,
     padding: '8px 12px',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
     fontSize: 11,
     color: 'var(--md-on-surface-variant)',
     fontFamily: 'var(--font-sans)',
@@ -156,7 +156,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   group: {
     padding: '6px 0',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
   },
   groupHeader: {
     display: 'flex',

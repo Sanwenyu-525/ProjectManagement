@@ -2,6 +2,7 @@ import { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import AgentTerminal from './AgentTerminal';
 import type { AgentTerminalHandle } from './AgentTerminal';
 import AgentGUIPanel from './AgentGUIPanel';
+import { useAgentTabStore } from '../../../stores/agentTabStore';
 
 export interface AgentTerminalModeHandle {
   switchCwd: (newCwd: string) => void;
@@ -9,11 +10,14 @@ export interface AgentTerminalModeHandle {
 
 interface AgentTerminalModeProps {
   mode: 'xterm' | 'gui';
+  tabId: string;
+  style?: React.CSSProperties;
 }
 
 const AgentTerminalMode = forwardRef<AgentTerminalModeHandle, AgentTerminalModeProps>(
-  function AgentTerminalMode({ mode }, ref) {
+  function AgentTerminalMode({ mode, tabId, style }, ref) {
     const agentTerminalRef = useRef<AgentTerminalHandle>(null);
+    const tabCwd = useAgentTabStore(s => s.tabs.find(t => t.id === tabId)?.cwd ?? null);
 
     const switchCwd = useCallback((newCwd: string) => {
       agentTerminalRef.current?.switchCwd(newCwd);
@@ -22,10 +26,10 @@ const AgentTerminalMode = forwardRef<AgentTerminalModeHandle, AgentTerminalModeP
     useImperativeHandle(ref, () => ({ switchCwd }), [switchCwd]);
 
     if (mode === 'gui') {
-      return <AgentGUIPanel />;
+      return <AgentGUIPanel tabId={tabId} cwd={tabCwd ?? undefined} style={style} />;
     }
 
-    return <AgentTerminal ref={agentTerminalRef} />;
+    return <AgentTerminal ref={agentTerminalRef} tabId={tabId} style={style} />;
   }
 );
 

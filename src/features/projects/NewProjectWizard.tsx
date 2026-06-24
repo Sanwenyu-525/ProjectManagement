@@ -182,7 +182,7 @@ export default function NewProjectWizard() {
                     width: '100%',
                     padding: '10px 14px',
                     borderRadius: 8,
-                    border: '1px solid var(--md-outline-variant)',
+                    border: '1px solid var(--border)',
                     background: 'var(--md-surface)',
                     color: 'var(--md-on-surface)',
                     fontSize: 14,

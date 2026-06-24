@@ -81,6 +81,9 @@ impl Database {
     }
 
     /// Run a named migration only if it hasn't been applied yet.
+    /// If the full batch fails with "duplicate column name" (from a prior partial run that
+    /// already applied an ALTER TABLE ADD COLUMN), re-runs statement-by-statement, skipping
+    /// only the duplicate-column errors so that subsequent statements (e.g. VIEW creation) execute.
     fn run_migration(&self, conn: &Connection, name: &str, sql: &str) -> Result<(), DbError> {
         let already: bool = conn
             .prepare("SELECT 1 FROM _migrations WHERE name = ?1")
@@ -92,8 +95,24 @@ impl Database {
         }
 
         if let Err(e) = conn.execute_batch(sql) {
-            eprintln!("[devhub] Migration '{}' failed: {}", name, e);
-            return Err(DbError::Migration(format!("Migration '{}' failed: {}", name, e)));
+            let msg = e.to_string();
+            if msg.contains("duplicate column name") {
+                // Partial re-run: the ALTER TABLE already applied, but later statements
+                // (e.g. DROP VIEW / CREATE VIEW) did not. Re-execute statement-by-statement,
+                // skipping only the duplicate-column errors.
+                eprintln!("[devhub] Migration '{}' partial re-run (duplicate column), retrying statements individually", name);
+                for stmt in sql.split(';').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    if let Err(e2) = conn.execute_batch(stmt) {
+                        if !e2.to_string().contains("duplicate column name") {
+                            eprintln!("[devhub] Migration '{}' failed on statement: {}", name, e2);
+                            return Err(DbError::Migration(format!("Migration '{}' failed: {}", name, e2)));
+                        }
+                    }
+                }
+            } else {
+                eprintln!("[devhub] Migration '{}' failed: {}", name, e);
+                return Err(DbError::Migration(format!("Migration '{}' failed: {}", name, e)));
+            }
         }
         conn.execute("INSERT INTO _migrations (name) VALUES (?1)", [name])?;
         Ok(())
@@ -192,6 +211,11 @@ impl Database {
         self.run_migration(&conn, "016_knowledge_view_category", include_str!("../migrations/016_knowledge_view_category.sql"))?;
         self.run_migration(&conn, "017_notes_file_path", include_str!("../migrations/017_notes_file_path.sql"))?;
         self.run_migration(&conn, "018_recreate_project_tags", include_str!("../migrations/018_recreate_project_tags.sql"))?;
+        self.run_migration(&conn, "019_fix_knowledge_view", include_str!("../migrations/019_fix_knowledge_view.sql"))?;
+        self.run_migration(&conn, "020_project_graph", include_str!("../migrations/020_project_graph.sql"))?;
+        self.run_migration(&conn, "021_feature_groups", include_str!("../migrations/021_feature_groups.sql"))?;
+        self.run_migration(&conn, "022_project_soft_delete", include_str!("../migrations/022_project_soft_delete.sql"))?;
+        self.run_migration(&conn, "023_global_plan_session", include_str!("../migrations/023_global_plan_session.sql"))?;
 
         Ok(())
     }

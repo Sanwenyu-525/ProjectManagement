@@ -2,7 +2,23 @@ import { useState, useEffect, useCallback } from 'react';
 import { message, Modal } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { gitApi } from '../../../api';
-import type { GitFileChange, GitCommit } from '../git/gitTypes';
+
+interface GitFileChange {
+  path: string;
+  status: 'M' | 'A' | 'D' | 'R' | 'C' | '?';
+  staged: boolean;
+}
+
+interface GitCommit {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  date: string;
+  branches?: string[];
+  parents: string[];
+  branchIdx: number;
+}
 
 interface AgentGitTabProps {
   repoPath: string | null;
@@ -29,15 +45,15 @@ function relativeTime(dateStr: string): string {
   return `${days}天前`;
 }
 
-/** Status → display metadata. Colors borrowed from GitHub Desktop / VS Code */
+/** Status → display metadata. Uses semantic color tokens for consistency */
 function statusMeta(status: string): { icon: string; color: string; bg: string; label: string } {
   switch (status) {
-    case 'M': return { icon: 'edit', color: '#e3b341', bg: 'rgba(227,179,65,0.12)', label: '修改' };
-    case 'A': return { icon: 'add_circle', color: '#3fb950', bg: 'rgba(63,185,80,0.12)', label: '新增' };
-    case 'D': return { icon: 'remove_circle', color: '#f85149', bg: 'rgba(248,81,73,0.12)', label: '删除' };
-    case 'R': return { icon: 'compare_arrows', color: '#a371f7', bg: 'rgba(163,113,247,0.12)', label: '重命名' };
-    case 'C': return { icon: 'content_copy', color: '#a371f7', bg: 'rgba(163,113,247,0.12)', label: '复制' };
-    case '?': return { icon: 'help_circle', color: '#8b949e', bg: 'rgba(139,148,158,0.08)', label: '未跟踪' };
+    case 'M': return { icon: 'edit', color: 'var(--color-amber)', bg: 'var(--color-amber-light)', label: '修改' };
+    case 'A': return { icon: 'add_circle', color: 'var(--md-tertiary)', bg: 'var(--color-tertiary-light)', label: '新增' };
+    case 'D': return { icon: 'remove_circle', color: 'var(--md-error)', bg: 'var(--color-error-light)', label: '删除' };
+    case 'R': return { icon: 'compare_arrows', color: 'var(--md-secondary)', bg: 'color-mix(in srgb, var(--md-secondary) 12%, transparent)', label: '重命名' };
+    case 'C': return { icon: 'content_copy', color: 'var(--md-secondary)', bg: 'color-mix(in srgb, var(--md-secondary) 12%, transparent)', label: '复制' };
+    case '?': return { icon: 'help_circle', color: 'var(--md-outline)', bg: 'var(--md-surface-container-low)', label: '未跟踪' };
     default:  return { icon: 'circle', color: 'var(--md-on-surface-variant)', bg: 'transparent', label: '未知' };
   }
 }
@@ -83,6 +99,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
 
   // Collapsed directory groups
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+  const [hoveredFile, setHoveredFile] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!repoPath) return;
@@ -119,7 +136,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
   if (!repoPath || isNotRepo) {
     return (
       <div style={styles.empty}>
-        <span className="material-symbols-outlined" style={{ fontSize: 32, opacity: 0.4 }}>folder_off</span>
+        <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)', opacity: 0.6 }}>folder_off</span>
         <span style={styles.emptyText}>No git repository</span>
       </div>
     );
@@ -128,7 +145,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
   if (error && !statusData) {
     return (
       <div style={styles.empty}>
-        <span className="material-symbols-outlined" style={{ fontSize: 32, opacity: 0.4 }}>error</span>
+        <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)', opacity: 0.6 }}>error</span>
         <span style={styles.emptyText}>Failed to load git status</span>
         <button style={styles.retryBtn} onClick={load}>Retry</button>
       </div>
@@ -264,6 +281,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
   const renderFileRow = (f: GitFileChange) => {
     const { color } = statusMeta(f.status);
     const isExpanded = expandedFile === f.path;
+    const isHovered = hoveredFile === f.path;
     const parts = f.path.replace(/\\/g, '/').split('/');
     const filename = parts[parts.length - 1];
 
@@ -272,17 +290,26 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
         <div
           style={{
             ...styles.fileRow,
-            background: isExpanded ? 'var(--md-primary-container)' : undefined,
+            background: isExpanded
+              ? 'var(--md-primary-container)'
+              : isHovered
+                ? 'var(--md-surface-container-low)'
+                : undefined,
             cursor: 'pointer',
           }}
           onClick={() => toggleFile(f)}
+          onMouseEnter={() => setHoveredFile(f.path)}
+          onMouseLeave={() => setHoveredFile(null)}
         >
           <span style={{ ...styles.statusDot, background: color }} />
           <span style={styles.fileName} title={f.path}>{filename}</span>
           {parts.length > 1 && (
             <span style={styles.dirHint} title={f.path}>{parts.slice(0, -1).join('/')}</span>
           )}
-          <div style={styles.fileActions} onClick={e => e.stopPropagation()}>
+          <div
+            style={{ ...styles.fileActions, opacity: isHovered ? 1 : 0.3 }}
+            onClick={e => e.stopPropagation()}
+          >
             {f.staged ? (
               <button style={styles.actionBtn} title="取消暂存" onClick={() => handleUnstageFile(f.path)}>
                 <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-on-surface-variant)' }}>remove</span>
@@ -396,7 +423,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
         {stagedFiles.length > 0 && (
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
-              <span className="material-symbols-outlined" style={{ fontSize: 13, color: '#3fb950' }}>check_circle</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 13, color: 'var(--md-tertiary)' }}>check_circle</span>
               <span style={styles.sectionTitle}>暂存区</span>
               <span style={styles.sectionCount}>{stagedFiles.length}</span>
             </div>
@@ -411,7 +438,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
         {unstagedFiles.length > 0 && (
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
-              <span className="material-symbols-outlined" style={{ fontSize: 13, color: '#e3b341' }}>pending</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 13, color: 'var(--color-amber)' }}>pending</span>
               <span style={styles.sectionTitle}>更改</span>
               <span style={styles.sectionCount}>{unstagedFiles.length}</span>
               <button style={styles.stageAllBtn} onClick={handleStageAll}>
@@ -429,7 +456,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
         {/* Clean state */}
         {clean && (
           <div style={styles.cleanState}>
-            <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#3fb950', opacity: 0.6 }}>check_circle</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 24, color: 'var(--md-tertiary)', opacity: 0.6 }}>check_circle</span>
             <span style={{ fontSize: 12, color: 'var(--md-on-surface-variant)', opacity: 0.7 }}>工作区干净</span>
           </div>
         )}
@@ -482,7 +509,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '8px 12px',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
     flexShrink: 0,
   },
   branchRow: {
@@ -509,14 +536,14 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     padding: 4,
     borderRadius: 6,
-    transition: 'color 0.15s',
+    transition: 'color 0.15s, background 0.15s',
   },
   summaryBar: {
     display: 'flex',
     flexWrap: 'wrap',
     gap: 4,
     padding: '6px 12px',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
     flexShrink: 0,
   },
   summaryChip: {
@@ -534,7 +561,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 6,
     padding: '8px 12px',
-    borderTop: '1px solid var(--md-outline-variant)',
+    borderTop: '1px solid var(--border)',
     flexShrink: 0,
   },
   commitInput: {
@@ -545,7 +572,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-sans)',
     background: 'var(--md-surface-container)',
     color: 'var(--md-on-surface)',
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
     borderRadius: 6,
     outline: 'none',
   },
@@ -569,7 +596,7 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
   },
   section: {
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
   },
   sectionHeader: {
     display: 'flex',
@@ -644,7 +671,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    padding: '3px 12px 3px 28px',
+    padding: '4px 12px 4px 28px',
     transition: 'background 0.1s',
   },
   statusDot: {
@@ -680,7 +707,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 1,
     flexShrink: 0,
-    opacity: 0.6,
+    transition: 'opacity 0.15s',
   },
   actionBtn: {
     display: 'flex',
@@ -695,7 +722,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'opacity 0.15s',
   },
   diffContainer: {
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
     background: 'var(--md-surface-container-lowest)',
   },
   diffPre: {
@@ -762,8 +789,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     height: '100%',
+    padding: '32px 16px',
     color: 'var(--md-on-surface-variant)',
     fontFamily: 'var(--font-sans)',
   },

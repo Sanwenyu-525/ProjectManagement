@@ -10,6 +10,12 @@ import { useThemeStore, initThemeFromStorage } from './stores/themeStore';
 import './styles/design-system.css';
 import './index.css';
 
+// Disable native Chromium context menu in production (devtools need right-click to work in dev)
+const isDevMode = window.location.hostname === 'localhost';
+if (!isDevMode) {
+  document.addEventListener('contextmenu', e => e.preventDefault());
+}
+
 /**
  * Read a CSS custom property value from the document root.
  * getComputedStyle resolves var() references, so we get the final computed value.

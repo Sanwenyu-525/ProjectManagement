@@ -43,7 +43,7 @@ export interface StreamJsonEvent {
  *                  (brace-balanced but unparseable). Consumers can attempt
  *                  provider-specific recovery (e.g. regex session_id extraction).
  */
-export interface ExtractResult {
+interface ExtractResult {
   events: StreamJsonEvent[];
   buffer: string;
   pending: string;
@@ -58,7 +58,7 @@ export interface ExtractResult {
  *
  * Returns the parsed event on success, null otherwise.
  */
-export function tryParseObject(objStr: string): StreamJsonEvent | null {
+function tryParseObject(objStr: string): StreamJsonEvent | null {
   // Strategy 1: parse as-is (fast path for clean data)
   try {
     return JSON.parse(objStr) as StreamJsonEvent;
@@ -102,7 +102,7 @@ export function tryParseObject(objStr: string): StreamJsonEvent | null {
  * Check if a line has more open braces than close braces
  * (indicating a split JSON object).
  */
-export function hasUnbalancedBraces(s: string): boolean {
+function hasUnbalancedBraces(s: string): boolean {
   let depth = 0;
   let inString = false;
   let escape = false;
@@ -121,7 +121,7 @@ export function hasUnbalancedBraces(s: string): boolean {
  * Split a string containing multiple concatenated JSON objects into individual objects.
  * E.g. '{"a":1}{"b":2}' -> ['{"a":1}', '{"b":2}']
  */
-export function splitJsonObjects(s: string): string[] {
+function splitJsonObjects(s: string): string[] {
   const objects: string[] = [];
   let depth = 0;
   let inString = false;
@@ -152,7 +152,7 @@ export function splitJsonObjects(s: string): string[] {
  * Repair common JSON syntax errors from non-official API backends.
  * Currently handles: `"key"::` -> `"key":` (double colon after property name).
  */
-export function repairMalformedJson(s: string): string {
+function repairMalformedJson(s: string): string {
   return s.replace(/"(\w+)"::/g, '"$1":');
 }
 
@@ -160,7 +160,7 @@ export function repairMalformedJson(s: string): string {
  * Extract the first complete JSON object from a string using brace depth tracking.
  * Handles cases where the line contains extra content before/after the JSON.
  */
-export function extractFirstJsonObject(s: string): string | null {
+function extractFirstJsonObject(s: string): string | null {
   const start = s.indexOf('{');
   if (start === -1) return null;
 

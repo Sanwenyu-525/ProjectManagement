@@ -36,6 +36,10 @@ interface WorkspaceStore {
   // Editor panel visibility
   editorOpen: boolean;
   setEditorOpen: (v: boolean) => void;
+
+  // File rename notification (consumed by CodeEditorPane)
+  renamedFile: { oldPath: string; newPath: string } | null;
+  setRenamedFile: (v: { oldPath: string; newPath: string } | null) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
@@ -66,4 +70,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
 
   editorOpen: false,
   setEditorOpen: (v) => set({ editorOpen: v }),
+
+  renamedFile: null,
+  setRenamedFile: (v) => set({ renamedFile: v }),
 }));

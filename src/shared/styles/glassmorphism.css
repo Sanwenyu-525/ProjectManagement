@@ -1,7 +1,7 @@
 /* Liquid glass utilities — aligned to reference DESIGN.md (20px blur, 70% opacity) */
 
 .glass {
-  background: rgba(255, 255, 255, 0.70);
+  background: var(--color-bg-glass);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--color-border);
@@ -9,7 +9,7 @@
 }
 
 .glass-strong {
-  background: rgba(255, 255, 255, 0.80);
+  background: var(--color-bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--color-border);
@@ -40,13 +40,13 @@
 .glass-menu-item-active {
   background: var(--color-primary-light);
   border-left: 2px solid var(--md-primary);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
 .glass-btn {
   background: transparent;
-  border: 1px solid var(--md-outline-variant);
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 8px 16px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -65,8 +65,8 @@
 
 .glass-input {
   background: var(--md-surface-container-low);
-  border: 1px solid var(--md-outline-variant);
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 8px 16px;
   color: var(--md-on-surface);
   font-size: 13px;
@@ -81,13 +81,13 @@
 
 /* Dark mode overrides */
 [data-theme="dark"] .glass {
-  background: rgba(26, 33, 31, 0.88);
-  border-color: var(--md-outline-variant);
+  background: var(--color-bg-glass);
+  border-color: var(--border);
 }
 
 [data-theme="dark"] .glass-strong {
-  background: rgba(37, 43, 42, 0.92);
-  border-color: var(--md-outline-variant);
+  background: var(--color-bg-card);
+  border-color: var(--border);
 }
 
 [data-theme="dark"] .glass-card {
@@ -107,7 +107,7 @@
 }
 
 [data-theme="dark"] .glass-btn {
-  border-color: var(--md-outline-variant);
+  border-color: var(--border);
   color: var(--md-on-surface);
 }
 
@@ -116,8 +116,8 @@
 }
 
 [data-theme="dark"] .glass-input {
-  background: rgba(22, 29, 27, 0.90);
-  border-color: var(--md-outline-variant);
+  background: var(--color-bg-input);
+  border-color: var(--border);
   color: var(--md-on-surface);
 }
 
@@ -129,7 +129,7 @@
   justify-content: center;
   gap: 6px;
   padding: 8px 20px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: none;
   background: var(--md-primary);
   color: var(--md-on-primary);
@@ -155,8 +155,8 @@
   justify-content: center;
   gap: 6px;
   padding: 8px 20px;
-  border-radius: 8px;
-  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
   background: transparent;
   color: var(--md-on-surface);
   font-size: 14px;
@@ -207,7 +207,7 @@
   justify-content: center;
   gap: 6px;
   padding: 8px 20px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: none;
   background: var(--md-surface-container-high);
   color: var(--md-on-surface-variant);
@@ -240,4 +240,15 @@
 
 [data-theme="dark"] .btn-md-subtle:hover {
   background: var(--md-surface-container-highest);
+}
+
+/* Disabled state for all button variants */
+.glass-btn:disabled,
+.btn-md-primary:disabled,
+.btn-md-ghost:disabled,
+.btn-md-icon:disabled,
+.btn-md-subtle:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  pointer-events: none;
 }

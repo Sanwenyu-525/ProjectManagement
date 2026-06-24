@@ -38,11 +38,19 @@ export default function WorkspacePage() {
   const activeTabId = useAgentTabStore(s => s.activeTabId);
   const addTab = useAgentTabStore(s => s.addTab);
 
-  // Workspace stats (tasks, issues, docs)
+  // Defer non-critical queries to let first paint complete
+  const [deferredReady, setDeferredReady] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setDeferredReady(true), 500);
+    return () => clearTimeout(id);
+  }, []);
+
+  // Workspace stats (tasks, issues, docs) — deferred
   const { data: stats } = useQuery({
     queryKey: ['workspaceStats'] as const,
     queryFn: workspacesApi.stats,
     staleTime: 30_000,
+    enabled: deferredReady,
   });
 
   const defaultCwd = useTerminalStore(s => s.defaultCwd);
@@ -50,11 +58,12 @@ export default function WorkspacePage() {
   // Derive active tab
   const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId]);
 
-  // Git log for last commit time
+  // Git log for last commit time — deferred
   const { data: gitLog } = useQuery({
     queryKey: queryKeys.git.log(defaultCwd),
     queryFn: () => gitApi.log(defaultCwd, 1),
     staleTime: 60_000,
+    enabled: deferredReady,
   });
 
   const lastCommitTime = (() => {
@@ -70,11 +79,11 @@ export default function WorkspacePage() {
     return `${days}d ago`;
   })();
 
-  // Git branches for current branch display
+  // Git branches for current branch display — deferred
   const { data: branches } = useQuery({
     queryKey: queryKeys.git.branches(defaultCwd),
     queryFn: () => gitApi.branches(defaultCwd),
-    enabled: !!defaultCwd,
+    enabled: deferredReady && !!defaultCwd,
     staleTime: 60_000,
   });
   const currentBranch = useMemo(() => {
@@ -399,12 +408,6 @@ export default function WorkspacePage() {
                   position: 'relative',
                   zIndex: 5,
                 }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = 'var(--md-primary-container)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
               >
                 <div style={{
                   display: 'flex',
@@ -439,7 +442,7 @@ export default function WorkspacePage() {
                     style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 8, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >close</span>
                 </div>
-                <Suspense fallback={<div style={styles.loadingFallback} role="status">Loading editor...</div>}>
+                <Suspense fallback={<div style={styles.loadingFallback} role="status"><div className="skeleton" style={{ width: '60%', height: 16 }} /></div>}>
                   <CodeEditorPane onEmpty={() => setEditorOpen(false)} />
                 </Suspense>
               </div>
@@ -450,7 +453,7 @@ export default function WorkspacePage() {
         {/* Expanded terminal */}
         {terminalExpanded && (
           <div style={styles.terminalExpanded}>
-            <Suspense fallback={<div style={styles.loadingFallback} role="status">Loading terminal...</div>}>
+            <Suspense fallback={<div style={styles.loadingFallback} role="status"><div className="skeleton" style={{ width: '40%', height: 16 }} /></div>}>
               <BottomPanel defaultHeight={240} />
             </Suspense>
           </div>

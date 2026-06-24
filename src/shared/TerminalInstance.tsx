@@ -57,6 +57,7 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput, o
   return (
     <div
       ref={containerRef}
+      className="xterm-focus"
       style={{
         height: '100%',
         minHeight: 200,

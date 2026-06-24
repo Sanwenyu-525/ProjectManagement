@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
-import { Input } from 'antd';
-import { memoryApi } from '../../../api';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button, Input, message } from 'antd';
+import { knowledgeApi, memoryApi } from '../../../api';
 import { queryKeys } from '../../../api/queryKeys';
 import { useKnowledgeStore } from '../../../stores/knowledgeStore';
 import type { KnowledgeItem, ContextItem } from '../../../types';
@@ -24,6 +25,23 @@ interface KnowledgeAIProps {
 export default function KnowledgeAI({ item, allItems }: KnowledgeAIProps) {
   const setSelectedId = useKnowledgeStore(s => s.setSelectedId);
   const setSelectedCategory = useKnowledgeStore(s => s.setSelectedCategory);
+
+  const queryClient = useQueryClient();
+  const [extractText, setExtractText] = useState('');
+
+  const extractMutation = useMutation({
+    mutationFn: () => knowledgeApi.extract(extractText, 'knowledge-page'),
+    onSuccess: (result) => {
+      if (result.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ['knowledge'] });
+        message.success(`已提炼 ${result.length} 条经验`);
+        setExtractText('');
+      } else {
+        message.info('内容未提炼出经验');
+      }
+    },
+    onError: () => message.error('AI 提炼失败'),
+  });
 
   // Fetch related recommendations
   const { data: recommendations = [] } = useQuery({
@@ -107,7 +125,40 @@ export default function KnowledgeAI({ item, allItems }: KnowledgeAIProps) {
 
         <div style={styles.divider} />
 
-        {/* Knowledge Q&A */}
+        {/* AI Extract */}
+        <div style={styles.section}>
+          <div style={styles.sectionHeader}>
+            <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-primary)' }}>
+              auto_fix_high
+            </span>
+            <span style={styles.sectionTitle}>AI 提炼</span>
+          </div>
+          <Input.TextArea
+            value={extractText}
+            onChange={e => setExtractText(e.target.value)}
+            placeholder="粘贴内容，AI 自动提炼为经验条目..."
+            rows={4}
+            style={{ fontFamily: 'var(--font-sans)' }}
+          />
+          <Button
+            type="primary"
+            icon={<span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+              {extractMutation.isPending ? 'hourglass_top' : 'auto_fix_high'}
+            </span>}
+            loading={extractMutation.isPending}
+            block
+            onClick={() => { if (extractText.trim()) extractMutation.mutate(); }}
+            style={{ marginTop: 8, transition: 'filter 0.15s, transform 0.1s' }}
+            onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(1.15)'; }}
+            onMouseLeave={e => { e.currentTarget.style.filter = ''; }}
+            onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+            onMouseUp={e => { e.currentTarget.style.transform = ''; }}
+          >
+            {extractMutation.isPending ? '提炼中...' : '提炼经验'}
+          </Button>
+        </div>
+
+        <div style={styles.divider} />
         <div style={styles.section}>
           <div style={styles.sectionHeader}>
             <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--color-amber)' }}>

@@ -376,7 +376,6 @@ export class PlanRuntime {
     await provider.start({
       sessionId,
       cwd: ctx.cwd,
-      dangerouslySkipPermissions: true,
       mode: 'oneshot',
     });
 

@@ -19,7 +19,7 @@
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--md-outline-variant);
+  border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-xs);
 }
 
@@ -211,7 +211,7 @@
 .wizard-card {
   position: relative;
   background: var(--color-bg-card, #fff);
-  border: 1px solid var(--md-outline-variant);
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   padding: var(--space-6);
   cursor: pointer;
@@ -389,7 +389,7 @@
   align-items: center;
   margin-top: var(--space-8);
   padding-top: var(--space-6);
-  border-top: 1px solid var(--md-outline-variant);
+  border-top: 1px solid var(--border);
 }
 
 .wizard-footer-cancel {

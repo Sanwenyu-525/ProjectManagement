@@ -31,11 +31,32 @@ export interface FileContent {
   modified: string;
 }
 
+export interface ContentSearchMatch {
+  fileName: string;
+  filePath: string;
+  extension?: string;
+  lineNumber: number;
+  lineText: string;
+}
+
+export interface SystemClipboardPasteResult {
+  kind: 'files' | 'image' | 'text' | 'empty';
+  count: number;
+  imagePath?: string;
+  message: string;
+}
+
 export interface ScreenshotableWindow {
   id: number;
   name: string;
   title: string;
   appName: string;
+}
+
+export interface FileChangedEvent {
+  rootPath: string;
+  changedPath: string;
+  kind: 'create' | 'delete' | 'modify' | 'rename' | 'other';
 }
 
 export interface TerminalApi {
@@ -47,4 +68,5 @@ export interface TerminalApi {
   stop: (terminalId: string) => Promise<void>;
   input: (terminalId: string, data: string) => Promise<void>;
   resize: (terminalId: string, cols: number, rows: number) => Promise<void>;
+  openExternal: (cwd: string, skipPermissions: boolean) => Promise<void>;
 }

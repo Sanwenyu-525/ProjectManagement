@@ -1,16 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAgentTasks, useCreateAgentTask, useUpdateAgentTask, useDeleteAgentTask, groupAgentTasks } from '../../../hooks/useAgentTasks';
 import { useAgentPlanStore } from '../../../stores/agentPlanStore';
+import { message } from 'antd';
 import type { AgentTask } from '../../../types';
 
-interface AgentPlanPanelProps {
-  sessionId: string | null;
-}
+/** Well-known session id shared across all agent tabs; row inserted by migration 023. */
+const GLOBAL_PLAN_SESSION_ID = '__global_plan__';
 
 const PRIORITY_BADGES: Record<string, { label: string; color: string; bg: string }> = {
-  high: { label: 'High', color: '#c0392b', bg: '#fdecea' },
-  medium: { label: 'Medium', color: '#7f6c00', bg: '#fef7e0' },
-  low: { label: 'Low', color: '#1e6e3a', bg: '#e8f5e9' },
+  high: { label: 'High', color: 'var(--color-error)', bg: 'var(--color-error-light)' },
+  medium: { label: 'Medium', color: 'var(--color-amber)', bg: 'var(--color-amber-light)' },
+  low: { label: 'Low', color: 'var(--color-tertiary)', bg: 'var(--color-tertiary-light)' },
 };
 
 const STATUS_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
@@ -25,8 +25,8 @@ function nextStatus(s: AgentTask['status']): AgentTask['status'] {
   return 'pending';
 }
 
-export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
-  const { data: tasks = [] } = useAgentTasks(sessionId);
+export default function AgentPlanPanel() {
+  const { data: tasks = [] } = useAgentTasks(GLOBAL_PLAN_SESSION_ID);
   const createTask = useCreateAgentTask();
   const updateTask = useUpdateAgentTask();
   const deleteTask = useDeleteAgentTask();
@@ -44,6 +44,8 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
   const [newGroupTitle, setNewGroupTitle] = useState('');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [hoveredChild, setHoveredChild] = useState<string | null>(null);
+  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { groups, childrenOf } = groupAgentTasks(tasks);
@@ -73,66 +75,85 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
   }, []);
 
   const handleAddTask = useCallback(async (parentId: string) => {
-    if (!newTaskTitle.trim() || !sessionId) return;
-    await createTask.mutateAsync({
-      sessionId,
-      data: { title: newTaskTitle.trim(), parentId },
-    });
-    setNewTaskTitle('');
-    setAddingToGroup(null);
-  }, [newTaskTitle, sessionId, createTask]);
+    if (!newTaskTitle.trim()) return;
+    try {
+      await createTask.mutateAsync({
+        sessionId: GLOBAL_PLAN_SESSION_ID,
+        data: { title: newTaskTitle.trim(), parentId },
+      });
+      setNewTaskTitle('');
+      setAddingToGroup(null);
+    } catch {
+      message.error('添加子任务失败');
+    }
+  }, [newTaskTitle, createTask]);
 
   const handleAddGroup = useCallback(async () => {
-    if (!newGroupTitle.trim() || !sessionId) return;
-    await createTask.mutateAsync({
-      sessionId,
-      data: { title: newGroupTitle.trim(), sortOrder: groups.length },
-    });
-    setNewGroupTitle('');
-    setShowNewGroup(false);
-  }, [newGroupTitle, sessionId, createTask, groups.length]);
+    if (!newGroupTitle.trim()) return;
+    try {
+      await createTask.mutateAsync({
+        sessionId: GLOBAL_PLAN_SESSION_ID,
+        data: { title: newGroupTitle.trim(), sortOrder: groups.length },
+      });
+      setNewGroupTitle('');
+      setShowNewGroup(false);
+    } catch {
+      message.error('添加分组失败');
+    }
+  }, [newGroupTitle, createTask, groups.length]);
 
   const handleToggleStatus = useCallback(async (task: AgentTask) => {
-    if (!sessionId) return;
-    await updateTask.mutateAsync({
-      sessionId,
-      id: task.id,
-      data: { status: nextStatus(task.status) },
-    });
-  }, [sessionId, updateTask]);
+    try {
+      await updateTask.mutateAsync({
+        sessionId: GLOBAL_PLAN_SESSION_ID,
+        id: task.id,
+        data: { status: nextStatus(task.status) },
+      });
+    } catch {
+      message.error('更新状态失败');
+    }
+  }, [updateTask]);
 
   const handleDelete = useCallback(async (taskId: string) => {
-    if (!sessionId) return;
-    await deleteTask.mutateAsync({ sessionId, id: taskId });
-  }, [sessionId, deleteTask]);
+    try {
+      await deleteTask.mutateAsync({ sessionId: GLOBAL_PLAN_SESSION_ID, id: taskId });
+    } catch {
+      message.error('删除失败');
+    }
+  }, [deleteTask]);
 
   const handleRenameGroup = useCallback(async (group: AgentTask) => {
-    if (!sessionId || !editingTitle.trim()) {
+    if (!editingTitle.trim()) {
       setEditingGroupId(null);
       return;
     }
     if (editingTitle.trim() !== group.title) {
-      await updateTask.mutateAsync({
-        sessionId,
-        id: group.id,
-        data: { title: editingTitle.trim() },
-      });
+      try {
+        await updateTask.mutateAsync({
+          sessionId: GLOBAL_PLAN_SESSION_ID,
+          id: group.id,
+          data: { title: editingTitle.trim() },
+        });
+      } catch {
+        message.error('重命名失败');
+      }
     }
     setEditingGroupId(null);
-  }, [sessionId, editingTitle, updateTask]);
+  }, [editingTitle, updateTask]);
 
-  if (!sessionId) {
-    return (
-      <div style={styles.empty}>
-        <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--md-outline-variant)' }}>
-          description
-        </span>
-        <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--md-on-surface-variant)' }}>
-          Start a chat session to manage tasks.
-        </p>
-      </div>
-    );
-  }
+  const handleCopyTitle = useCallback(async (title: string) => {
+    try {
+      await navigator.clipboard.writeText(title);
+      message.success('已复制');
+    } catch {
+      message.error('复制失败');
+    }
+  }, []);
+
+  const handleRunInTerminal = useCallback((title: string) => {
+    window.dispatchEvent(new CustomEvent('agentQuickCommand', { detail: title }));
+    message.success('已发送到 Agent');
+  }, []);
 
   return (
     <div style={styles.container}>
@@ -160,7 +181,7 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
             </span>
           </div>
           {/* Progress bar */}
-          <div style={styles.progressContainer}>
+          <div style={styles.progressContainer} role="progressbar" aria-valuenow={progressPercent} aria-valuemin={0} aria-valuemax={100} aria-label={`任务进度 ${progressPercent}%`}>
             <div style={styles.progressTrack}>
               <div style={{ ...styles.progressFill, width: `${progressPercent}%` }} />
             </div>
@@ -192,9 +213,20 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
           return (
             <div key={group.id} style={styles.group}>
               {/* Group header */}
-              <div style={styles.groupHeader}>
+              <div
+                style={{
+                  ...styles.groupHeader,
+                  background: hoveredGroup === group.id ? 'var(--md-surface-container-low)' : 'transparent',
+                }}
+                onMouseEnter={() => setHoveredGroup(group.id)}
+                onMouseLeave={() => setHoveredGroup(null)}
+              >
                 <span
                   className="material-symbols-outlined"
+                  role="button"
+                  aria-label={isCollapsed ? '展开分组' : '折叠分组'}
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(group.id); } }}
                   style={{
                     fontSize: 18,
                     color: allDone ? 'var(--md-tertiary)' : 'var(--md-primary)',
@@ -202,6 +234,11 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
                     transition: 'transform 0.2s',
                     transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
                     flexShrink: 0,
+                    padding: 4,
+                    borderRadius: 'var(--radius-xs)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                   onClick={() => toggleGroup(group.id)}
                 >
@@ -235,22 +272,24 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
                 )}
                 <span style={styles.groupCount}>{doneCount}/{children.length}</span>
                 <button
-                  style={styles.groupActionBtn}
+                  style={{ ...styles.groupActionBtn, opacity: hoveredGroup === group.id ? 0.7 : 0.35 }}
                   onClick={e => {
                     e.stopPropagation();
                     setEditingGroupId(group.id);
                     setEditingTitle(group.title);
                   }}
+                  aria-label="重命名分组"
                   title="Rename"
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: 14 }}>edit</span>
                 </button>
                 <button
-                  style={styles.groupActionBtn}
+                  style={{ ...styles.groupActionBtn, opacity: hoveredGroup === group.id ? 0.7 : 0.35 }}
                   onClick={e => {
                     e.stopPropagation();
                     handleDelete(group.id);
                   }}
+                  aria-label="删除分组"
                   title="Delete group"
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-error)' }}>delete</span>
@@ -261,10 +300,21 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
               {!isCollapsed && (
                 <div style={styles.childrenList}>
                   {children.map(child => (
-                    <div key={child.id} style={styles.childItem}>
+                    <div
+                      key={child.id}
+                      style={{
+                        ...styles.childItem,
+                        borderRadius: 4,
+                        background: hoveredChild === child.id ? 'var(--md-surface-container-low)' : 'transparent',
+                        transition: 'background 0.1s',
+                      }}
+                      onMouseEnter={() => setHoveredChild(child.id)}
+                      onMouseLeave={() => setHoveredChild(null)}
+                    >
                       <button
                         style={styles.statusBtn}
                         onClick={() => handleToggleStatus(child)}
+                        aria-label={`切换状态: ${STATUS_CONFIG[child.status]?.label}`}
                         title={STATUS_CONFIG[child.status]?.label}
                       >
                         <span className="material-symbols-outlined" style={{
@@ -282,9 +332,35 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
                         {child.title}
                       </span>
                       <button
-                        style={styles.deleteBtn}
+                        style={{
+                          ...styles.actionBtn,
+                          opacity: hoveredChild === child.id ? 0.7 : 0,
+                        }}
+                        onClick={e => { e.stopPropagation(); handleCopyTitle(child.title); }}
+                        aria-label="复制标题"
+                        title="复制"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 12 }}>content_copy</span>
+                      </button>
+                      <button
+                        style={{
+                          ...styles.actionBtn,
+                          opacity: hoveredChild === child.id ? 0.7 : 0,
+                        }}
+                        onClick={e => { e.stopPropagation(); handleRunInTerminal(child.title); }}
+                        aria-label="在终端中执行"
+                        title="在终端中执行"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 12 }}>terminal</span>
+                      </button>
+                      <button
+                        style={{
+                          ...styles.actionBtn,
+                          opacity: hoveredChild === child.id ? 0.7 : 0,
+                        }}
                         onClick={() => handleDelete(child.id)}
-                        title="Delete"
+                        aria-label="删除子任务"
+                        title="删除"
                       >
                         <span className="material-symbols-outlined" style={{ fontSize: 12 }}>close</span>
                       </button>
@@ -298,6 +374,7 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
                         ref={inputRef}
                         value={newTaskTitle}
                         onChange={e => setNewTaskTitle(e.target.value)}
+                        onBlur={() => { setAddingToGroup(null); setNewTaskTitle(''); }}
                         onKeyDown={e => {
                           if (e.key === 'Enter') handleAddTask(group.id);
                           if (e.key === 'Escape') { setAddingToGroup(null); setNewTaskTitle(''); }
@@ -306,6 +383,7 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
                         style={styles.addInput}
                       />
                       <button
+                        onMouseDown={e => e.preventDefault()}
                         onClick={() => handleAddTask(group.id)}
                         disabled={!newTaskTitle.trim()}
                         style={styles.addConfirmBtn}
@@ -335,6 +413,7 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
               ref={inputRef}
               value={newGroupTitle}
               onChange={e => setNewGroupTitle(e.target.value)}
+              onBlur={() => { setShowNewGroup(false); setNewGroupTitle(''); }}
               onKeyDown={e => {
                 if (e.key === 'Enter') handleAddGroup();
                 if (e.key === 'Escape') { setShowNewGroup(false); setNewGroupTitle(''); }
@@ -343,6 +422,7 @@ export default function AgentPlanPanel({ sessionId }: AgentPlanPanelProps) {
               style={styles.addInput}
             />
             <button
+              onMouseDown={e => e.preventDefault()}
               onClick={handleAddGroup}
               disabled={!newGroupTitle.trim()}
               style={styles.addConfirmBtn}
@@ -409,14 +489,15 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 6,
+    padding: '32px 16px',
   },
   currentTaskCard: {
     margin: '8px 12px',
     padding: '12px',
     background: 'var(--md-surface-container-low)',
     borderRadius: 10,
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
   },
   currentTaskHeader: {
     display: 'flex',
@@ -459,9 +540,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   progressTrack: {
     flex: 1,
-    height: 4,
+    height: 5,
     background: 'var(--md-outline-variant)',
-    borderRadius: 2,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   progressFill: {
@@ -509,7 +590,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 4,
-    padding: '6px 4px',
+    padding: '6px 8px',
     borderRadius: 6,
     cursor: 'pointer',
     userSelect: 'none',
@@ -529,7 +610,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-sans)',
     color: 'var(--md-on-surface)',
     background: 'var(--md-surface-container-low)',
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
     borderRadius: 4,
     padding: '1px 4px',
     outline: 'none',
@@ -546,16 +627,15 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 22,
-    height: 22,
+    width: 28,
+    height: 28,
     borderRadius: 4,
     border: 'none',
-    background: 'none',
+    background: 'transparent',
     cursor: 'pointer',
     padding: 0,
-    opacity: 0.5,
     flexShrink: 0,
-    transition: 'opacity 0.15s',
+    transition: 'opacity 0.15s, background 0.15s',
   },
   childrenList: {
     display: 'flex',
@@ -567,7 +647,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 4,
-    padding: '4px 0',
+    padding: '5px 6px',
   },
   statusBtn: {
     display: 'flex',
@@ -576,8 +656,11 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    padding: 1,
+    padding: 4,
     flexShrink: 0,
+    minWidth: 28,
+    minHeight: 28,
+    borderRadius: 'var(--radius-xs)',
   },
   childTitle: {
     flex: 1,
@@ -590,17 +673,20 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   },
-  deleteBtn: {
+  actionBtn: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    padding: 2,
+    padding: 4,
     color: 'var(--md-outline)',
     opacity: 0,
     flexShrink: 0,
+    minWidth: 24,
+    minHeight: 24,
+    borderRadius: 'var(--radius-xs)',
   },
   addRow: {
     display: 'flex',
@@ -612,7 +698,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontFamily: 'var(--font-sans)',
     background: 'var(--md-surface-container-low)',
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
     borderRadius: 6,
     padding: '4px 8px',
     outline: 'none',
@@ -623,8 +709,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
     borderRadius: 6,
     border: 'none',
     background: 'var(--md-primary)',
@@ -659,12 +745,12 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    borderTop: '1px solid var(--md-outline-variant)',
+    borderTop: '1px solid var(--border)',
     marginTop: 4,
   },
   executionBar: {
     padding: '8px 12px',
-    borderTop: '1px solid var(--md-outline-variant)',
+    borderTop: '1px solid var(--border)',
     background: 'var(--md-surface-container-low)',
     flexShrink: 0,
     display: 'flex',

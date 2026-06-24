@@ -1,21 +1,22 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Tabs, Tag, Button, Space, Skeleton, Spin, Empty, message, Modal, Form, Input, Select, Table, Timeline } from 'antd';
-import { ArrowLeftOutlined, SyncOutlined, PlusOutlined, DeleteOutlined, CheckCircleOutlined, EditOutlined, PlusCircleOutlined, ClockCircleOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined } from '@ant-design/icons';
-import { reposApi } from '../../api';
+import { Tabs, Button, Skeleton, Empty, message } from 'antd';
+import { ArrowLeftOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined } from '@ant-design/icons';
 import { useProject, useRefreshProject } from '../../hooks/useProjects';
-import { useProjectBrain } from '../../hooks/useProjects';
-import { useDocuments, useCreateDocument } from '../../hooks/useProjects';
-import { useProjectTimeline } from '../../hooks/useTimeline';
-import type { ProjectDetail, RemoteRepo, CreateDocumentInput, AddRepoInput } from '../../types';
+import type { ProjectDetail, RemoteRepo } from '../../types';
 import ConfigTab from './tabs/ConfigTab';
 import TasksTab from './tabs/TasksTab';
 import MilestonesTab from './tabs/MilestonesTab';
+import OverviewTab from './tabs/OverviewTab';
+import ReposTab from './tabs/ReposTab';
+import DocumentsTab from './tabs/DocumentsTab';
+import ProjectTimelineTab from './tabs/ProjectTimelineTab';
 import ProjectIcon from '../../shared/ProjectIcon';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { buildLaunchRequests } from '../../lib/launchUtils';
 import GitTab from './git/GitTab';
 import HealthTab from './HealthTab';
+import GraphTab from './tabs/GraphTab';
 import { StatusBadge } from '../../shared/components/StatusBadge';
 import './ProjectDetailPage.css';
 
@@ -49,7 +50,6 @@ export default function ProjectDetailPage() {
       const oldProject = { ...project };
       const updated = await refreshProject.mutateAsync(project.id);
 
-      // Compare old vs new to generate context-aware message
       const changes: string[] = [];
       if (JSON.stringify(oldProject.techStack) !== JSON.stringify(updated.techStack)) {
         changes.push('技术栈');
@@ -84,24 +84,30 @@ export default function ProjectDetailPage() {
   }
 
   if (loading) return (
-    <div style={{ padding: '28px 32px', height: '100%', boxSizing: 'border-box' }}>
+    <div style={{ padding: 'var(--space-8) var(--layout-container-padding)', height: '100%', boxSizing: 'border-box' }}>
       <Skeleton.Button active style={{ marginBottom: 20, width: 140 }} />
-      <div className="glass-panel" style={{ padding: '28px 32px', marginBottom: 20 }}>
+      <div className="glass-panel" style={{ padding: 'var(--space-8) var(--layout-container-padding)', marginBottom: 20 }}>
         <Skeleton active avatar={{ size: 64 }} paragraph={{ rows: 2 }} />
       </div>
-      <div className="glass-panel" style={{ padding: '24px' }}>
+      <div className="glass-panel" style={{ padding: 'var(--layout-container-padding)' }}>
         <Skeleton active paragraph={{ rows: 6 }} />
       </div>
     </div>
   );
-  if (!project) return <Empty description="项目不存在" />;
+  if (!project) return (
+    <div style={{ padding: 'var(--space-8)' }}>
+      <Empty description="项目不存在">
+        <Button onClick={() => navigate('/projects')}>返回项目列表</Button>
+      </Empty>
+    </div>
+  );
 
   const p = project as ProjectDetail & Record<string, unknown>;
   const remoteRepos = (p.remoteRepos || []) as RemoteRepo[];
   const count = (p._count || {}) as Record<string, number>;
 
   return (
-    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
+    <div style={{ padding: 'var(--space-8) var(--layout-container-padding)', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
       {/* Back button */}
       <Button
         type="text"
@@ -113,7 +119,7 @@ export default function ProjectDetailPage() {
       </Button>
 
       {/* Project header card */}
-      <div className="glass-panel animate-in" style={{ padding: '20px 24px', marginBottom: 16, borderRadius: 12 }}>
+      <div className="glass-panel animate-in" style={{ padding: 'var(--space-6) var(--layout-container-padding)', marginBottom: 16, borderRadius: 12 }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
           <ProjectIcon
             name={project.name}
@@ -136,7 +142,7 @@ export default function ProjectDetailPage() {
                 background: 'var(--md-surface-container-high)',
                 color: 'var(--md-on-surface-variant)',
                 fontSize: 11,
-                border: '1px solid var(--md-outline-variant)',
+                border: '1px solid var(--border)',
               }}>
                 {project.priority}
               </span>
@@ -146,7 +152,7 @@ export default function ProjectDetailPage() {
                 background: 'var(--md-surface-container-high)',
                 color: 'var(--md-on-surface-variant)',
                 fontSize: 11,
-                border: '1px solid var(--md-outline-variant)',
+                border: '1px solid var(--border)',
               }}>
                 {project.source}
               </span>
@@ -158,7 +164,7 @@ export default function ProjectDetailPage() {
                   color: 'var(--md-on-surface)',
                   fontSize: 11,
                   fontFamily: 'var(--font-mono)',
-                  border: '1px solid var(--md-outline-variant)',
+                  border: '1px solid var(--border)',
                 }}>
                   {t}
                 </span>
@@ -196,7 +202,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Tabs content */}
-      <div className="glass-panel animate-in animate-in-delay-2" style={{ padding: '4px 24px 24px', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div className="glass-panel animate-in" style={{ padding: 'var(--space-1) var(--layout-container-padding) var(--layout-container-padding)', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', animationDelay: '0.2s', opacity: 0 }}>
         <Tabs
           className="project-detail-tabs"
           activeKey={activeTab}
@@ -211,584 +217,10 @@ export default function ProjectDetailPage() {
             { key: 'config', label: '配置', children: <ConfigTab project={project} onSaved={() => refreshProject.mutateAsync(project.id)} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
             { key: 'health', label: '健康检查', children: <HealthTab projectId={project.id} /> },
+            { key: 'graph', label: '图谱', children: <GraphTab projectId={project.id} /> },
           ]}
         />
       </div>
     </div>
-  );
-}
-
-// ==================== 概览 Tab ====================
-
-function OverviewTab({ project }: { project: ProjectDetail }) {
-  const navigate = useNavigate();
-  const { requestLaunch } = useTerminalStore();
-  const [activityTab, setActivityTab] = useState<'tasks' | 'files'>('tasks');
-
-  const { data: brain } = useProjectBrain(project.id);
-  const { data: activityLogs = [] } = useProjectTimeline(project.id);
-
-  const agentOutput = (() => {
-    if (!brain) return ['> 正在加载项目分析...'];
-    const lines: string[] = [];
-    lines.push(`> 项目结构: ${brain.stats.totalFiles} 个文件`);
-    if (brain.stats.sourceFiles > 0) lines.push(`> 源文件: ${brain.stats.sourceFiles}, 测试: ${brain.stats.testFiles}`);
-    if (brain.stats.languages.length > 0) lines.push(`> 语言: ${brain.stats.languages.map(l => l.name).join(', ')}`);
-    if (brain.entryPoints.main) lines.push(`> 入口: ${brain.entryPoints.main}`);
-    if (brain.environment.requiredTools.length > 0) lines.push(`> 依赖工具: ${brain.environment.requiredTools.join(', ')}`);
-    lines.push(`> 就绪，等待指令`);
-    return lines;
-  })();
-
-  const activityRows = activityLogs.map(log => {
-    const actionLower = log.action.toLowerCase();
-    const isCreate = actionLower.includes('create') || actionLower.includes('add');
-    const isDelete = actionLower.includes('delete') || actionLower.includes('remove');
-    const isUpdate = actionLower.includes('update') || actionLower.includes('edit');
-    const label = log.details ? (() => { try { const d = JSON.parse(log.details); return d.name || d.title || log.action; } catch { return log.action; } })() : log.action;
-
-    const diffMs = Date.now() - new Date(log.createdAt).getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    const time = diffMin < 1 ? '刚刚' : diffMin < 60 ? `${diffMin}分钟前` : diffMin < 1440 ? `${Math.floor(diffMin / 60)}小时前` : `${Math.floor(diffMin / 1440)}天前`;
-
-    return {
-      icon: isDelete ? 'error' : isCreate ? 'add_circle' : isUpdate ? 'edit' : 'check_circle',
-      iconColor: isDelete ? 'var(--md-error)' : isCreate ? 'var(--md-primary)' : 'var(--md-tertiary)',
-      label,
-      status: isDelete ? '已删除' : isCreate ? '已创建' : isUpdate ? '已更新' : log.action,
-      statusBg: isDelete ? 'var(--md-error-container)' : isCreate ? 'var(--md-primary-container)' : 'var(--md-tertiary-container)',
-      statusColor: isDelete ? 'var(--md-error)' : isCreate ? 'var(--md-primary)' : 'var(--md-tertiary)',
-      time,
-    };
-  });
-
-  return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(12, 1fr)',
-      gap: 16,
-      padding: '4px 0',
-    }}>
-      {/* ── Left Column: Project Info + Git Status (8 cols nested) ── */}
-      <div style={{ gridColumn: 'span 8', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
-        {/* Project Info */}
-        <DashboardCard colSpan={1}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <ProjectIcon name={project.name} techStack={project.techStack} iconType={project.iconType} iconUrl={project.iconUrl} iconColor={project.iconColor} size={40} />
-              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--md-on-surface)', lineHeight: '22px' }}>
-                {project.name}
-              </div>
-            </div>
-            <StatusBadge status={project.status} />
-          </div>
-          {project.description && (
-            <p style={{ fontSize: 13, color: 'var(--md-on-surface-variant)', lineHeight: '18px', margin: '0 0 12px 0' }}>
-              {project.description}
-            </p>
-          )}
-          <div style={{
-            borderTop: '1px solid var(--md-outline-variant)',
-            paddingTop: 10,
-            marginTop: 'auto',
-            fontSize: 12,
-            color: 'var(--md-on-surface-variant)',
-            fontFamily: 'var(--font-mono)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>folder</span>
-            {project.localPath || '未设置路径'}
-          </div>
-        </DashboardCard>
-
-        {/* Git Status */}
-        <DashboardCard colSpan={1}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-on-surface-variant)' }}>account_tree</span>
-            Git 状态
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '8px 10px',
-              background: 'var(--md-surface-container-low)',
-              borderRadius: 8,
-              border: '1px solid var(--md-outline-variant)',
-            }}>
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--md-on-surface)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>commit</span>
-                main
-              </span>
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-label)', color: 'var(--md-on-surface-variant)' }}>最新</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
-              <span style={{ fontSize: 13, color: 'var(--md-on-surface-variant)' }}>未提交文件</span>
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-label)', color: 'var(--md-error)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>error</span>
-                —
-              </span>
-            </div>
-            <button
-              style={{
-                width: '100%',
-                marginTop: 6,
-                padding: '6px 0',
-                background: 'var(--md-surface-container-lowest)',
-                border: '1px solid var(--md-outline-variant)',
-                borderRadius: 6,
-                fontSize: 12,
-                fontFamily: 'var(--font-label)',
-                color: 'var(--md-on-surface)',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'var(--md-surface-container-lowest)'; }}
-              onClick={() => navigate('/git')}
-            >
-              查看变更
-            </button>
-          </div>
-        </DashboardCard>
-      </div>
-
-      {/* ── Quick Actions (4 cols) ── */}
-      <DashboardCard colSpan={4}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-on-surface-variant)' }}>bolt</span>
-          快捷操作
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {[
-            { icon: 'build', label: '构建应用', action: () => { if (project.localPath) requestLaunch({ cwd: project.localPath, command: 'npm run build', label: `${project.name} build`, projectId: project.id }); navigate('/'); } },
-            { icon: 'bug_report', label: '运行测试', action: () => { if (project.localPath) requestLaunch({ cwd: project.localPath, command: 'npm test', label: `${project.name} test`, projectId: project.id }); navigate('/'); } },
-            { icon: 'sync', label: '同步依赖', action: () => { if (project.localPath) requestLaunch({ cwd: project.localPath, command: 'npm install', label: `${project.name} install`, projectId: project.id }); navigate('/'); } },
-            { icon: 'delete', label: '清理缓存', action: () => { if (project.localPath) requestLaunch({ cwd: project.localPath, command: 'rm -rf node_modules/.cache', label: `${project.name} clean`, projectId: project.id }); navigate('/'); } },
-          ].map(btn => (
-            <button
-              key={btn.label}
-              onClick={btn.action}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                padding: '10px 8px',
-                borderRadius: 8,
-                border: '1px solid var(--md-outline-variant)',
-                background: 'transparent',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                fontFamily: 'var(--font-sans)',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'var(--md-primary)';
-                e.currentTarget.style.background = 'var(--md-surface-container-low)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'var(--md-outline-variant)';
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 18, color: 'var(--md-on-surface-variant)', transition: 'color 0.15s' }}>{btn.icon}</span>
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-label)', color: 'var(--md-on-surface)', fontWeight: 500 }}>{btn.label}</span>
-            </button>
-          ))}
-        </div>
-      </DashboardCard>
-
-      {/* ── Workspace Activity (8 cols) ── */}
-      <div style={{ gridColumn: 'span 8', background: 'var(--md-surface-container-lowest)', borderRadius: 12, border: '1px solid var(--md-outline-variant)', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {/* Header with tabs */}
-        <div style={{
-          padding: '12px 16px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          borderBottom: '1px solid var(--md-outline-variant)',
-          background: 'var(--md-surface-container-lowest)',
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)' }}>工作区活动</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {(['tasks', 'files'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActivityTab(tab)}
-                style={{
-                  padding: '4px 12px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 12,
-                  fontFamily: 'var(--font-label)',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  background: activityTab === tab ? 'var(--md-surface-container-high)' : 'transparent',
-                  color: activityTab === tab ? 'var(--md-on-surface)' : 'var(--md-on-surface-variant)',
-                }}
-              >
-                {tab === 'tasks' ? '任务' : '文件'}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/* Table */}
-        <div style={{ overflow: 'auto', flex: 1 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--md-outline-variant)' }}>
-                <th style={{ fontSize: 12, fontFamily: 'var(--font-label)', fontWeight: 500, color: 'var(--md-on-surface-variant)', padding: '8px 16px' }}>任务 / 文件</th>
-                <th style={{ fontSize: 12, fontFamily: 'var(--font-label)', fontWeight: 500, color: 'var(--md-on-surface-variant)', padding: '8px 16px' }}>状态</th>
-                <th style={{ fontSize: 12, fontFamily: 'var(--font-label)', fontWeight: 500, color: 'var(--md-on-surface-variant)', padding: '8px 16px', textAlign: 'right' }}>时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activityRows.map((row, i) => (
-                <tr
-                  key={i}
-                  style={{
-                    borderBottom: i < activityRows.length - 1 ? '1px solid var(--md-outline-variant)' : 'none',
-                    cursor: 'pointer',
-                    transition: 'background 0.15s ease',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--md-surface-container-low)'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                >
-                  <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--md-on-surface)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 16, color: row.iconColor }}>{row.icon}</span>
-                    {row.label}
-                  </td>
-                  <td style={{ padding: '10px 16px' }}>
-                    <span style={{
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      fontSize: 10,
-                      fontFamily: 'var(--font-mono)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      background: row.statusBg,
-                      color: row.statusColor,
-                    }}>
-                      {row.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 16px', fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--md-on-surface-variant)', textAlign: 'right' }}>
-                    {row.time}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ── Right Column: AI Agent + Mini Terminal (4 cols nested) ── */}
-      <div style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}>
-        {/* AI Agent — analysis output + link to workspace */}
-        <DashboardCard colSpan={0}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16, color: 'var(--md-primary)' }}>smart_toy</span>
-              AI 分析
-            </div>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--md-tertiary)' }} />
-          </div>
-          <div style={{
-            background: 'var(--md-surface-container)',
-            borderRadius: 8,
-            padding: 10,
-            border: '1px solid var(--md-outline-variant)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12,
-            lineHeight: '18px',
-          }}>
-            {agentOutput.map((line, i) => (
-              <div key={i} style={{ color: i === agentOutput.length - 1 ? 'var(--md-primary)' : 'var(--md-on-surface-variant)', marginBottom: 2 }}>
-                {line}
-              </div>
-            ))}
-          </div>
-          <button
-            onClick={() => navigate('/workspace')}
-            style={{
-              marginTop: 10,
-              width: '100%',
-              padding: '7px 10px',
-              background: 'var(--md-primary-container)',
-              border: '1px solid var(--md-primary)',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 500,
-              color: 'var(--md-on-primary-container)',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-sans)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              transition: 'opacity 0.15s',
-            }}
-          >
-            <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 14 }}>open_in_new</span>
-            在工作区中与 Agent 对话
-          </button>
-        </DashboardCard>
-
-        {/* Quick actions */}
-        <DashboardCard colSpan={0}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', marginBottom: 10 }}>
-            快捷操作
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[
-              { label: '在工作区打开', icon: 'workspaces', action: () => navigate('/workspace') },
-              { label: '查看时间线', icon: 'calendar_month', action: () => navigate('/timeline') },
-            ].map(a => (
-              <button
-                key={a.label}
-                onClick={a.action}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 10px',
-                  borderRadius: 6,
-                  border: '1px solid var(--md-outline-variant)',
-                  background: 'var(--md-surface-container-low)',
-                  color: 'var(--md-on-surface)',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  fontFamily: 'var(--font-sans)',
-                  transition: 'background 0.15s',
-                  textAlign: 'left',
-                }}
-              >
-                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 16, color: 'var(--md-primary)' }}>{a.icon}</span>
-                {a.label}
-              </button>
-            ))}
-          </div>
-        </DashboardCard>
-      </div>
-    </div>
-  );
-}
-
-// ── Dashboard sub-components ──
-
-function DashboardCard({ children, colSpan, style: extraStyle }: { children: React.ReactNode; colSpan: number; style?: React.CSSProperties }) {
-  return (
-    <div style={{
-      ...(colSpan > 0 ? { gridColumn: `span ${colSpan}` } : {}),
-      background: 'var(--md-surface-container-lowest)',
-      borderRadius: 12,
-      border: '1px solid var(--md-outline-variant)',
-      padding: 16,
-      boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-      display: 'flex',
-      flexDirection: 'column',
-      ...extraStyle,
-    }}>
-      {children}
-    </div>
-  );
-}
-
-// ==================== 仓库 Tab ====================
-
-function ReposTab({ projectId, repos, onRefresh }: { projectId: string; repos: RemoteRepo[]; onRefresh: () => void }) {
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form] = Form.useForm();
-  const [syncing, setSyncing] = useState<string | null>(null);
-
-  const handleAdd = async (values: AddRepoInput) => {
-    try {
-      await reposApi.add(projectId, values);
-      message.success('仓库关联成功');
-      setModalOpen(false);
-      form.resetFields();
-      onRefresh();
-    } catch (err: unknown) {
-      message.error(String(err) || '关联失败');
-    }
-  };
-
-  const handleSync = async (repoId: string) => {
-    setSyncing(repoId);
-    try {
-      await reposApi.sync(repoId);
-      message.success('同步完成');
-      onRefresh();
-    } catch (err: unknown) {
-      message.error(String(err) || '同步失败');
-    } finally {
-      setSyncing(null);
-    }
-  };
-
-  const handleRemove = async (repoId: string) => {
-    Modal.confirm({
-      title: '确认移除',
-      content: '移除仓库关联不会删除远程仓库，仅解除本项目的关联。',
-      onOk: async () => {
-        await reposApi.remove(repoId);
-        message.success('已移除');
-        onRefresh();
-      },
-    });
-  };
-
-  const columns = [
-    { title: '平台', dataIndex: 'platform', render: (v: string) => <Tag>{v}</Tag> },
-    { title: '仓库', dataIndex: 'repoFullName' },
-    { title: '分支', dataIndex: 'defaultBranch', render: (v: string) => v || '-' },
-    { title: '状态', dataIndex: 'repoStatus', render: (v: string) => <Tag color={v === 'Synced' ? 'green' : v === 'Error' ? 'red' : 'orange'}>{v}</Tag> },
-    { title: '最后同步', dataIndex: 'lastSyncAt', render: (v: string) => v ? new Date(v).toLocaleString('zh-CN') : '从未' },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { title: '任务数', render: (_: unknown, r: any) => r._count?.tasks || 0 },
-    {
-      title: '操作', render: (_: unknown, record: RemoteRepo) => (
-        <Space>
-          <Button size="small" icon={<SyncOutlined />} loading={syncing === record.id} onClick={() => handleSync(record.id)}>同步</Button>
-          <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleRemove(record.id)} />
-        </Space>
-      ),
-    },
-  ];
-
-  return (
-    <>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => setModalOpen(true)}>关联远程仓库</Button>
-      </div>
-      <Table columns={columns} dataSource={repos} rowKey="id" pagination={false} />
-
-      <Modal title="关联远程仓库" open={modalOpen} onCancel={() => { setModalOpen(false); form.resetFields(); }} onOk={() => form.submit()} okText="关联">
-        <Form form={form} layout="vertical" onFinish={handleAdd}>
-          <Form.Item name="platform" label="平台" rules={[{ required: true }]}>
-            <Select options={['GitHub', 'GitLab', 'Gitee', 'Bitbucket'].map(p => ({ value: p, label: p }))} />
-          </Form.Item>
-          <Form.Item name="repoFullName" label="仓库全名" rules={[{ required: true, message: '如 user/repo' }]}>
-            <Input placeholder="user/repo" />
-          </Form.Item>
-          <Form.Item name="repoUrl" label="仓库地址" rules={[{ required: true, type: 'url' }]}>
-            <Input placeholder="https://github.com/user/repo" />
-          </Form.Item>
-          <Form.Item name="defaultBranch" label="默认分支">
-            <Input placeholder="main" />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </>
-  );
-}
-
-// ==================== 文档 Tab ====================
-
-function DocumentsTab({ projectId }: { projectId: string }) {
-  const { data: docs = [], isLoading: loading } = useDocuments(projectId);
-  const createDoc = useCreateDocument(projectId);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form] = Form.useForm();
-
-  const handleCreate = async (values: CreateDocumentInput) => {
-    await createDoc.mutateAsync(values);
-    message.success('文档创建成功');
-    setModalOpen(false);
-    form.resetFields();
-  };
-
-  return (
-    <>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => setModalOpen(true)}>新建文档</Button>
-      </div>
-      {docs.length === 0 && !loading ? (
-        <Empty description="暂无文档" />
-      ) : (
-        <Table
-          dataSource={docs}
-          rowKey="id"
-          loading={loading}
-          pagination={false}
-          columns={[
-            { title: '标题', dataIndex: 'title' },
-            { title: '类型', dataIndex: 'type', render: (v: string) => <Tag>{v}</Tag> },
-            { title: '更新时间', dataIndex: 'updatedAt', render: (v: string) => new Date(v).toLocaleString('zh-CN') },
-          ]}
-        />
-      )}
-
-      <Modal title="新建文档" open={modalOpen} onCancel={() => { setModalOpen(false); form.resetFields(); }} onOk={() => form.submit()} okText="创建">
-        <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="title" label="标题" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="type" label="类型" initialValue="Doc">
-            <Select options={['Doc', 'Note', 'Changelog', 'Decision'].map(t => ({ value: t, label: t }))} />
-          </Form.Item>
-          <Form.Item name="content" label="内容">
-            <Input.TextArea rows={6} placeholder="支持 Markdown" />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </>
-  );
-}
-
-// ==================== 项目活动 Tab ====================
-
-const ACTION_MAP: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
-  status_change: { icon: <EditOutlined />, color: 'blue', label: '状态变更' },
-  task_created: { icon: <PlusCircleOutlined />, color: 'green', label: '创建任务' },
-  task_status_change: { icon: <CheckCircleOutlined />, color: 'orange', label: '任务状态变更' },
-  repo_synced: { icon: <SyncOutlined />, color: 'cyan', label: '仓库同步' },
-};
-
-function formatLogDetails(action: string, details: string | null | undefined): string {
-  if (!details) return '';
-  try {
-    const d = JSON.parse(details);
-    if (action === 'status_change' || action === 'task_status_change') return `${d.from} → ${d.to}`;
-    if (action === 'task_created') return d.title || '';
-    if (action === 'repo_synced') return `${d.platform}: ${d.repo}`;
-    return '';
-  } catch { return ''; }
-}
-
-function ProjectTimelineTab({ projectId }: { projectId: string }) {
-  const { data: logs = [], isLoading: loading } = useProjectTimeline(projectId);
-
-  if (loading) return <Spin />;
-  if (logs.length === 0) return <Empty description="暂无活动记录" />;
-
-  return (
-    <Timeline
-      items={logs.map(log => {
-        const action = ACTION_MAP[log.action] || { icon: <ClockCircleOutlined />, color: 'gray', label: log.action };
-        const details = formatLogDetails(log.action, log.details);
-        return {
-          dot: action.icon,
-          color: action.color,
-          children: (
-            <div>
-              <Space>
-                <Tag color={action.color}>{action.label}</Tag>
-                <span>{log.entityType}</span>
-                {details && <span style={{ color: 'var(--color-text-description)' }}>- {details}</span>}
-              </Space>
-              <div style={{ fontSize: 12, color: 'var(--color-text-light)', marginTop: 2 }}>
-                {new Date(log.createdAt).toLocaleString('zh-CN')}
-              </div>
-            </div>
-          ),
-        };
-      })}
-    />
   );
 }

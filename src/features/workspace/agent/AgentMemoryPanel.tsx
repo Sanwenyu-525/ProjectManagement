@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Modal, Input, Select, message } from 'antd';
 import { useQuery as useRqQuery } from '@tanstack/react-query';
@@ -22,6 +22,7 @@ const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   pattern: '代码模式',
   prompt: '高价值提示词',
   workflow: '开发流程',
+  experience: '经验沉淀',
 };
 
 const MEMORY_TYPE_ICONS: Record<MemoryType, string> = {
@@ -35,6 +36,7 @@ const MEMORY_TYPE_ICONS: Record<MemoryType, string> = {
   pattern: 'pattern',
   prompt: 'psychology',
   workflow: 'route',
+  experience: 'school',
 };
 
 const DECISION_STATUS_LABELS: Record<string, string> = {
@@ -67,6 +69,8 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
   const showDecisionModal = useMemoryStore(s => s.showDecisionModal);
   const setShowDecisionModal = useMemoryStore(s => s.setShowDecisionModal);
   const [showBuildContextModal, setShowBuildContextModal] = useState(false);
+  const [hoveredMemory, setHoveredMemory] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
   // Fetch memories
   const { data: memories = [] } = useRqQuery({
@@ -96,6 +100,7 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
       queryClient.invalidateQueries({ queryKey: ['memories'] });
       message.success('已删除');
     },
+    onError: () => message.error('删除失败'),
   });
 
   // Pin mutation
@@ -104,6 +109,7 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memories'] });
     },
+    onError: () => message.error('置顶失败'),
   });
 
   // Group memories by type, pinned first within each group
@@ -114,6 +120,14 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
   for (const key of Object.keys(grouped)) {
     grouped[key].sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
   }
+
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
 
   return (
     <div style={styles.container}>
@@ -127,12 +141,17 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="搜索项目记忆..."
+          aria-label="搜索项目记忆"
           style={styles.searchInput}
         />
         {searchQuery && (
           <span
             className="material-symbols-outlined"
-            style={{ fontSize: 14, color: 'var(--md-outline)', cursor: 'pointer' }}
+            role="button"
+            aria-label="清除搜索"
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSearchQuery(''); } }}
+            style={{ fontSize: 14, color: 'var(--md-outline)', cursor: 'pointer', padding: 4, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             onClick={() => setSearchQuery('')}
           >close</span>
         )}
@@ -142,7 +161,7 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
       <div style={styles.scrollArea}>
         {memories.length === 0 && !searchQuery && (
           <div style={styles.empty}>
-            <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--md-outline-variant)', opacity: 0.5 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)', opacity: 0.6 }}>
               neurology
             </span>
             <p style={styles.emptyText}>暂无记忆</p>
@@ -152,44 +171,89 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
 
         {searchQuery && memories.length === 0 && (
           <div style={styles.empty}>
+            <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)', opacity: 0.6 }}>
+              search_off
+            </span>
             <p style={styles.emptyText}>未找到匹配的记忆</p>
           </div>
         )}
 
         {/* Grouped memories */}
-        {(Object.keys(grouped) as MemoryType[]).map(type => (
+        {(Object.keys(grouped) as MemoryType[]).map(type => {
+          const collapsed = collapsedSections.has(type);
+          return (
           <div key={type} style={styles.section}>
-            <div style={styles.sectionHeader}>
+            <div
+              style={{
+                ...styles.sectionHeader,
+                cursor: 'pointer',
+                background: collapsed ? 'transparent' : 'var(--md-surface-container-low)',
+                borderRadius: 6,
+                margin: collapsed ? 0 : '0 4px',
+                padding: collapsed ? '0 12px 6px' : '4px 8px 6px',
+                opacity: collapsed ? 0.7 : 1,
+              }}
+              onClick={() => toggleSection(type)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(type); } }}
+            >
               <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-primary)' }}>
                 {MEMORY_TYPE_ICONS[type]}
               </span>
               <span style={styles.sectionTitle}>{MEMORY_TYPE_LABELS[type]}</span>
               <span style={styles.sectionCount}>{grouped[type].length}</span>
+              <span
+                className="material-symbols-outlined"
+                style={{
+                  fontSize: 14,
+                  color: collapsed ? 'var(--md-outline)' : 'var(--md-primary)',
+                  transition: 'transform 0.15s, color 0.15s',
+                  transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                }}
+              >expand_more</span>
             </div>
-            {grouped[type].map(memory => (
+            {!collapsed && grouped[type].map(memory => (
               <div
                 key={memory.id}
                 style={{
                   ...styles.memoryCard,
                   borderLeft: memory.isPinned ? '2px solid var(--md-primary)' : undefined,
+                  background: hoveredMemory === memory.id ? 'var(--md-surface-container-low)' : 'transparent',
+                  paddingLeft: memory.isPinned ? '10px' : '12px',
                 }}
+                onMouseEnter={() => setHoveredMemory(memory.id)}
+                onMouseLeave={() => setHoveredMemory(null)}
               >
                 <div style={styles.memoryHeader}>
                   <span style={styles.memoryTitle}>{memory.title}</span>
                   <span
                     className="material-symbols-outlined"
+                    role="button"
+                    aria-label={memory.isPinned ? '取消置顶' : '置顶'}
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pinMutation.mutate(memory.id); } }}
                     style={{
                       fontSize: 14,
                       color: memory.isPinned ? 'var(--md-primary)' : 'var(--md-outline)',
                       cursor: 'pointer',
                       flexShrink: 0,
+                      padding: 4,
+                      borderRadius: 'var(--radius-xs)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                     onClick={() => pinMutation.mutate(memory.id)}
                     title={memory.isPinned ? '取消置顶' : '置顶'}
                   >push_pin</span>
                   <span
                     className="material-symbols-outlined"
-                    style={{ fontSize: 14, color: 'var(--md-outline)', cursor: 'pointer', flexShrink: 0 }}
+                    role="button"
+                    aria-label="删除记忆"
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); deleteMutation.mutate(memory.id); } }}
+                    style={{ fontSize: 14, color: 'var(--md-outline)', cursor: 'pointer', flexShrink: 0, padding: 4, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     onClick={() => deleteMutation.mutate(memory.id)}
                     title="删除"
                   >delete_outline</span>
@@ -209,19 +273,45 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
               </div>
             ))}
           </div>
-        ))}
+          );
+        })}
 
         {/* Decision Log */}
-        {decisions.length > 0 && (
+        {decisions.length > 0 && (() => {
+          const collapsed = collapsedSections.has('decisions');
+          return (
           <div style={styles.section}>
-            <div style={styles.sectionHeader}>
+            <div
+              style={{
+                ...styles.sectionHeader,
+                cursor: 'pointer',
+                background: collapsed ? 'transparent' : 'var(--md-surface-container-low)',
+                borderRadius: 6,
+                margin: collapsed ? 0 : '0 4px',
+                padding: collapsed ? '0 12px 6px' : '4px 8px 6px',
+                opacity: collapsed ? 0.7 : 1,
+              }}
+              onClick={() => toggleSection('decisions')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('decisions'); } }}
+            >
               <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-secondary)' }}>
                 gavel
               </span>
               <span style={styles.sectionTitle}>Decision Log</span>
               <span style={styles.sectionCount}>{decisions.length}</span>
+              <span
+                className="material-symbols-outlined"
+                style={{
+                  fontSize: 14,
+                  color: collapsed ? 'var(--md-outline)' : 'var(--md-secondary)',
+                  transition: 'transform 0.15s, color 0.15s',
+                  transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                }}
+              >expand_more</span>
             </div>
-            {decisions.map(d => (
+            {!collapsed && decisions.map(d => (
               <div key={d.id} style={styles.decisionItem}>
                 <div style={styles.decisionDot} />
                 <div style={styles.decisionContent}>
@@ -240,7 +330,8 @@ export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
               </div>
             ))}
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Action buttons */}
@@ -538,9 +629,9 @@ function BuildContextModal({ open, onClose }: {
   }, [packedContext]);
 
   // Auto-build on open
-  useState(() => {
+  useEffect(() => {
     if (open) handleBuild();
-  });
+  }, [open, handleBuild]);
 
   return (
     <Modal
@@ -593,7 +684,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 6,
     padding: '8px 12px',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
     flexShrink: 0,
   },
   searchInput: {
@@ -612,7 +703,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   section: {
     padding: '8px 0',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
   },
   sectionHeader: {
     display: 'flex',
@@ -640,6 +731,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '6px 12px',
     cursor: 'default',
     transition: 'background 0.15s',
+    borderRadius: 4,
   },
   memoryHeader: {
     display: 'flex',
@@ -738,7 +830,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 6,
     padding: '8px 12px',
-    borderTop: '1px solid var(--md-outline-variant)',
+    borderTop: '1px solid var(--border)',
     flexShrink: 0,
   },
   actionBtn: {
@@ -750,7 +842,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 30,
     fontSize: 12,
     fontWeight: 500,
-    color: '#fff',
+    color: 'var(--md-on-primary)',
     background: 'var(--md-primary)',
     border: 'none',
     borderRadius: 6,
@@ -760,7 +852,7 @@ const styles: Record<string, React.CSSProperties> = {
   actionBtnSecondary: {
     background: 'var(--md-surface-container-low)',
     color: 'var(--md-on-surface)',
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
   },
   actionBtnAccent: {
     background: 'var(--md-tertiary)',
@@ -773,7 +865,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '32px 16px',
-    gap: 4,
+    gap: 6,
   },
   emptyText: {
     margin: 0,
@@ -806,7 +898,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'var(--md-surface-container-low)',
     padding: 12,
     borderRadius: 8,
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
     overflow: 'auto',
     maxHeight: 400,
     whiteSpace: 'pre-wrap',
@@ -821,7 +913,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0 16px',
     fontSize: 13,
     fontWeight: 500,
-    color: '#fff',
+    color: 'var(--md-on-primary)',
     background: 'var(--md-primary)',
     border: 'none',
     borderRadius: 6,
@@ -835,7 +927,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     color: 'var(--md-on-surface)',
     background: 'var(--md-surface-container-low)',
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
     borderRadius: 6,
     cursor: 'pointer',
     fontFamily: 'var(--font-sans)',

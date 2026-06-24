@@ -8,7 +8,7 @@ use crate::db::Database;
 
 const VALID_MEMORY_TYPES: &[&str] = &[
     "architecture", "code", "bugfix", "rule", "session", "decision",
-    "solution", "pattern", "prompt", "workflow",
+    "solution", "pattern", "prompt", "workflow", "experience",
 ];
 
 fn validate_memory_type(s: &str) -> Result<(), String> {

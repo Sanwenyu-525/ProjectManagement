@@ -26,7 +26,7 @@ body {
 /* ==================== Selection ==================== */
 
 ::selection {
-  background: rgba(0, 107, 95, 0.22);
+  background: var(--color-selection);
   color: var(--color-text-primary);
 }
 
@@ -40,8 +40,8 @@ body {
 /* ==================== Scrollbar ==================== */
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -49,18 +49,18 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(108, 122, 119, 0.20);
+  background: var(--color-scrollbar);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(108, 122, 119, 0.40);
+  background: var(--color-scrollbar-hover);
 }
 
 /* ==================== Skeleton loading ==================== */
 
 .skeleton {
-  background: linear-gradient(90deg, rgba(82, 97, 116, 0.06) 25%, rgba(0, 107, 95, 0.12) 50%, rgba(82, 97, 116, 0.06) 75%);
+  background: linear-gradient(90deg, var(--color-skeleton) 25%, var(--color-skeleton-shimmer) 50%, var(--color-skeleton) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 8px;
@@ -91,6 +91,23 @@ body {
   100% { transform: translateX(-100%); }
 }
 
+@keyframes dotBounce {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+.thinking-dots .dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--md-on-surface-variant);
+  margin: 0 2px;
+  animation: dotBounce 1.2s ease-in-out infinite;
+}
+.thinking-dots .dot:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dots .dot:nth-child(3) { animation-delay: 0.3s; }
+
 /* ==================== Glass Card Enhancement ==================== */
 
 .ant-card {
@@ -108,6 +125,29 @@ body {
   border-color: var(--color-border) !important;
 }
 
+/* Modal spring open animation */
+.ant-modal .ant-modal-content {
+  animation: scaleIn 0.25s var(--ease-spring) both;
+}
+
+/* Page route transition */
+.page-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.25s var(--ease-spring), transform 0.25s var(--ease-spring);
+}
+.page-exit {
+  opacity: 1;
+}
+.page-exit-active {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
 /* ==================== Terminal bar ==================== */
 
 .terminal-bar {
@@ -116,6 +156,38 @@ body {
 
 .terminal-bar:hover {
   background: var(--md-surface-container-high) !important;
+}
+
+/* xterm.js */
+.xterm .xterm-viewport {
+  background-color: transparent !important;
+}
+
+/* Lower xterm textarea z-index so overlay buttons are clickable */
+.xterm .xterm-helper-textarea {
+  z-index: 1 !important;
+}
+
+/* Focus ring for terminal containers */
+.xterm-focus:focus-within {
+  outline: 2px solid var(--color-primary, #4fdbc8);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+/* Custom scrollbar for terminal */
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
 }
 
 .ant-layout-sider-trigger {
@@ -170,7 +242,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.08) 50%, transparent 75%);
+  background: linear-gradient(90deg, transparent 25%, var(--color-loading-shimmer) 50%, transparent 75%);
   animation: shimmerSlide 1.5s infinite;
 }
 
@@ -183,7 +255,7 @@ body {
 .markdownBody p { margin: 0 0 6px; }
 .markdownBody p:last-child { margin-bottom: 0; }
 .markdownBody pre {
-  background: var(--md-surface-container-high);
+  background: var(--md-surface);
   border-radius: 6px;
   padding: 8px;
   overflow-x: auto;
@@ -206,7 +278,7 @@ body {
   padding-left: 18px;
 }
 .markdownBody blockquote {
-  border-left: 3px solid var(--md-outline-variant);
+  border-left: 3px solid var(--border);
   margin: 4px 0;
   padding-left: 10px;
   color: var(--md-on-surface-variant);
@@ -215,6 +287,15 @@ body {
   font-size: 14px;
   font-weight: 600;
   margin: 8px 0 4px;
+}
+
+/* Workspace resize divider */
+.resize-divider {
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.resize-divider:hover {
+  background: var(--md-primary-container);
 }
 
 /* Agent dropdown menu */
@@ -271,15 +352,15 @@ body {
 }
 
 [data-theme="dark"] .ant-card-hoverable:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.34) !important;
+  box-shadow: var(--shadow-lg) !important;
 }
 
 [data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--color-scrollbar);
 }
 
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--color-scrollbar-hover);
 }
 
 [data-theme="dark"] .ant-layout-sider-trigger {
@@ -307,19 +388,66 @@ body {
 }
 
 [data-theme="dark"] ::selection {
-  background: rgba(79, 219, 200, 0.28);
+  background: var(--color-selection);
 }
 
 [data-theme="dark"] .skeleton {
-  background: linear-gradient(90deg, rgba(148, 163, 184, 0.06) 25%, rgba(79, 219, 200, 0.10) 50%, rgba(148, 163, 184, 0.06) 75%);
+  background: linear-gradient(90deg, var(--color-skeleton) 25%, var(--color-skeleton-shimmer) 50%, var(--color-skeleton) 75%);
   background-size: 200% 100%;
 }
 
 [data-theme="dark"] .ant-table-row-loading td::after {
-  background: linear-gradient(90deg, transparent 25%, rgba(221, 228, 225, 0.04) 50%, transparent 75%);
+  background: linear-gradient(90deg, transparent 25%, var(--color-loading-shimmer-dark) 50%, transparent 75%);
 }
 
 /* ==================== Agent Idle State Hover Utilities ==================== */
+
+/* ==================== Notification (glassmorphism) ==================== */
+
+.ant-notification {
+  background: var(--color-bg-elevated) !important;
+  backdrop-filter: blur(20px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.ant-notification-notice {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
+.ant-notification .ant-notification-notice-wrapper {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.ant-notification .ant-notification-notice-wrapper .ant-notification-notice {
+  padding: 0 var(--space-4) !important;
+}
+
+/* Type-specific backgrounds — future-proof against antd re-enabling them */
+.ant-notification-notice-success,
+.ant-notification-notice-error,
+.ant-notification-notice-warning,
+.ant-notification-notice-info {
+  background: transparent !important;
+}
+
+[data-theme="dark"] .ant-notification {
+  background: var(--color-bg-elevated) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: var(--shadow-xl) !important;
+}
+
+/* Agent Idle State Hover Utilities */
 
 .hover-card {
   transition: background 0.15s, border-color 0.15s;

@@ -49,26 +49,6 @@
   animation: fadeInUp 0.5s ease forwards;
 }
 
-.animate-in-delay-1 {
-  animation: fadeInUp 0.5s ease 0.1s forwards;
-  opacity: 0;
-}
-
-.animate-in-delay-2 {
-  animation: fadeInUp 0.5s ease 0.2s forwards;
-  opacity: 0;
-}
-
-.animate-in-delay-3 {
-  animation: fadeInUp 0.5s ease 0.3s forwards;
-  opacity: 0;
-}
-
-.animate-in-delay-4 {
-  animation: fadeInUp 0.5s ease 0.4s forwards;
-  opacity: 0;
-}
-
 /* Hover效果类 */
 .hover-lift {
   transition: transform var(--transition-spring), box-shadow var(--transition-normal);
@@ -86,4 +66,30 @@
 
 .clickable:active {
   transform: scale(0.97);
+}
+
+/* 消息入场：底部滑入 + 淡入 */
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 卡片入场：淡入 + 微缩放 */
+@keyframes cardEnter {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Reduced motion: disable all animations and transitions */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .hover-lift,
+  .hover-lift:hover,
+  .clickable,
+  .clickable:active {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

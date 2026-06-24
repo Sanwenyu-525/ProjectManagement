@@ -199,7 +199,7 @@ export default function GitTab({ project }: GitTabProps) {
   }
 
   const panelBg = isDark ? 'var(--md-surface-container)' : '#ffffff';
-  const panelBorder = isDark ? 'var(--md-outline-variant)' : '#E2E8F0';
+  const panelBorder = 'var(--border)';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -499,7 +499,7 @@ function CommitInspector({ commit }: { commit: GitCommit }) {
       <div style={{
         padding: 12, borderRadius: 8,
         background: isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)',
-        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+        border: "1px solid var(--border)",
       }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', marginBottom: 6, lineHeight: '18px' }}>
           {commit.message}
@@ -542,7 +542,7 @@ function CommitInspector({ commit }: { commit: GitCommit }) {
       <div style={{
         marginTop: 8, padding: 12, borderRadius: 8,
         background: isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)',
-        border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+        border: "1px solid var(--border)",
       }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           仓库概览

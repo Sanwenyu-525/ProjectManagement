@@ -77,7 +77,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
       setFiles(prev => prev.map(f =>
         f.id === file.id ? { ...f, modified: false, originalContent: f.content } : f
       ));
-      message.success(`Saved ${file.label}`);
+      message.success(`保存文件 ${file.label} 成功`);
     } catch (e) {
       message.error(`Failed to save: ${e}`);
     }
@@ -181,6 +181,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
 
   // Open file selected from FileExplorer sidebar — consume-and-clear pattern
   const selectedFile = useWorkspaceStore(s => s.selectedFile);
+  const renamedFile = useWorkspaceStore(s => s.renamedFile);
   useEffect(() => {
     if (!selectedFile) return;
     // Already open? just activate it
@@ -195,6 +196,20 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
     // Clear after consumption so re-selecting the same file works
     useWorkspaceStore.getState().selectFile(null);
   }, [selectedFile, openFile]);
+
+  // Sync file path when FileExplorer renames a file — consume-and-clear
+  useEffect(() => {
+    if (!renamedFile) return;
+    setFiles(prev => prev.map(f => {
+      if (f.path !== renamedFile.oldPath) return f;
+      const newName = renamedFile.newPath.split(/[/\\]/).pop() || renamedFile.newPath;
+      return { ...f, id: renamedFile.newPath, path: renamedFile.newPath, label: newName };
+    }));
+    if (activeIdRef.current === renamedFile.oldPath) {
+      setActiveId(renamedFile.newPath);
+    }
+    useWorkspaceStore.getState().setRenamedFile(null);
+  }, [renamedFile]);
 
   // Empty state — no project loaded
   if (!projectRoot) {
@@ -319,14 +334,14 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     background: 'var(--md-surface-container-lowest)',
     borderRadius: 12,
-    border: '1px solid var(--md-outline-variant)',
+    border: '1px solid var(--border)',
     boxShadow: '0 2px 8px rgba(11, 28, 48, 0.04)',
     overflow: 'hidden',
   },
   tabBar: {
     display: 'flex',
     alignItems: 'center',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    borderBottom: '1px solid var(--border)',
     background: 'var(--md-surface-container-lowest)',
     overflowX: 'auto',
     flexShrink: 0,
@@ -346,7 +361,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     transition: 'all 0.15s',
-    borderRight: '1px solid var(--md-outline-variant)',
+    borderRight: '1px solid var(--border)',
     background: 'transparent',
     borderBottom: '2px solid transparent',
     flexShrink: 0,

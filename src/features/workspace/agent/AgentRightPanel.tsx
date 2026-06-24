@@ -1,17 +1,20 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { useAgentWorkspaceStore } from '../../../stores/agentWorkspaceStore';
 import AgentPlanPanel from './AgentPlanPanel';
 import AgentGitTab from './AgentGitTab';
 import AgentMemoryPanel from './AgentMemoryPanel';
 import AgentContextPanel from './AgentContextPanel';
+import AgentPromptPanel from './AgentPromptPanel';
+import ResizeHandle from '../../../shared/ResizeHandle';
 
-type RightTab = 'plan' | 'git' | 'memory' | 'context';
+type RightTab = 'plan' | 'git' | 'memory' | 'context' | 'prompts';
 
 const TABS: { key: RightTab; label: string; icon: string }[] = [
   { key: 'plan', label: '计划', icon: 'description' },
   { key: 'git', label: 'Git', icon: 'account_tree' },
   { key: 'context', label: '上下文', icon: 'folder_open' },
   { key: 'memory', label: '记忆', icon: 'neurology' },
+  { key: 'prompts', label: '提示词', icon: 'record_voice_over' },
 ];
 
 interface AgentRightPanelProps {
@@ -23,61 +26,77 @@ export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps
   const panelWidth = useAgentWorkspaceStore(s => s.panelWidth);
   const setPanelWidth = useAgentWorkspaceStore(s => s.setPanelWidth);
   const [activeTab, setActiveTab] = useState<RightTab>('plan');
-  const resizingRef = useRef(false);
+  const [hoveredTab, setHoveredTab] = useState<RightTab | null>(null);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    resizingRef.current = true;
     const startX = e.clientX;
     const startWidth = panelWidth;
 
     const onMouseMove = (ev: MouseEvent) => {
-      if (!resizingRef.current) return;
       const delta = startX - ev.clientX;
       setPanelWidth(startWidth + delta);
     };
     const onMouseUp = () => {
-      resizingRef.current = false;
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
     };
 
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }, [panelWidth, setPanelWidth]);
 
   return (
-    <div style={{ ...styles.panel, width: panelWidth }}>
+    <div style={{ ...styles.panel, width: panelWidth }} role="complementary" aria-label="辅助面板">
       {/* Resize handle */}
-      <div style={styles.resizeHandle} onMouseDown={handleResizeStart} />
+      <ResizeHandle
+        orientation="horizontal"
+        onResizeStart={handleResizeStart}
+      />
 
       {/* Tab bar */}
-      <div style={styles.tabBar}>
-        {TABS.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            style={{
-              ...styles.tab,
-              ...(activeTab === tab.key ? styles.tabActive : {}),
-            }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>{tab.icon}</span>
-            {tab.label}
-          </button>
-        ))}
+      <div style={styles.tabBar} role="tablist">
+        {TABS.map(tab => {
+          const isActive = activeTab === tab.key;
+          const isHovered = hoveredTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              role="tab"
+              aria-selected={isActive}
+              title={tab.label}
+              onClick={() => setActiveTab(tab.key)}
+              onMouseEnter={() => setHoveredTab(tab.key)}
+              onMouseLeave={() => setHoveredTab(null)}
+              style={{
+                ...styles.tab,
+                color: isActive
+                  ? 'var(--md-primary)'
+                  : isHovered
+                    ? 'var(--md-on-surface)'
+                    : 'var(--md-on-surface-variant)',
+                background: isActive
+                  ? 'var(--md-surface-container)'
+                  : isHovered
+                    ? 'var(--md-surface-container-low)'
+                    : 'transparent',
+                fontWeight: isActive ? 600 : 500,
+                borderBottom: isActive ? '2px solid var(--md-primary)' : '2px solid transparent',
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{tab.icon}</span>
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Content */}
       <div style={styles.content}>
-        {activeTab === 'plan' && <AgentPlanPanel sessionId={sessionId} />}
+        {activeTab === 'plan' && <AgentPlanPanel />}
         {activeTab === 'git' && <AgentGitTab repoPath={cwd} />}
         {activeTab === 'context' && <AgentContextPanel sessionId={sessionId} cwd={cwd} />}
         {activeTab === 'memory' && <AgentMemoryPanel sessionId={sessionId} />}
+        {activeTab === 'prompts' && <AgentPromptPanel />}
       </div>
     </div>
   );
@@ -89,24 +108,15 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     flexShrink: 0,
     background: 'var(--md-surface-container-lowest)',
-    borderLeft: '1px solid var(--md-outline-variant)',
+    borderLeft: '1px solid var(--border)',
     overflow: 'hidden',
     position: 'relative',
   },
-  resizeHandle: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    cursor: 'col-resize',
-    zIndex: 10,
-  },
   tabBar: {
     display: 'flex',
-    gap: 2,
-    padding: '4px 8px 0',
-    borderBottom: '1px solid var(--md-outline-variant)',
+    gap: 0,
+    padding: '0 4px',
+    borderBottom: '1px solid var(--border)',
     flexShrink: 0,
     background: 'var(--md-surface-container-lowest)',
   },
@@ -114,22 +124,15 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 4,
-    padding: '7px 12px',
-    fontSize: 12,
-    fontWeight: 500,
+    padding: '8px 10px',
+    fontSize: 'var(--text-xs)',
     fontFamily: 'var(--font-sans)',
-    color: 'var(--md-on-surface-variant)',
     background: 'transparent',
     border: 'none',
-    borderRadius: '8px 8px 0 0',
+    borderBottom: '2px solid transparent',
     cursor: 'pointer',
-    transition: 'color 0.15s, background 0.15s',
-    marginBottom: -1,
-  },
-  tabActive: {
-    color: 'var(--md-primary)',
-    background: 'var(--md-surface-container)',
-    fontWeight: 600,
+    transition: 'color 0.15s, background 0.15s, border-color 0.15s',
+    whiteSpace: 'nowrap',
   },
   content: {
     display: 'flex',
@@ -137,13 +140,5 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minHeight: 0,
     overflow: 'hidden',
-  },
-  placeholder: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
   },
 };

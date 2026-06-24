@@ -73,7 +73,7 @@ export default function IntegrationSettings() {
               alignItems: 'center',
               padding: '12px 16px',
               borderRadius: 8,
-              border: `1px solid ${isDark ? 'var(--md-outline-variant)' : '#E2E8F0'}`,
+              border: '1px solid var(--border)',
               background: isDark ? 'var(--md-surface-container-low)' : 'rgba(255,255,255,0.5)',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -58,6 +58,13 @@ interface AgentStore {
   /** Remove all messages from index onwards (used by retry) */
   removeMessagesFrom: (sessionId: string, fromIndex: number) => void;
 
+  /** Session ended tracking — key is sessionId, value is always true */
+  endedSessionIds: Record<string, boolean>;
+  /** Session error tracking — key is sessionId, value is always true */
+  errorSessionIds: Record<string, boolean>;
+  markSessionEnded: (sessionId: string) => void;
+  markSessionError: (sessionId: string) => void;
+
   /** Tool invocation events per session — deprecated, kept for AgentContextPanel compat */
   toolEvents: Record<string, Array<{ id: string; toolName: string; description: string; timestamp: number }>>;
   /** Append a tool event — deprecated */
@@ -151,6 +158,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
         messages: { ...state.messages, [sessionId]: trimmed },
         streamingBlocks: restBlocks,
         streamingSessionId: state.streamingSessionId === sessionId ? null : state.streamingSessionId,
+        endedSessionIds: { ...state.endedSessionIds, [sessionId]: true },
       };
     }),
 
@@ -181,7 +189,9 @@ export const useAgentStore = create<AgentStore>((set) => ({
   clearMessages: (sessionId) =>
     set((state) => {
       const { [sessionId]: _, ...rest } = state.messages;
-      return { messages: rest };
+      const { [sessionId]: _2, ...restEnded } = state.endedSessionIds;
+      const { [sessionId]: _3, ...restError } = state.errorSessionIds;
+      return { messages: rest, endedSessionIds: restEnded, errorSessionIds: restError };
     }),
 
   removeMessagesFrom: (sessionId, fromIndex) =>
@@ -217,6 +227,19 @@ export const useAgentStore = create<AgentStore>((set) => ({
       const { [sessionId]: _, ...rest } = state.toolEvents;
       return { toolEvents: rest };
     }),
+
+  endedSessionIds: {},
+  errorSessionIds: {},
+
+  markSessionEnded: (sessionId) =>
+    set((state) => ({
+      endedSessionIds: { ...state.endedSessionIds, [sessionId]: true },
+    })),
+
+  markSessionError: (sessionId) =>
+    set((state) => ({
+      errorSessionIds: { ...state.errorSessionIds, [sessionId]: true },
+    })),
 
   activeProviderId: null,
   setActiveProvider: (id) => set({ activeProviderId: id }),

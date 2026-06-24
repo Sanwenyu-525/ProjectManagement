@@ -8,6 +8,10 @@ export const queryKeys = {
     brain: (id: string) => ['project', id, 'brain'] as const,
     health: (id: string) => ['project', id, 'health'] as const,
     timeline: (id: string) => ['project', id, 'timeline'] as const,
+    graph: (id: string) => ['project', id, 'graph'] as const,
+    graphStats: (id: string) => ['project', id, 'graph', 'stats'] as const,
+    featureGroups: (id: string) => ['project', id, 'featureGroups'] as const,
+    groupMemberships: (id: string) => ['project', id, 'groupMemberships'] as const,
   },
   tasks: {
     all: (projectId: string) => ['tasks', projectId] as const,
@@ -86,7 +90,7 @@ export const queryKeys = {
     all: (projectId?: string) => ['decisions', projectId] as const,
   },
   knowledge: {
-    list: (category?: string) => ['knowledge', 'list', category] as const,
+    list: (category?: string, projectId?: string) => ['knowledge', 'list', category, projectId] as const,
     counts: () => ['knowledge', 'counts'] as const,
   },
   notes: {

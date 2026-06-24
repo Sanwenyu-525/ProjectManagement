@@ -29,6 +29,13 @@ import type {
   HealthCheckResult,
   OutdatedDep,
   ProjectBrain,
+  GraphSummary,
+  GraphData,
+  GraphStats,
+  FeatureGroup,
+  GroupMembership,
+  SuggestedGroup,
+  CreateGroupInput,
 } from '../types';
 
 // ==================== Projects ====================
@@ -48,6 +55,9 @@ export const projectsApi = {
       .then((data) => normalizeProject(data) as Project),
   delete: (id: string): Promise<void> =>
     cmd('projects_delete', { id }),
+  restore: (id: string): Promise<Project> =>
+    cmd('projects_restore', { id })
+      .then((data) => normalizeProject(data) as Project),
   updateStatus: (id: string, status: string): Promise<Project> =>
     cmd('projects_update_status', { id, status })
       .then((data) => normalizeProject(data) as Project),
@@ -241,4 +251,30 @@ export const gitApi = {
 export const brainApi = {
   analyze: (projectId: string) =>
     cmd<ProjectBrain>('brain_analyze_project', { projectId }),
+};
+
+// ==================== Project Graph ====================
+
+export const graphApi = {
+  scan: (projectId: string) =>
+    cmd<GraphSummary>('graph_scan_project', { projectId }),
+  get: (projectId: string) =>
+    cmd<GraphData>('graph_get', { projectId }),
+  getStats: (projectId: string) =>
+    cmd<GraphStats>('graph_get_stats', { projectId }),
+  // Feature Groups
+  listGroups: (projectId: string) =>
+    cmd<FeatureGroup[]>('graph_list_groups', { projectId }),
+  createGroup: (projectId: string, data: CreateGroupInput) =>
+    cmd<FeatureGroup>('graph_create_group', { projectId, data }),
+  deleteGroup: (groupId: string) =>
+    cmd<void>('graph_delete_group', { groupId }),
+  addFilesToGroup: (groupId: string, nodeIds: string[]) =>
+    cmd<number>('graph_add_files_to_group', { groupId, nodeIds }),
+  removeFileFromGroup: (groupId: string, nodeId: string) =>
+    cmd<void>('graph_remove_file_from_group', { groupId, nodeId }),
+  getGroupMemberships: (projectId: string) =>
+    cmd<GroupMembership[]>('graph_get_group_memberships', { projectId }),
+  suggestGroups: (projectId: string) =>
+    cmd<SuggestedGroup[]>('graph_suggest_groups', { projectId }),
 };

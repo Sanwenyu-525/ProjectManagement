@@ -41,10 +41,3 @@ export const decisionsApi = {
     cmd('decisions_delete', { id }),
 };
 
-export const memoryRelationsApi = {
-  add: (data: { sourceId: string; targetId: string; relationType?: string }): Promise<{ id: string }> =>
-    cmd('memory_relations_add', { data }),
-
-  list: (memoryId: string): Promise<Array<{ id: string; sourceId: string; targetId: string; relationType: string; title: string; type: string; content: string }>> =>
-    cmd('memory_relations_list', { memoryId }),
-};

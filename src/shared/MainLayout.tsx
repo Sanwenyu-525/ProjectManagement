@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { SwitchTransition, CSSTransition } from 'react-transition-group';
 import { Dropdown, notification } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import SearchBox from './components/SearchBox';
-import { useCommandPalette } from '../hooks/useCommandPalette';
+import ShortcutsModal from './ShortcutsModal';
 import { useThemeStore } from '../stores/themeStore';
 import type { FileExplorerHandle } from './FileExplorer';
 
 // Lazy-load heavy components — only needed when panels are open
 const FileExplorer = lazy(() => import('./FileExplorer'));
-const CommandPalette = lazy(() => import('./components/CommandPalette'));
 
 const WorkspacePage = lazy(() => import('../features/workspace/WorkspacePage'));
 
@@ -20,6 +20,7 @@ const navItems = [
   { key: '/data-screen', icon: 'monitoring', label: '数据大屏' },
   { key: '__file-explorer', icon: 'folder', label: '文件浏览器' },
   { key: '/knowledge', icon: 'menu_book', label: '知识库' },
+  { key: '/graph', icon: 'hub', label: '图谱' },
 ];
 
 export default function MainLayout() {
@@ -27,9 +28,68 @@ export default function MainLayout() {
   const location = useLocation();
   const [filePanelOpen, setFilePanelOpen] = useState(false);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
-  const [notifApi, contextHolder] = notification.useNotification();
   const isDark = useThemeStore(s => s.mode === 'dark');
-  const { open: paletteOpen, openPalette, closePalette } = useCommandPalette();
+  const [notifApi, contextHolder] = notification.useNotification();
+  const shortcutsModalOpen = useThemeStore(s => s.shortcutsModalOpen);
+  const toggleShortcutsModal = useThemeStore(s => s.toggleShortcutsModal);
+  const setShortcutsModalOpen = useThemeStore(s => s.setShortcutsModalOpen);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
+
+      // ? — open shortcuts panel (skip if in input)
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !isInput) {
+        e.preventDefault();
+        toggleShortcutsModal();
+        return;
+      }
+      // Ctrl+B — toggle file explorer
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        setFilePanelOpen(prev => !prev);
+        return;
+      }
+      // Ctrl+N — new project
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        navigate('/projects?new=true');
+        return;
+      }
+      // Ctrl+D — cycle density (skip if in input)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd' && !e.shiftKey && !isInput) {
+        e.preventDefault();
+        const order = ['comfortable', 'compact', 'dense'] as const;
+        const current = useThemeStore.getState().density;
+        const next = order[(order.indexOf(current) + 1) % 3];
+        useThemeStore.getState().setDensity(next);
+        return;
+      }
+      // Ctrl+Shift+D — toggle dark mode (skip if in input)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'D' && e.shiftKey && !isInput) {
+        e.preventDefault();
+        useThemeStore.getState().toggle();
+        return;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
+
+  // Auto-collapse file panel on narrow viewports to prevent covering content
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && filePanelOpen) {
+        setFilePanelOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    // Also check on mount
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, [filePanelOpen]);
 
   const activeKey = navItems.find(item =>
     item.key !== '__file-explorer' && location.pathname.startsWith(item.key)
@@ -48,13 +108,6 @@ export default function MainLayout() {
       localStorage.setItem('lastHealthCheckDate', today);
       if (!changedProjects || changedProjects.length === 0) return;
 
-      notifApi.info({
-        message: '项目健康检查完成',
-        description: `检测到 ${changedProjects.length} 个项目有变化`,
-        duration: 10,
-        onClick: () => navigate('/projects'),
-      });
-
       changedProjects.forEach((projectId: string) => {
         const health = results.find(r => r.projectId === projectId);
         if (!health) return;
@@ -71,8 +124,8 @@ export default function MainLayout() {
       });
     };
 
-    // Defer to after first paint
-    const id = setTimeout(runHealthCheck, 0);
+    // Defer health check — let first paint complete before heavy IPC
+    const id = setTimeout(runHealthCheck, 3000);
     return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -126,6 +179,7 @@ export default function MainLayout() {
       fontFamily: 'var(--font-sans)',
     }}>
       {contextHolder}
+      <ShortcutsModal open={shortcutsModalOpen} onClose={() => setShortcutsModalOpen(false)} />
 
       {/* Skip to content — visible only on keyboard focus */}
       <a
@@ -143,7 +197,7 @@ export default function MainLayout() {
           borderRadius: 8,
           background: 'var(--md-primary)',
           color: 'var(--md-on-primary)',
-          fontSize: 13,
+          fontSize: 'var(--text-sm)',
           fontWeight: 600,
           fontFamily: 'var(--font-sans)',
           textDecoration: 'none',
@@ -170,10 +224,8 @@ export default function MainLayout() {
           alignItems: 'center',
           padding: '10px 0',
           gap: 6,
-          background: isDark
-            ? 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)'
-            : 'linear-gradient(180deg, rgba(230, 237, 245, 0.92) 0%, rgba(220, 228, 240, 0.88) 100%)',
-          boxShadow: isDark ? 'none' : '1px 0 0 rgba(0,0,0,0.06)',
+          background: 'linear-gradient(180deg, var(--color-rail-start) 0%, var(--color-rail-end) 100%)',
+          boxShadow: isDark ? 'none' : '1px 0 0 var(--color-divider)',
           flexShrink: 0,
         }}
       >
@@ -206,7 +258,7 @@ export default function MainLayout() {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNavClick(); }
           };
           const handleFocus = (e: React.FocusEvent<HTMLDivElement>) => {
-            if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+            if (!isActive) e.currentTarget.style.background = isDark ? 'var(--ws-hover)' : 'var(--color-primary-light)';
           };
           const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
             if (!isActive) e.currentTarget.style.background = 'transparent';
@@ -226,25 +278,19 @@ export default function MainLayout() {
               style={{
                 width: 36,
                 height: 36,
-                borderRadius: 0,
+                borderRadius: 10,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 background: isActive
-                  ? (isFileExplorer ? (isDark ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.12)') : 'var(--color-primary-light)')
+                  ? (isFileExplorer ? 'var(--color-amber-light)' : 'var(--color-primary-light)')
                   : 'transparent',
-                borderLeft: isFileExplorer
-                  ? (isActive ? '1px solid rgba(245, 158, 11, 0.4)' : `1px solid ${isDark ? 'transparent' : 'rgba(0,0,0,0.06)'}`)
-                  : (isActive ? '2px solid var(--color-primary)' : '2px solid transparent'),
-                border: isFileExplorer
-                  ? (isActive ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid transparent')
-                  : undefined,
                 outline: 'none',
               }}
               onMouseEnter={e => {
-                if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+                if (!isActive) e.currentTarget.style.background = isDark ? 'var(--ws-hover)' : 'var(--color-primary-light)';
               }}
               onMouseLeave={e => {
                 if (!isActive) e.currentTarget.style.background = 'transparent';
@@ -254,7 +300,7 @@ export default function MainLayout() {
                 fontSize: 18,
                 color: isActive
                   ? (isFileExplorer ? '#f59e0b' : 'var(--color-primary)')
-                  : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)'),
+                  : (isDark ? 'var(--ws-icon-muted)' : 'var(--color-text-tertiary)'),
                 transition: 'color 0.15s',
               }}>
                 {isFileExplorer
@@ -288,12 +334,12 @@ export default function MainLayout() {
             transition: 'all 0.15s ease',
             outline: 'none',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'var(--ws-hover)' : 'var(--color-primary-light)'; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
           <span className="material-symbols-outlined" aria-hidden="true" style={{
             fontSize: 18,
-            color: activeKey === '/settings' ? 'var(--color-primary)' : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)'),
+            color: activeKey === '/settings' ? 'var(--color-primary)' : (isDark ? 'var(--ws-icon-muted)' : 'var(--color-text-muted)'),
           }}>
             settings
           </span>
@@ -308,10 +354,10 @@ export default function MainLayout() {
         width: filePanelWidth,
         height: '100vh',
         zIndex: 45,
-        background: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+        background: 'var(--color-file-panel)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
-        borderRight: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : 'rgba(187, 202, 198, 0.3)'}`,
+        borderRight: '1px solid var(--color-border)',
         transition: filePanelDragging ? 'none' : 'transform 0.2s ease, opacity 0.2s ease',
         transform: filePanelOpen ? 'translateX(0)' : `translateX(-${filePanelWidth}px)`,
         opacity: filePanelOpen ? 1 : 0,
@@ -325,15 +371,15 @@ export default function MainLayout() {
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 12px 8px',
-          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : 'rgba(187, 202, 198, 0.2)'}`,
+          borderBottom: '1px solid var(--color-divider)',
           flexShrink: 0,
         }}>
           <span style={{
-            fontSize: 11,
+            fontSize: 'var(--text-xs)',
             fontWeight: 600,
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
-            color: isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.7)',
+            color: isDark ? 'var(--ws-text-tertiary)' : 'var(--color-text-tertiary)',
           }}>
             Explorer
           </span>
@@ -344,28 +390,28 @@ export default function MainLayout() {
               title="添加目录"
               style={{
                 fontSize: 16,
-                color: isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)',
+                color: isDark ? 'var(--ws-icon-muted)' : 'var(--color-text-tertiary)',
                 cursor: 'pointer',
                 padding: 2,
                 borderRadius: 4,
                 transition: 'color 0.15s',
               }}
               onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-primary)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'var(--ws-icon-muted)' : 'var(--color-text-tertiary)'; }}
             >add</span>
             <span
               className="material-symbols-outlined"
               onClick={() => setFilePanelOpen(false)}
               style={{
                 fontSize: 16,
-                color: isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)',
+                color: isDark ? 'var(--ws-icon-muted)' : 'var(--color-text-tertiary)',
                 cursor: 'pointer',
                 padding: 2,
                 borderRadius: 4,
                 transition: 'color 0.15s',
               }}
               onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-on-surface)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.5)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'var(--ws-icon-muted)' : 'var(--color-text-tertiary)'; }}
             >close</span>
           </div>
         </div>
@@ -389,7 +435,7 @@ export default function MainLayout() {
             height: '100%',
             cursor: 'col-resize',
             background: filePanelHover || filePanelDragging
-              ? (isDark ? 'rgba(99, 144, 255, 0.4)' : 'rgba(99, 144, 255, 0.5)')
+              ? 'var(--color-drag-highlight)'
               : 'transparent',
             transition: filePanelDragging ? 'none' : 'width 0.15s ease, background 0.15s ease',
             zIndex: 10,
@@ -420,15 +466,15 @@ export default function MainLayout() {
           alignItems: 'center',
           padding: '0 16px',
           gap: 12,
-          background: isDark ? 'rgba(15, 23, 42, 0.90)' : 'rgba(255, 255, 255, 0.80)',
+          background: 'var(--color-bg-glass-header)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : 'rgba(187, 202, 198, 0.3)'}`,
+          borderBottom: '1px solid var(--color-divider)',
           transition: 'left 0.2s ease',
         }}>
-          {/* Left: Command Palette input */}
-          <div style={{ flex: 1, maxWidth: 400 }}>
-            <SearchBox onOpenCommandPalette={openPalette} />
+          {/* Center: Command Palette input */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <SearchBox />
           </div>
 
           {/* Spacer */}
@@ -449,7 +495,7 @@ export default function MainLayout() {
                 color: 'var(--md-on-primary)',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-label)',
-                fontSize: 12,
+                fontSize: 'var(--text-sm)',
                 fontWeight: 500,
                 letterSpacing: '0.02em',
                 transition: 'all 0.15s ease',
@@ -468,7 +514,7 @@ export default function MainLayout() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: 36, height: 36, borderRadius: 6, border: 'none',
                 background: 'transparent',
-                color: isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.6)',
+                color: isDark ? 'var(--ws-text-secondary)' : 'var(--color-text-secondary)',
                 cursor: 'pointer', transition: 'all 0.15s ease',
               }}
               onMouseEnter={e => {
@@ -477,7 +523,7 @@ export default function MainLayout() {
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.6)';
+                e.currentTarget.style.color = isDark ? 'var(--ws-text-secondary)' : 'var(--color-text-secondary)';
               }}
               title="通知"
             >
@@ -491,7 +537,7 @@ export default function MainLayout() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: 36, height: 36, borderRadius: 6, border: 'none',
                 background: 'transparent',
-                color: isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.6)',
+                color: isDark ? 'var(--ws-text-secondary)' : 'var(--color-text-secondary)',
                 cursor: 'pointer', transition: 'all 0.15s ease',
               }}
               onMouseEnter={e => {
@@ -500,7 +546,7 @@ export default function MainLayout() {
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = isDark ? 'rgba(148,163,184,0.6)' : 'rgba(100,116,139,0.6)';
+                e.currentTarget.style.color = isDark ? 'var(--ws-text-secondary)' : 'var(--color-text-secondary)';
               }}
               title={isDark ? '浅色模式' : '深色模式'}
             >
@@ -513,7 +559,7 @@ export default function MainLayout() {
             <div style={{
               width: 1,
               height: 20,
-              background: isDark ? 'rgba(148,163,184,0.15)' : 'rgba(187, 202, 198, 0.4)',
+              background: 'var(--color-divider)',
               margin: '0 4px',
             }} />
 
@@ -522,7 +568,7 @@ export default function MainLayout() {
               <button
                 style={{
                   width: 36, height: 36, borderRadius: '50%', overflow: 'hidden',
-                  border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : 'rgba(187, 202, 198, 0.4)'}`,
+                  border: '1px solid var(--color-border-subtle)',
                   cursor: 'pointer',
                   padding: 0,
                   background: 'transparent',
@@ -548,20 +594,30 @@ export default function MainLayout() {
           id="main-content"
           tabIndex={-1}
           style={{
+            display: 'flex',
+            flexDirection: 'column',
             flex: 1,
+            minHeight: 0,
             marginTop: 'var(--layout-topbar-height)',
-            overflow: 'auto',
+            overflow: location.pathname.startsWith('/workspace') ? 'hidden' : 'auto',
             position: 'relative',
             outline: 'none',
           }}
         >
-          {location.pathname.startsWith('/workspace') ? <Suspense fallback={null}><WorkspacePage /></Suspense> : <Outlet />}
+          {/* WorkspacePage is always mounted to preserve agent conversations; hidden via CSS when inactive */}
+          <div style={{ display: location.pathname.startsWith('/workspace') ? 'contents' : 'none' }}>
+            <Suspense fallback={null}><WorkspacePage /></Suspense>
+          </div>
+          {!location.pathname.startsWith('/workspace') && (
+            <SwitchTransition>
+              <CSSTransition key={location.pathname} classNames="page" timeout={250}>
+                <Outlet />
+              </CSSTransition>
+            </SwitchTransition>
+          )}
         </main>
       </div>
 
-      <Suspense fallback={null}>
-        <CommandPalette open={paletteOpen} onClose={closePalette} />
-      </Suspense>
     </div>
   );
 }

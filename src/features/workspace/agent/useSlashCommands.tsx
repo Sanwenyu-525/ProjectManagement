@@ -198,7 +198,7 @@ export function SlashMenu({ filtered, selectedIndex, onSelectedIndexChange, onSe
       bottom: window.innerHeight - pos.bottom,
       maxHeight: 240, overflowY: 'auto',
       background: 'var(--md-surface-container-low)',
-      border: '1px solid var(--md-outline-variant)',
+      border: '1px solid var(--border)',
       borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
       padding: 4, zIndex: 9999,
     }}>
