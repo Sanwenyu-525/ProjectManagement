@@ -72,6 +72,7 @@ pub fn run() {
             commands::project::projects::projects_stop,
             commands::project::projects::projects_check_environment,
             commands::project::projects::projects_batch_import,
+            commands::project::projects::projects_resolve_id,
             commands::project::tasks::tasks_list,
             commands::project::tasks::tasks_create,
             commands::project::tasks::tasks_update,
@@ -121,6 +122,7 @@ pub fn run() {
             commands::project::graph::graph_suggest_groups,
             commands::project::graph::graph_get_ai_cache,
             commands::project::graph::graph_set_ai_cache,
+            commands::project::graph::graph_query,
             // Agent sessions & browser memory
             commands::workspace::sessions::sessions_start,
             commands::workspace::sessions::sessions_append_message,
@@ -149,6 +151,11 @@ pub fn run() {
             commands::workspace::agent_configs::agent_configs_create,
             commands::workspace::agent_configs::agent_configs_update,
             commands::workspace::agent_configs::agent_configs_delete,
+            // MCP servers
+            commands::workspace::mcp_servers::mcp_servers_list,
+            commands::workspace::mcp_servers::mcp_servers_create,
+            commands::workspace::mcp_servers::mcp_servers_update,
+            commands::workspace::mcp_servers::mcp_servers_delete,
             commands::workspace::terminal::terminal_start,
             commands::workspace::terminal::terminal_stop,
             commands::workspace::terminal::terminal_input,
@@ -265,7 +272,8 @@ pub fn run() {
             commands::workspace::knowledge::knowledge_import_files,
             commands::workspace::knowledge::knowledge_create_note,
             commands::workspace::knowledge::knowledge_extract,
-            commands::workspace::knowledge::knowledge_seed,
+            commands::workspace::knowledge::knowledge_query,
+            commands::workspace::knowledge::knowledge_search_context,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

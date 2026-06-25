@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Form, Input, Button, message, Select, Table, Modal, Space, Popconfirm, InputNumber, Tag } from 'antd';
+import { Form, Input, Button, message, Select, Table, Modal, Space, Popconfirm, InputNumber, Tag, Switch } from 'antd';
 import { SaveOutlined, FolderOutlined, UndoOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { open } from '@tauri-apps/plugin-dialog';
 import { DEFAULT_SHELL, DEFAULT_CWD, SHELL_OPTIONS } from '../../lib/constants';
-import IntegrationSettings from './IntegrationSettings';
 import { GlassCard, CardHeader, InfoRow, ToggleRow } from './settingsComponents';
-import { providersApi, agentConfigsApi } from '../../api';
-import type { ModelProvider, AgentConfig } from '../../types';
+import IntegrationSettings from './IntegrationSettings';
+import { COMMANDS_WITH_SHORTCUTS, CATEGORY_LABELS } from '../../lib/commands';
+import { providersApi, agentConfigsApi, mcpServersApi } from '../../api';
+import type { ModelProvider, AgentConfig, McpServer } from '../../types';
 
 // ── Sub-navigation structure ──
 const navGroups: Array<{
@@ -62,11 +63,6 @@ function GeneralSettings() {
             <InfoRow label="模式" value="单用户本地模式" />
           </div>
         </div>
-      </GlassCard>
-
-      <GlassCard>
-        <CardHeader title="平台集成" />
-        <IntegrationSettings />
       </GlassCard>
 
       <GlassCard>
@@ -262,35 +258,331 @@ function AppearanceSettings() {
   );
 }
 
-// ── Placeholder for not-yet-implemented settings ──
+function WorkspaceSettings() {
+  const [defaultLayout, setDefaultLayout] = useState(localStorage.getItem('devhub_workspace_default_layout') || 'agent-terminal');
+  const [showHidden, setShowHidden] = useState(localStorage.getItem('devhub_show_hidden_files') === 'true');
+  const [fileSort, setFileSort] = useState(localStorage.getItem('devhub_file_sort') || 'name');
 
-function PlaceholderSettings({ icon, title, description, badge, hint }: { icon: string; title: string; description: string; badge?: string; hint?: string }) {
+  const handleSave = () => {
+    localStorage.setItem('devhub_workspace_default_layout', defaultLayout);
+    localStorage.setItem('devhub_show_hidden_files', String(showHidden));
+    localStorage.setItem('devhub_file_sort', fileSort);
+    message.success('工作区设置已保存');
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <GlassCard>
-        <CardHeader title={title} badge={badge} />
-        <div style={{ padding: '16px 24px 20px', textAlign: 'center' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--md-outline-variant)', display: 'block', marginBottom: 8 }}>{icon}</span>
-          <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-sm)' }}>
-            {description}
+        <CardHeader title="工作区设置" />
+        <div style={{ padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>默认面板布局</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>启动工作区时的初始面板排列</div>
+            <Select
+              value={defaultLayout}
+              onChange={setDefaultLayout}
+              style={{ width: 260 }}
+              options={[
+                { value: 'agent-terminal', label: 'Agent + 终端' },
+                { value: 'editor-only', label: '仅编辑器' },
+                { value: 'full-width', label: '全宽布局' },
+              ]}
+            />
           </div>
-          {hint && (
-            <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-xs)', marginTop: 4, opacity: 0.6 }}>
-              {hint}
-            </div>
-          )}
+
+          <ToggleRow
+            label="显示隐藏文件"
+            description="在文件浏览器中显示以 . 开头的文件和文件夹"
+            checked={showHidden}
+            onChange={() => setShowHidden(!showHidden)}
+          />
+
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>文件排序方式</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>文件浏览器中的默认排序</div>
+            <Select
+              value={fileSort}
+              onChange={setFileSort}
+              style={{ width: 220 }}
+              options={[
+                { value: 'name', label: '按名称' },
+                { value: 'modified', label: '按修改时间' },
+                { value: 'size', label: '按大小' },
+              ]}
+            />
+          </div>
         </div>
       </GlassCard>
+
+      <GlassCard>
+        <CardHeader title="快捷键" badge="只读" />
+        <div style={{ padding: '16px 24px 20px' }}>
+          <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-sm)', marginBottom: 12 }}>
+            当前快捷键列表（不可自定义）
+          </div>
+          {Object.entries(CATEGORY_LABELS).map(([cat, label]) => {
+            const cmds = COMMANDS_WITH_SHORTCUTS.filter(c => c.category === cat);
+            if (cmds.length === 0) return null;
+            return (
+              <div key={cat} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
+                  {label}
+                </div>
+                {cmds.map(cmd => (
+                  <div key={cmd.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
+                    <span style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface)' }}>{cmd.label}</span>
+                    <kbd style={{
+                      fontSize: 10, color: 'var(--md-on-surface-variant)',
+                      background: 'var(--md-surface-container-high)',
+                      padding: '2px 6px', borderRadius: 4,
+                      border: '1px solid var(--border)',
+                      fontFamily: "'Fira Code', monospace",
+                    }}>
+                      {cmd.shortcut}
+                    </kbd>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </GlassCard>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+        <Button
+          icon={<UndoOutlined />}
+          onClick={() => {
+            setDefaultLayout('agent-terminal');
+            setShowHidden(false);
+            setFileSort('name');
+            localStorage.removeItem('devhub_workspace_default_layout');
+            localStorage.removeItem('devhub_show_hidden_files');
+            localStorage.removeItem('devhub_file_sort');
+            message.info('已重置为默认值');
+          }}
+        >
+          重置默认
+        </Button>
+        <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>保存设置</Button>
+      </div>
     </div>
   );
 }
 
-function WorkspaceSettings() {
-  return <PlaceholderSettings icon="workspaces" title="工作区设置" description="工作区设置将在后续版本中开放。" hint="包含面板布局、快捷键、多显示器支持等功能。" />;
-}
-
 function McpServersSettings() {
-  return <PlaceholderSettings icon="dns" title="MCP 服务器" description="MCP 服务器管理功能将在后续版本中开放。" badge="Beta" hint="届时可通过界面添加、配置和监控 MCP 服务器连接。" />;
+  const [servers, setServers] = useState<McpServer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<McpServer | null>(null);
+  const [form] = Form.useForm();
+
+  const loadServers = useCallback(async () => {
+    try {
+      const data = await mcpServersApi.list();
+      setServers(data);
+    } catch {
+      message.error('加载 MCP 服务器失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadServers(); }, [loadServers]);
+
+  const transport = Form.useWatch('transport', form) || 'stdio';
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      const payload = {
+        name: values.name,
+        transport: values.transport,
+        command: values.command || undefined,
+        args: values.args || undefined,
+        url: values.url || undefined,
+        env: values.env || undefined,
+        autoConnect: values.autoConnect ?? false,
+        enabled: values.enabled ?? true,
+      };
+      if (editing) {
+        await mcpServersApi.update(editing.id, payload);
+        message.success('MCP 服务器已更新');
+      } else {
+        await mcpServersApi.create(payload);
+        message.success('MCP 服务器已创建');
+      }
+      setModalOpen(false);
+      form.resetFields();
+      setEditing(null);
+      loadServers();
+    } catch (err) {
+      if (typeof err === 'object' && err !== null && 'errorFields' in err) return;
+      message.error(`保存失败: ${String(err)}`);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await mcpServersApi.delete(id);
+      message.success('已删除');
+      loadServers();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const handleToggleEnabled = async (record: McpServer) => {
+    try {
+      await mcpServersApi.update(record.id, { enabled: !record.enabled });
+      loadServers();
+    } catch {
+      message.error('切换失败');
+    }
+  };
+
+  const columns = [
+    { title: '名称', dataIndex: 'name', key: 'name' },
+    {
+      title: '传输类型',
+      dataIndex: 'transport',
+      key: 'transport',
+      width: 130,
+      render: (t: string) => <Tag>{t === 'stdio' ? 'Stdio' : t === 'sse' ? 'SSE' : 'Streamable HTTP'}</Tag>,
+    },
+    {
+      title: '连接目标',
+      key: 'target',
+      render: (_: unknown, record: McpServer) => (
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', fontFamily: "'Fira Code', monospace" }}>
+          {record.transport === 'stdio' ? record.command : record.url}
+          {!record.command && !record.url && '—'}
+        </span>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'enabled',
+      key: 'enabled',
+      width: 80,
+      render: (enabled: boolean, record: McpServer) => (
+        <Switch size="small" checked={enabled} onChange={() => handleToggleEnabled(record)} />
+      ),
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 100,
+      render: (_: unknown, record: McpServer) => (
+        <Space size="small">
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => {
+              setEditing(record);
+              form.setFieldsValue({
+                name: record.name,
+                transport: record.transport,
+                command: record.command || '',
+                args: record.args || '',
+                url: record.url || '',
+                env: record.env || '',
+                autoConnect: record.autoConnect,
+                enabled: record.enabled,
+              });
+              setModalOpen(true);
+            }}
+          />
+          <Popconfirm title="删除此 MCP 服务器？" onConfirm={() => handleDelete(record.id)}>
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <GlassCard>
+        <CardHeader title="MCP 服务器" badge="Beta" />
+        <div style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <Button
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => { setEditing(null); form.resetFields(); setModalOpen(true); }}
+            >
+              添加服务器
+            </Button>
+          </div>
+          <Table
+            dataSource={servers}
+            columns={columns}
+            rowKey="id"
+            size="small"
+            loading={loading}
+            pagination={false}
+            locale={{ emptyText: '暂无 MCP 服务器' }}
+          />
+        </div>
+      </GlassCard>
+
+      <Modal
+        title={editing ? '编辑 MCP 服务器' : '添加 MCP 服务器'}
+        open={modalOpen}
+        onOk={handleSave}
+        onCancel={() => { setModalOpen(false); setEditing(null); }}
+        destroyOnClose
+        width={520}
+      >
+        <Form form={form} layout="vertical" preserve={false} initialValues={{ transport: 'stdio', autoConnect: false, enabled: true }}>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input placeholder="my-mcp-server" />
+          </Form.Item>
+          <Form.Item name="transport" label="传输类型" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'stdio', label: 'Stdio（本地进程）' },
+                { value: 'sse', label: 'SSE（Server-Sent Events）' },
+                { value: 'streamable-http', label: 'Streamable HTTP' },
+              ]}
+            />
+          </Form.Item>
+
+          {transport === 'stdio' && (
+            <>
+              <Form.Item name="command" label="启动命令" rules={[{ required: true, message: '请输入启动命令' }]}>
+                <Input placeholder="npx -y @modelcontextprotocol/server-filesystem" style={{ fontFamily: "'Fira Code', monospace" }} />
+              </Form.Item>
+              <Form.Item name="args" label="参数（可选）">
+                <Input.TextArea rows={2} placeholder='["/path/to/dir"]' style={{ fontFamily: "'Fira Code', monospace", fontSize: 'var(--text-sm)' }} />
+                <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-xs)', marginTop: 4 }}>
+                  JSON 数组格式，如 ["--verbose", "/home/user"]
+                </div>
+              </Form.Item>
+            </>
+          )}
+
+          {(transport === 'sse' || transport === 'streamable-http') && (
+            <Form.Item name="url" label="服务器 URL" rules={[{ required: true, message: '请输入 URL' }]}>
+              <Input placeholder="http://localhost:3001/sse" style={{ fontFamily: "'Fira Code', monospace" }} />
+            </Form.Item>
+          )}
+
+          <Form.Item name="env" label="环境变量（可选）">
+            <Input.TextArea rows={3} placeholder='{"KEY": "value"}' style={{ fontFamily: "'Fira Code', monospace", fontSize: 'var(--text-sm)' }} />
+            <div style={{ color: 'var(--md-on-surface-variant)', fontSize: 'var(--text-xs)', marginTop: 4 }}>
+              JSON 对象格式
+            </div>
+          </Form.Item>
+
+          <Form.Item name="autoConnect" label="自动连接" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
 }
 
 function TerminalSettings() {
@@ -358,11 +650,213 @@ function TerminalSettings() {
 }
 
 function GitToolsSettings() {
-  return <PlaceholderSettings icon="account_tree" title="Git 设置" description="Git 全局设置将在后续版本中开放。" hint="包含默认分支名、提交模板、SSH 密钥管理等功能。" />;
+  const [defaultBranch, setDefaultBranch] = useState(localStorage.getItem('devhub_git_default_branch') || 'main');
+  const [commitTemplate, setCommitTemplate] = useState(localStorage.getItem('devhub_git_commit_template') || '');
+  const [autoFetch, setAutoFetch] = useState(localStorage.getItem('devhub_git_auto_fetch') === 'true');
+  const [verbose, setVerbose] = useState(localStorage.getItem('devhub_git_verbose') === 'true');
+
+  const handleSave = () => {
+    localStorage.setItem('devhub_git_default_branch', defaultBranch);
+    localStorage.setItem('devhub_git_commit_template', commitTemplate);
+    localStorage.setItem('devhub_git_auto_fetch', String(autoFetch));
+    localStorage.setItem('devhub_git_verbose', String(verbose));
+    message.success('Git 设置已保存');
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <GlassCard>
+        <CardHeader title="Git 设置" />
+        <div style={{ padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>默认分支名</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>新项目初始化时使用的默认分支名</div>
+            <Input
+              value={defaultBranch}
+              onChange={e => setDefaultBranch(e.target.value)}
+              placeholder="main"
+              style={{ width: 220 }}
+            />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>提交模板</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>默认的 commit message 模板</div>
+            <Input.TextArea
+              value={commitTemplate}
+              onChange={e => setCommitTemplate(e.target.value)}
+              placeholder={"feat: \n\n描述变更内容"}
+              rows={3}
+              style={{ fontFamily: "'Fira Code', monospace", fontSize: 'var(--text-sm)' }}
+            />
+          </div>
+
+          <ToggleRow
+            label="自动 Fetch"
+            description="后台定期从远程仓库获取最新状态"
+            checked={autoFetch}
+            onChange={() => setAutoFetch(!autoFetch)}
+          />
+
+          <ToggleRow
+            label="详细日志"
+            description="显示详细的 git 操作日志输出"
+            checked={verbose}
+            onChange={() => setVerbose(!verbose)}
+          />
+        </div>
+      </GlassCard>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+        <Button
+          icon={<UndoOutlined />}
+          onClick={() => {
+            setDefaultBranch('main');
+            setCommitTemplate('');
+            setAutoFetch(false);
+            setVerbose(false);
+            localStorage.removeItem('devhub_git_default_branch');
+            localStorage.removeItem('devhub_git_commit_template');
+            localStorage.removeItem('devhub_git_auto_fetch');
+            localStorage.removeItem('devhub_git_verbose');
+            message.info('已重置为默认值');
+          }}
+        >
+          重置默认
+        </Button>
+        <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>保存设置</Button>
+      </div>
+    </div>
+  );
 }
 
 function BuildSettings() {
-  return <PlaceholderSettings icon="build" title="构建设置" description="构建相关设置将在后续版本中开放。" hint="包含构建流水线配置、环境变量管理、CI/CD 集成等功能。" />;
+  const [defaultBuildCmd, setDefaultBuildCmd] = useState(localStorage.getItem('devhub_build_default_cmd') || '');
+  const [defaultRunCmd, setDefaultRunCmd] = useState(localStorage.getItem('devhub_build_default_run') || '');
+  const [timeout, setTimeout_] = useState(Number(localStorage.getItem('devhub_build_timeout')) || 300);
+  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('devhub_build_global_env') || '[]');
+    } catch { return []; }
+  });
+
+  const addEnvVar = () => setEnvVars([...envVars, { key: '', value: '' }]);
+  const removeEnvVar = (index: number) => setEnvVars(envVars.filter((_, i) => i !== index));
+  const updateEnvVar = (index: number, field: 'key' | 'value', val: string) => {
+    const next = [...envVars];
+    next[index] = { ...next[index], [field]: val };
+    setEnvVars(next);
+  };
+
+  const handleSave = () => {
+    localStorage.setItem('devhub_build_default_cmd', defaultBuildCmd);
+    localStorage.setItem('devhub_build_default_run', defaultRunCmd);
+    localStorage.setItem('devhub_build_timeout', String(timeout));
+    localStorage.setItem('devhub_build_global_env', JSON.stringify(envVars.filter(e => e.key)));
+    message.success('构建设置已保存');
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <GlassCard>
+        <CardHeader title="构建设置" />
+        <div style={{ padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>默认构建命令</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>项目未配置时使用的 fallback 构建命令</div>
+            <Input
+              value={defaultBuildCmd}
+              onChange={e => setDefaultBuildCmd(e.target.value)}
+              placeholder="npm run build"
+              style={{ fontFamily: "'Fira Code', monospace", fontSize: 'var(--text-sm)' }}
+            />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>默认运行命令</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>项目未配置时使用的 fallback 运行命令</div>
+            <Input
+              value={defaultRunCmd}
+              onChange={e => setDefaultRunCmd(e.target.value)}
+              placeholder="npm run dev"
+              style={{ fontFamily: "'Fira Code', monospace", fontSize: 'var(--text-sm)' }}
+            />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>构建超时（秒）</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>构建过程的最大等待时间</div>
+            <InputNumber
+              value={timeout}
+              onChange={v => setTimeout_(v || 300)}
+              min={30}
+              max={3600}
+              step={30}
+              style={{ width: 160 }}
+            />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 'var(--text-base)', color: 'var(--md-on-surface)', marginBottom: 4 }}>全局环境变量</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--md-on-surface-variant)', marginBottom: 12 }}>所有构建过程中注入的环境变量</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {envVars.map((env, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Input
+                    value={env.key}
+                    onChange={e => updateEnvVar(i, 'key', e.target.value)}
+                    placeholder="KEY"
+                    style={{ width: 180, fontFamily: "'Fira Code', monospace", fontSize: 'var(--text-sm)' }}
+                  />
+                  <span style={{ color: 'var(--md-on-surface-variant)' }}>=</span>
+                  <Input
+                    value={env.value}
+                    onChange={e => updateEnvVar(i, 'value', e.target.value)}
+                    placeholder="value"
+                    style={{ flex: 1, fontFamily: "'Fira Code', monospace", fontSize: 'var(--text-sm)' }}
+                  />
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => removeEnvVar(i)}
+                  />
+                </div>
+              ))}
+              <Button
+                type="dashed"
+                icon={<PlusOutlined />}
+                onClick={addEnvVar}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                添加变量
+              </Button>
+            </div>
+          </div>
+        </div>
+      </GlassCard>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+        <Button
+          icon={<UndoOutlined />}
+          onClick={() => {
+            setDefaultBuildCmd('');
+            setDefaultRunCmd('');
+            setTimeout_(300);
+            setEnvVars([]);
+            localStorage.removeItem('devhub_build_default_cmd');
+            localStorage.removeItem('devhub_build_default_run');
+            localStorage.removeItem('devhub_build_timeout');
+            localStorage.removeItem('devhub_build_global_env');
+            message.info('已重置为默认值');
+          }}
+        >
+          重置默认
+        </Button>
+        <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>保存设置</Button>
+      </div>
+    </div>
+  );
 }
 
 function DataManagementSettings() {

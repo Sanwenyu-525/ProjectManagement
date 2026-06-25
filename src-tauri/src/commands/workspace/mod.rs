@@ -8,3 +8,4 @@ pub mod workspaces;
 pub mod memory;
 pub mod notes;
 pub mod knowledge;
+pub mod mcp_servers;

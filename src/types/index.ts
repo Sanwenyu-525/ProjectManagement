@@ -505,6 +505,20 @@ export interface AgentConfig {
   updatedAt: string;
 }
 
+export interface McpServer {
+  id: string;
+  name: string;
+  transport: 'stdio' | 'sse' | 'streamable-http';
+  command: string | null;
+  args: string | null;
+  url: string | null;
+  env: string | null;
+  autoConnect: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ==================== Browser Memory ====================
 
 export interface BrowserVisit {

@@ -23,13 +23,16 @@ export {
 export { workspacesApi } from './workspace';
 
 // Agent sessions + Agent tasks
-export { sessionsApi, agentTasksApi, providersApi, agentConfigsApi } from './agent';
+export { sessionsApi, agentTasksApi, providersApi, agentConfigsApi, mcpServersApi } from './agent';
 export type { CreateAgentTaskInput } from './agent';
 export { browserMemoryApi } from './browser';
 
 // Terminal + Files
 export { terminalApi, filesApi } from './terminal';
 export type { SlashCommandDef } from './terminal';
+
+// Network
+export { networkApi } from './network';
 
 // Builds + Templates + Integrations
 export { buildsApi, templatesApi, integrationsApi } from './build';

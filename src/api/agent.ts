@@ -1,5 +1,5 @@
 import { cmd } from './client';
-import type { AgentSession, AgentMessage, AgentTask, ModelProvider, AgentConfig } from '../types';
+import type { AgentSession, AgentMessage, AgentTask, ModelProvider, AgentConfig, McpServer } from '../types';
 
 // ==================== Agent Sessions ====================
 
@@ -70,4 +70,17 @@ export const agentConfigsApi = {
     cmd<AgentConfig>('agent_configs_update', { id, data }),
   delete: (id: string) =>
     cmd<void>('agent_configs_delete', { id }),
+};
+
+// ==================== MCP Servers ====================
+
+export const mcpServersApi = {
+  list: () =>
+    cmd<McpServer[]>('mcp_servers_list'),
+  create: (data: { name: string; transport: string; command?: string; args?: string; url?: string; env?: string; autoConnect?: boolean; enabled?: boolean }) =>
+    cmd<McpServer>('mcp_servers_create', { data }),
+  update: (id: string, data: { name?: string; transport?: string; command?: string; args?: string | null; url?: string | null; env?: string | null; autoConnect?: boolean; enabled?: boolean }) =>
+    cmd<McpServer>('mcp_servers_update', { id, data }),
+  delete: (id: string) =>
+    cmd<void>('mcp_servers_delete', { id }),
 };
