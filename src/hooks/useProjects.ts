@@ -70,6 +70,28 @@ export function useScanProjectGraph(id: string | undefined) {
   });
 }
 
+export function useComputeImpact(projectId: string | undefined) {
+  return useMutation({
+    mutationFn: (nodeIds: string[]) => graphApi.computeImpact(projectId!, nodeIds),
+  });
+}
+
+export function useTraceChain(projectId: string | undefined) {
+  return useMutation({
+    mutationFn: ({ nodeId, direction, maxDepth }: { nodeId: string; direction: string; maxDepth?: number }) =>
+      graphApi.traceChain(projectId!, nodeId, direction, maxDepth),
+  });
+}
+
+export function useComputeLayers(projectId: string | undefined) {
+  return useQuery({
+    queryKey: [...queryKeys.project.graph(projectId!), 'layers'],
+    queryFn: () => graphApi.computeLayers(projectId!),
+    enabled: !!projectId,
+    staleTime: 5 * 60_000,
+  });
+}
+
 // ==================== Feature Groups ====================
 
 export function useFeatureGroups(projectId: string | undefined) {

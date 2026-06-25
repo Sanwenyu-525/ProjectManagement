@@ -771,6 +771,61 @@ export interface GraphStats {
   directoryBreakdown: Record<string, number>;
 }
 
+export interface ImpactNode {
+  id: UUID;
+  filePath: string;
+  fileName: string;
+  depth: number;
+}
+
+export interface ImpactResult {
+  impactedNodes: ImpactNode[];
+  directCount: number;
+  indirectCount: number;
+  maxDepth: number;
+}
+
+export interface ChainNode {
+  id: UUID;
+  filePath: string;
+  fileName: string;
+  depth: number;
+}
+
+export interface ChainEdge {
+  sourceId: UUID;
+  targetId: UUID;
+}
+
+export interface ChainResult {
+  chainNodes: ChainNode[];
+  chainEdges: ChainEdge[];
+  maxDepth: number;
+  direction: string;
+}
+
+export interface LayerNode {
+  id: UUID;
+  filePath: string;
+  fileName: string;
+}
+
+export interface LayerInfo {
+  level: number;
+  nodes: LayerNode[];
+}
+
+export interface CycleInfo {
+  nodeIds: UUID[];
+  filePaths: string[];
+}
+
+export interface LayerResult {
+  layers: LayerInfo[];
+  cycles: CycleInfo[];
+  totalNodes: number;
+}
+
 // ==================== Feature Groups ====================
 
 export interface FeatureGroup {

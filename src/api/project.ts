@@ -36,6 +36,9 @@ import type {
   GroupMembership,
   SuggestedGroup,
   CreateGroupInput,
+  ImpactResult,
+  ChainResult,
+  LayerResult,
   GitLogResult,
 } from '../types';
 
@@ -283,4 +286,11 @@ export const graphApi = {
     cmd<string | null>('graph_get_ai_cache', { projectId, cacheKey }),
   setAiCache: (projectId: string, cacheKey: string, resultJson: string) =>
     cmd<void>('graph_set_ai_cache', { projectId, cacheKey, resultJson }),
+  // Graph Analysis
+  computeImpact: (projectId: string, nodeIds: string[]) =>
+    cmd<ImpactResult>('graph_compute_impact', { projectId, nodeIds }),
+  traceChain: (projectId: string, nodeId: string, direction: string, maxDepth?: number) =>
+    cmd<ChainResult>('graph_trace_chain', { projectId, nodeId, direction, maxDepth }),
+  computeLayers: (projectId: string) =>
+    cmd<LayerResult>('graph_compute_layers', { projectId }),
 };

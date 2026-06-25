@@ -109,6 +109,9 @@ pub fn run() {
             commands::project::graph::graph_scan_project,
             commands::project::graph::graph_get,
             commands::project::graph::graph_get_stats,
+            commands::project::graph::graph_compute_impact,
+            commands::project::graph::graph_trace_chain,
+            commands::project::graph::graph_compute_layers,
             commands::project::graph::graph_create_group,
             commands::project::graph::graph_delete_group,
             commands::project::graph::graph_list_groups,
@@ -156,6 +159,7 @@ pub fn run() {
             commands::workspace::terminal::terminal_resize,
             commands::workspace::terminal::terminal_open_external,
             commands::workspace::terminal::claude_commands_list,
+            commands::workspace::terminal::network_scan_active_ports,
             // File operations
             commands::workspace::files::files_list_directory,
             commands::workspace::files::files_read,

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use tauri::command;
 use tauri::State;
 
@@ -116,6 +117,79 @@ pub struct CreateGroupInput {
     pub color: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImpactNode {
+    pub id: String,
+    pub file_path: String,
+    pub file_name: String,
+    pub depth: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImpactResult {
+    pub impacted_nodes: Vec<ImpactNode>,
+    pub direct_count: usize,
+    pub indirect_count: usize,
+    pub max_depth: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChainNode {
+    pub id: String,
+    pub file_path: String,
+    pub file_name: String,
+    pub depth: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChainEdge {
+    pub source_id: String,
+    pub target_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChainResult {
+    pub chain_nodes: Vec<ChainNode>,
+    pub chain_edges: Vec<ChainEdge>,
+    pub max_depth: usize,
+    pub direction: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerNode {
+    pub id: String,
+    pub file_path: String,
+    pub file_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerInfo {
+    pub level: usize,
+    pub nodes: Vec<LayerNode>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CycleInfo {
+    pub node_ids: Vec<String>,
+    pub file_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerResult {
+    pub layers: Vec<LayerInfo>,
+    pub cycles: Vec<CycleInfo>,
+    pub total_nodes: usize,
+}
+
 // ── Language detection ──
 
 fn ext_to_language(ext: &str) -> Option<&'static str> {
@@ -190,62 +264,77 @@ fn walk_project(root: &Path, dir: &Path, depth: usize, max_depth: usize, out: &m
 
 // ── Import extraction ──
 
+// Pre-compiled regex patterns (compiled once at first use)
+static RE_TS_IMPORT: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"(?:(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"])"#).unwrap()
+});
+static RE_TS_REQUIRE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap()
+});
+static RE_TS_DYNAMIC: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap()
+});
+static RE_RS_USE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?:use\s+(?:crate|super|self)::([^;]+);)").unwrap()
+});
+static RE_RS_MOD: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?:^|\n)\s*mod\s+(\w+)\s*;").unwrap()
+});
+static RE_PY_FROM: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?m)^\s*from\s+([\w.]+)\s+import").unwrap()
+});
+static RE_PY_IMPORT: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?m)^\s*import\s+([\w.]+)").unwrap()
+});
+static RE_GO_IMPORT_BLOCK: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"import\s*\((?s)(.*?)\)"#).unwrap()
+});
+static RE_GO_IMPORT_LINE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#""([^"]+)""#).unwrap()
+});
+static RE_GO_IMPORT_SINGLE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"import\s+"([^"]+)""#).unwrap()
+});
+
 fn extract_imports(content: &str, language: &str) -> Vec<String> {
     let mut imports = Vec::new();
 
     match language {
         "TypeScript" | "JavaScript" | "Vue" | "Svelte" => {
-            let re = regex::Regex::new(
-                r#"(?:(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"])"#
-            ).unwrap();
-            for cap in re.captures_iter(content) {
+            for cap in RE_TS_IMPORT.captures_iter(content) {
                 imports.push(cap[1].to_string());
             }
-
-            let require_re = regex::Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap();
-            for cap in require_re.captures_iter(content) {
+            for cap in RE_TS_REQUIRE.captures_iter(content) {
                 imports.push(cap[1].to_string());
             }
-
-            let dyn_re = regex::Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap();
-            for cap in dyn_re.captures_iter(content) {
+            for cap in RE_TS_DYNAMIC.captures_iter(content) {
                 imports.push(cap[1].to_string());
             }
         }
         "Rust" => {
-            let re = regex::Regex::new(r"(?:use\s+(?:crate|super|self)::([^;]+);)").unwrap();
-            for cap in re.captures_iter(content) {
+            for cap in RE_RS_USE.captures_iter(content) {
                 imports.push(cap[1].trim().to_string());
             }
-
-            let mod_re = regex::Regex::new(r"(?:^|\n)\s*mod\s+(\w+)\s*;").unwrap();
-            for cap in mod_re.captures_iter(content) {
+            for cap in RE_RS_MOD.captures_iter(content) {
                 imports.push(format!("mod:{}", &cap[1]));
             }
         }
         "Python" => {
-            let re = regex::Regex::new(r"(?m)^\s*from\s+([\w.]+)\s+import").unwrap();
-            for cap in re.captures_iter(content) {
+            for cap in RE_PY_FROM.captures_iter(content) {
                 imports.push(cap[1].to_string());
             }
-
-            let import_re = regex::Regex::new(r"(?m)^\s*import\s+([\w.]+)").unwrap();
-            for cap in import_re.captures_iter(content) {
+            for cap in RE_PY_IMPORT.captures_iter(content) {
                 imports.push(cap[1].to_string());
             }
         }
         "Go" => {
-            let re = regex::Regex::new(r#"import\s*\((?s)(.*?)\)"#).unwrap();
-            for cap in re.captures_iter(content) {
+            for cap in RE_GO_IMPORT_BLOCK.captures_iter(content) {
                 let block = &cap[1];
-                let line_re = regex::Regex::new(r#""([^"]+)""#).unwrap();
-                for line_cap in line_re.captures_iter(block) {
+                for line_cap in RE_GO_IMPORT_LINE.captures_iter(block) {
                     imports.push(line_cap[1].to_string());
                 }
             }
-
-            let single_re = regex::Regex::new(r#"import\s+"([^"]+)""#).unwrap();
-            for cap in single_re.captures_iter(content) {
+            for cap in RE_GO_IMPORT_SINGLE.captures_iter(content) {
                 imports.push(cap[1].to_string());
             }
         }
@@ -496,19 +585,30 @@ pub async fn graph_scan_project(
         *language_counts.entry(n.language.clone()).or_insert(0) += 1;
     }
 
+    // Wrap batch inserts in a transaction for performance
+    db.execute("BEGIN", &[]).map_err(|e| e.to_string())?;
+
     for n in &nodes {
-        db.execute(
+        if let Err(e) = db.execute(
             "INSERT INTO graph_nodes (id, projectId, filePath, fileName, language, directory, lineCount) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![n.id, n.project_id, n.file_path, n.file_name, n.language, n.directory, n.line_count],
-        ).map_err(|e| e.to_string())?;
+        ) {
+            let _ = db.execute("ROLLBACK", &[]);
+            return Err(e.to_string());
+        }
     }
 
     for e in &edges {
-        db.execute(
+        if let Err(e) = db.execute(
             "INSERT INTO graph_edges (id, projectId, sourceNodeId, targetNodeId, importPath) VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![e.id, e.project_id, e.source_node_id, e.target_node_id, e.import_path],
-        ).map_err(|e| e.to_string())?;
+        ) {
+            let _ = db.execute("ROLLBACK", &[]);
+            return Err(e.to_string());
+        }
     }
+
+    db.execute("COMMIT", &[]).map_err(|e| e.to_string())?;
 
     // Re-associate feature groups with new node IDs by matching filePath
     if !saved_group_files.is_empty() {
@@ -583,6 +683,328 @@ pub async fn graph_get_stats(
 ) -> Result<GraphStats, String> {
     let data = graph_get(db, project_id).await?;
     Ok(compute_stats(data))
+}
+
+#[command]
+pub async fn graph_compute_impact(
+    db: State<'_, Database>,
+    project_id: String,
+    node_ids: Vec<String>,
+) -> Result<ImpactResult, String> {
+    if node_ids.is_empty() {
+        return Ok(ImpactResult {
+            impacted_nodes: Vec::new(),
+            direct_count: 0,
+            indirect_count: 0,
+            max_depth: 0,
+        });
+    }
+
+    let data = graph_get(db, project_id).await?;
+
+    // Build reverse adjacency map: target -> [sources that depend on it]
+    // Edge semantics: source_node_id imports target_node_id
+    // Reverse: if A imports B, then B's change impacts A
+    let mut reverse_adj: HashMap<String, Vec<String>> = HashMap::new();
+    for edge in &data.edges {
+        reverse_adj
+            .entry(edge.target_node_id.clone())
+            .or_default()
+            .push(edge.source_node_id.clone());
+    }
+
+    let id_to_node: HashMap<&str, &GraphNode> = data.nodes.iter()
+        .map(|n| (n.id.as_str(), n))
+        .collect();
+
+    let selected: HashSet<String> = node_ids.iter().cloned().collect();
+
+    // BFS along reverse edges from selected nodes
+    let mut visited: HashMap<String, usize> = HashMap::new();
+    let mut queue: VecDeque<(String, usize)> = VecDeque::new();
+
+    for id in &node_ids {
+        visited.insert(id.clone(), 0);
+        queue.push_back((id.clone(), 0));
+    }
+
+    let mut max_depth: usize = 0;
+
+    while let Some((current, depth)) = queue.pop_front() {
+        if depth > 20 {
+            continue;
+        }
+
+        if let Some(neighbors) = reverse_adj.get(&current) {
+            let next_depth = depth + 1;
+            for neighbor in neighbors {
+                if !visited.contains_key(neighbor) {
+                    visited.insert(neighbor.clone(), next_depth);
+                    if next_depth > max_depth {
+                        max_depth = next_depth;
+                    }
+                    queue.push_back((neighbor.clone(), next_depth));
+                }
+            }
+        }
+    }
+
+    // Build results, excluding the selected nodes themselves
+    let mut impacted_nodes: Vec<ImpactNode> = visited
+        .iter()
+        .filter(|(id, _)| !selected.contains(*id))
+        .filter_map(|(id, &d)| {
+            let node = id_to_node.get(id.as_str())?;
+            Some(ImpactNode {
+                id: id.clone(),
+                file_path: node.file_path.clone(),
+                file_name: node.file_name.clone(),
+                depth: d,
+            })
+        })
+        .collect();
+
+    // Sort by depth then filePath
+    impacted_nodes.sort_by(|a, b| {
+        a.depth.cmp(&b.depth).then_with(|| a.file_path.cmp(&b.file_path))
+    });
+
+    let direct_count = impacted_nodes.iter().filter(|n| n.depth == 1).count();
+    let indirect_count = impacted_nodes.iter().filter(|n| n.depth > 1).count();
+
+    // max_depth should reflect actual max in results (may be 0 if no dependents)
+    let result_max_depth = impacted_nodes.iter().map(|n| n.depth).max().unwrap_or(0);
+
+    Ok(ImpactResult {
+        impacted_nodes,
+        direct_count,
+        indirect_count,
+        max_depth: result_max_depth,
+    })
+}
+
+#[command]
+pub async fn graph_trace_chain(
+    db: State<'_, Database>,
+    project_id: String,
+    node_id: String,
+    direction: String,
+    max_depth: Option<usize>,
+) -> Result<ChainResult, String> {
+    let depth_limit = max_depth.unwrap_or(10);
+    let graph = graph_get(db, project_id).await?;
+
+    // Build id→node lookup
+    let id_to_node: HashMap<&str, &GraphNode> = graph
+        .nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n))
+        .collect();
+
+    // Verify start node exists
+    if !id_to_node.contains_key(node_id.as_str()) {
+        return Ok(ChainResult {
+            chain_nodes: Vec::new(),
+            chain_edges: Vec::new(),
+            max_depth: 0,
+            direction,
+        });
+    }
+
+    // Build adjacency based on direction
+    // "backward": target → [sources] (who imports this file)
+    // "forward" (default): source → [targets] (what does this file import)
+    let is_backward = direction == "backward";
+    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+    for edge in &graph.edges {
+        if is_backward {
+            adj.entry(edge.target_node_id.clone())
+                .or_default()
+                .push(edge.source_node_id.clone());
+        } else {
+            adj.entry(edge.source_node_id.clone())
+                .or_default()
+                .push(edge.target_node_id.clone());
+        }
+    }
+
+    // BFS
+    let mut visited: HashMap<String, usize> = HashMap::new();
+    let mut chain_edges: Vec<ChainEdge> = Vec::new();
+    let mut queue = VecDeque::new();
+    let mut actual_max_depth: usize = 0;
+
+    visited.insert(node_id.clone(), 0);
+    queue.push_back((node_id.clone(), 0usize));
+
+    while let Some((current, depth)) = queue.pop_front() {
+        if depth >= depth_limit {
+            continue;
+        }
+
+        if let Some(neighbors) = adj.get(&current) {
+            let next_depth = depth + 1;
+            for neighbor in neighbors {
+                if !visited.contains_key(neighbor) {
+                    visited.insert(neighbor.clone(), next_depth);
+                    if next_depth > actual_max_depth {
+                        actual_max_depth = next_depth;
+                    }
+
+                    // Record edge matching the traversal direction
+                    if is_backward {
+                        // neighbor imports current
+                        chain_edges.push(ChainEdge {
+                            source_id: neighbor.clone(),
+                            target_id: current.clone(),
+                        });
+                    } else {
+                        // current imports neighbor
+                        chain_edges.push(ChainEdge {
+                            source_id: current.clone(),
+                            target_id: neighbor.clone(),
+                        });
+                    }
+
+                    queue.push_back((neighbor.clone(), next_depth));
+                }
+            }
+        }
+    }
+
+    // Build result nodes
+    let mut chain_nodes: Vec<ChainNode> = visited
+        .iter()
+        .filter_map(|(id, &d)| {
+            let node = id_to_node.get(id.as_str())?;
+            Some(ChainNode {
+                id: id.clone(),
+                file_path: node.file_path.clone(),
+                file_name: node.file_name.clone(),
+                depth: d,
+            })
+        })
+        .collect();
+
+    chain_nodes.sort_by(|a, b| a.depth.cmp(&b.depth).then_with(|| a.file_path.cmp(&b.file_path)));
+
+    Ok(ChainResult {
+        chain_nodes,
+        chain_edges,
+        max_depth: actual_max_depth,
+        direction,
+    })
+}
+
+#[command]
+pub async fn graph_compute_layers(
+    db: State<'_, Database>,
+    project_id: String,
+) -> Result<LayerResult, String> {
+    let data = graph_get(db, project_id).await?;
+
+    let total_nodes = data.nodes.len();
+
+    let id_to_node: HashMap<&str, &GraphNode> = data
+        .nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n))
+        .collect();
+
+    // Build in-degree map and adjacency (source → [targets])
+    let mut in_degree: HashMap<String, usize> = HashMap::new();
+    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+
+    for n in &data.nodes {
+        in_degree.entry(n.id.clone()).or_insert(0);
+    }
+    for edge in &data.edges {
+        in_degree
+            .entry(edge.target_node_id.clone())
+            .and_modify(|d| *d += 1)
+            .or_insert(1);
+        adj.entry(edge.source_node_id.clone())
+            .or_default()
+            .push(edge.target_node_id.clone());
+    }
+
+    // Kahn's algorithm
+    let mut layers: Vec<LayerInfo> = Vec::new();
+    let mut assigned: HashSet<String> = HashSet::new();
+    let mut current_zero: VecDeque<String> = in_degree
+        .iter()
+        .filter(|(_, &d)| d == 0)
+        .map(|(id, _)| id.clone())
+        .collect();
+
+    for level in 0..100 {
+        if current_zero.is_empty() {
+            break;
+        }
+
+        let mut layer_nodes: Vec<LayerNode> = Vec::new();
+        let mut next_zero: VecDeque<String> = VecDeque::new();
+
+        while let Some(node_id) = current_zero.pop_front() {
+            assigned.insert(node_id.clone());
+
+            if let Some(node) = id_to_node.get(node_id.as_str()) {
+                layer_nodes.push(LayerNode {
+                    id: node_id.clone(),
+                    file_path: node.file_path.clone(),
+                    file_name: node.file_name.clone(),
+                });
+            }
+
+            // Decrease in-degree of neighbors
+            if let Some(targets) = adj.get(&node_id) {
+                for target in targets {
+                    if let Some(deg) = in_degree.get_mut(target) {
+                        *deg -= 1;
+                        if *deg == 0 && !assigned.contains(target) {
+                            next_zero.push_back(target.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        layer_nodes.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+        layers.push(LayerInfo {
+            level,
+            nodes: layer_nodes,
+        });
+
+        current_zero = next_zero;
+    }
+
+    // Cycle detection: any nodes not assigned are in cycles
+    let cycles = if assigned.len() < total_nodes {
+        let unassigned_node_ids: Vec<String> = data
+            .nodes
+            .iter()
+            .filter(|n| !assigned.contains(&n.id))
+            .map(|n| n.id.clone())
+            .collect();
+        let unassigned_file_paths: Vec<String> = data
+            .nodes
+            .iter()
+            .filter(|n| !assigned.contains(&n.id))
+            .map(|n| n.file_path.clone())
+            .collect();
+        vec![CycleInfo {
+            node_ids: unassigned_node_ids,
+            file_paths: unassigned_file_paths,
+        }]
+    } else {
+        Vec::new()
+    };
+
+    Ok(LayerResult {
+        layers,
+        cycles,
+        total_nodes,
+    })
 }
 
 // ── Feature Group commands ──
