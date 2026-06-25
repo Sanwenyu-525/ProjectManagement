@@ -383,10 +383,10 @@ export function buildImpactOption(
       color = '#e74c3c';
       borderColor = '#c0392b';
       borderWidth = 3;
-      symbolSize = 20;
+      symbolSize = 24;
     } else if (isImpacted) {
       color = IMPACT_COLORS[Math.min(depth ?? 0, 2)];
-      symbolSize = Math.max(10, 16 - (depth ?? 0) * 2);
+      symbolSize = Math.max(12, 20 - (depth ?? 0) * 2);
     }
 
     return {
@@ -395,13 +395,14 @@ export function buildImpactOption(
       symbolSize,
       itemStyle: {
         color,
-        opacity: isDimmed ? 0.1 : 1,
+        opacity: isDimmed ? 0.08 : 1,
         borderColor,
         borderWidth,
       },
       label: {
-        show: isSelected || (isImpacted && (depth ?? 0) <= 1),
-        fontSize: 10,
+        show: isSelected || (isImpacted && (depth ?? 0) <= 2),
+        fontSize: 11,
+        color: isSelected ? '#e74c3c' : tc.textSecondary,
       },
       filePath: n.filePath,
       fileName: n.fileName,
@@ -455,58 +456,45 @@ export function buildImpactOption(
 }
 
 export function buildChainOption(
-  graphData: GraphData,
+  _graphData: GraphData,
   chainResult: ChainResult,
   tc: ReturnType<typeof getThemeColors>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
-  const chainNodeIds = new Set(chainResult.chainNodes.map(n => n.id));
-  const depthMap = new Map(chainResult.chainNodes.map(n => [n.id, n.depth]));
-  const chainEdgeKeys = new Set(
-    chainResult.chainEdges.map(e => `${e.sourceId}->${e.targetId}`)
-  );
-
-  const chartNodes = graphData.nodes.map(n => {
-    const inChain = chainNodeIds.has(n.id);
-    const depth = depthMap.get(n.id);
-    const isRoot = depth === 0;
-
+  // Only render chain nodes — no background noise
+  const chartNodes = chainResult.chainNodes.map(n => {
+    const isRoot = n.depth === 0;
     return {
       id: n.id,
       name: n.filePath,
-      symbolSize: isRoot ? 30 : inChain ? Math.max(14, 24 - (depth ?? 0) * 2) : 4,
+      symbolSize: isRoot ? 28 : Math.max(16, 24 - n.depth * 2),
       itemStyle: {
-        color: isRoot ? '#e74c3c' : inChain ? '#3498db' : (tc.textTertiary || '#ccc'),
-        opacity: inChain ? 1 : 0.04,
-        borderColor: isRoot ? '#c0392b' : undefined,
-        borderWidth: isRoot ? 3 : 0,
+        color: isRoot ? '#e74c3c' : '#3498db',
+        borderColor: isRoot ? '#c0392b' : '#2980b9',
+        borderWidth: isRoot ? 3 : 1,
       },
       label: {
-        show: inChain && (depth ?? 0) <= 5,
+        show: true,
         fontSize: 11,
-        color: isRoot ? '#e74c3c' : tc.textSecondary,
+        color: isRoot ? '#e74c3c' : tc.text,
+        formatter: (p: { data: { fileName?: string } }) => p.data.fileName || '',
       },
       filePath: n.filePath,
       fileName: n.fileName,
-      depth,
+      depth: n.depth,
     };
   });
 
-  const chartEdges = graphData.edges.map(e => {
-    const key = `${e.sourceNodeId}->${e.targetNodeId}`;
-    const isInChain = chainEdgeKeys.has(key);
-
-    return {
-      source: e.sourceNodeId,
-      target: e.targetNodeId,
-      lineStyle: {
-        width: isInChain ? 2 : 1,
-        opacity: isInChain ? 0.8 : 0.05,
-        color: isInChain ? '#3498db' : tc.borderSubtle,
-        type: isInChain ? 'solid' as const : 'dashed' as const,
-      },
-    };
-  });
+  // Only render chain edges
+  const chartEdges = chainResult.chainEdges.map(e => ({
+    source: e.sourceId,
+    target: e.targetId,
+    lineStyle: {
+      width: 2,
+      opacity: 0.8,
+      color: '#3498db',
+    },
+  }));
 
   return {
     tooltip: {
@@ -518,8 +506,7 @@ export function buildChainOption(
       formatter: (params: any) => {
         const d = params.data;
         if (d.filePath) {
-          const depth = d.depth;
-          return `<strong>${d.filePath}</strong><br/>深度: ${depth ?? '-'}`;
+          return `<strong>${d.filePath}</strong><br/>深度: ${d.depth ?? '-'}`;
         }
         return '';
       },
@@ -529,14 +516,14 @@ export function buildChainOption(
       layout: 'force' as const,
       roam: true,
       draggable: true,
-      force: { repulsion: 500, edgeLength: [120, 300], gravity: 0.08 },
+      force: { repulsion: 400, edgeLength: [100, 250], gravity: 0.1 },
       data: chartNodes,
       links: chartEdges,
       edgeSymbol: ['none', 'arrow'],
-      edgeSymbolSize: 6,
+      edgeSymbolSize: 8,
       label: { position: 'right' as const, fontSize: 11, color: tc.textSecondary },
       emphasis: { focus: 'adjacency' as const },
-      lineStyle: { opacity: 0.15, curveness: 0.3 },
+      lineStyle: { opacity: 0.8, curveness: 0.2, color: '#3498db' },
       animationDuration: 600,
     }],
   };

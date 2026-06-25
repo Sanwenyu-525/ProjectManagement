@@ -40,13 +40,13 @@ export default function ImpactView({ graphData, projectId }: ImpactViewProps) {
     }
   }, [selectedNodeIds, impactMutation]);
 
-  // Base option: all nodes dimmed, clickable
+  // Base option: all nodes dimmed but visible, clickable
   const baseOption = useMemo(() => {
     const chartNodes = graphData.nodes.map(n => ({
       id: n.id,
       name: n.filePath,
-      symbolSize: 12,
-      itemStyle: { color: tc.primary, opacity: 0.35 },
+      symbolSize: 14,
+      itemStyle: { color: tc.primary, opacity: 0.4 },
       label: { show: false },
       filePath: n.filePath,
       fileName: n.fileName,
@@ -54,7 +54,7 @@ export default function ImpactView({ graphData, projectId }: ImpactViewProps) {
     const chartEdges = graphData.edges.map(e => ({
       source: e.sourceNodeId,
       target: e.targetNodeId,
-      lineStyle: { width: 1, opacity: 0.08, color: tc.borderSubtle },
+      lineStyle: { width: 1, opacity: 0.1, color: tc.borderSubtle },
     }));
     return {
       tooltip: {
