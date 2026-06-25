@@ -7,6 +7,7 @@ import { useTerminalStore } from '../../../stores/terminalStore';
 import { useWorkspaceStore } from '../../../stores/workspaceStore';
 import { useThemeStore } from '../../../stores/themeStore';
 import FileViewer, { getFileIcon } from './FileViewer';
+import { useWheelScroll } from '../../../hooks/useWheelScroll';
 
 interface EditorFile {
   id: string;
@@ -33,6 +34,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
   const viewRef = useRef<EditorView | null>(null);
   const filesRef = useRef(files);
   filesRef.current = files;
+  const wheelScroll = useWheelScroll<HTMLDivElement>();
 
   const activeFile = useMemo(
     () => files.find(f => f.id === activeId) ?? files[0] ?? null,
@@ -48,13 +50,15 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
     if (result.tooLarge) {
       message.warning(`${name} 超过 1MB，无法在编辑器中打开`);
     }
+    // Normalize line endings: CodeMirror uses \n internally, Windows files may have \r\n
+    const normalizedContent = result.content.replace(/\r\n/g, '\n');
     const file: EditorFile = {
       id: path,
       label: name,
       path,
       language: inferredLang || result.language || 'text',
-      content: result.content,
-      originalContent: result.content,
+      content: normalizedContent,
+      originalContent: normalizedContent,
       modified: false,
       isBinary: result.isBinary,
       tooLarge: result.tooLarge,
@@ -220,6 +224,25 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
     useWorkspaceStore.getState().setRenamedFile(null);
   }, [renamedFile]);
 
+  // Close tabs when files are deleted from FileExplorer
+  const deletedFiles = useWorkspaceStore(s => s.deletedFiles);
+  useEffect(() => {
+    if (deletedFiles.length === 0) return;
+    const deletedSet = new Set(deletedFiles);
+    setFiles(prev => {
+      const remaining = prev.filter(f => !deletedSet.has(f.path));
+      if (remaining.length === prev.length) return prev;
+      return remaining;
+    });
+    if (deletedFiles.some(p => p === activeIdRef.current)) {
+      setActiveId(_prev => {
+        const remaining = filesRef.current.filter(f => !deletedSet.has(f.path));
+        return remaining[0]?.id ?? null;
+      });
+    }
+    useWorkspaceStore.getState().setDeletedFiles([]);
+  }, [deletedFiles]);
+
   // Empty state — no project loaded
   if (!projectRoot) {
     return (
@@ -238,7 +261,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
     <div style={styles.container}>
       {/* Editor Tabs */}
       <div style={styles.tabBar}>
-        <div style={styles.tabsRow}>
+        <div style={styles.tabsRow} ref={wheelScroll.ref} onWheel={wheelScroll.onWheel}>
           {files.map(file => {
             const isActive = file.id === activeId;
             return (
