@@ -940,3 +940,37 @@ fn compute_stats(data: GraphData) -> GraphStats {
         directory_breakdown,
     }
 }
+
+// ── AI Cache commands ──
+
+#[command]
+pub async fn graph_get_ai_cache(
+    db: State<'_, Database>,
+    project_id: String,
+    cache_key: String,
+) -> Result<Option<String>, String> {
+    let row = db
+        .query_one_json(
+            "SELECT resultJson FROM graph_ai_cache WHERE projectId = ?1 AND cacheKey = ?2",
+            rusqlite::params![project_id, cache_key],
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(row.and_then(|v| v.get("resultJson").and_then(|x| x.as_str()).map(|s| s.to_string())))
+}
+
+#[command]
+pub async fn graph_set_ai_cache(
+    db: State<'_, Database>,
+    project_id: String,
+    cache_key: String,
+    result_json: String,
+) -> Result<(), String> {
+    let id = new_id();
+    db.execute(
+        "INSERT OR REPLACE INTO graph_ai_cache (id, projectId, cacheKey, resultJson) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![id, project_id, cache_key, result_json],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}

@@ -10,10 +10,9 @@ import { useAgentPlanStore } from '../../stores/agentPlanStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { terminalApi, sessionsApi, gitApi, workspacesApi } from '../../api';
 import { queryKeys } from '../../api/queryKeys';
-import { TerminalExitEvent, TerminalOutputEvent } from '../../shared/terminalTypes';
+import type { TerminalExitEvent, TerminalOutputEvent } from '../../shared/terminalTypes';
 import AgentTabBar from './agent/AgentTabBar';
-import AgentTerminalMode from './agent/AgentTerminalMode';
-import type { AgentTerminalModeHandle } from './agent/AgentTerminalMode';
+import AgentTerminal from './agent/AgentTerminal';
 import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { folderName } from './components/terminalFactory';
 
@@ -67,9 +66,8 @@ export default function WorkspacePage() {
   });
 
   const lastCommitTime = (() => {
-    const commits = gitLog as { date?: string }[] | null;
-    if (!commits?.[0]?.date) return null;
-    const diff = Date.now() - new Date(commits[0].date).getTime();
+    if (!gitLog?.commits?.[0]?.date) return null;
+    const diff = Date.now() - new Date(gitLog.commits[0].date).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'just now';
     if (mins < 60) return `${mins}m ago`;
@@ -98,7 +96,7 @@ export default function WorkspacePage() {
   const projectName = folderName(defaultCwd);
 
   // Terminal expand/collapse state
-  const [terminalExpanded, _setTerminalExpanded] = useState(false);
+  const [terminalExpanded, setTerminalExpanded] = useState(false);
 
   // Agent ↔ Editor split ratio (0.2 – 0.8)
   const [splitRatio, setSplitRatio] = useState(0.5);
@@ -136,16 +134,6 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!activeTabId) addTab();
   }, [activeTabId, addTab]);
-
-  // Ref map for all tab terminal instances — keyed by tabId
-  const terminalRefs = useRef<Map<string, AgentTerminalModeHandle>>(new Map());
-  const registerTerminalRef = useCallback((tabId: string, handle: AgentTerminalModeHandle | null) => {
-    if (handle) {
-      terminalRefs.current.set(tabId, handle);
-    } else {
-      terminalRefs.current.delete(tabId);
-    }
-  }, []);
 
   // Divider drag handlers
   const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
@@ -225,7 +213,7 @@ export default function WorkspacePage() {
       if (terminalId.startsWith('agent-')) return;
       useTerminalStore.getState().updateTerminal(terminalId, { status: code === 0 ? 'exited' : 'error' });
       usePreviewStore.getState().removePreviewsByTerminal(terminalId);
-    });
+    }).catch(() => {});
 
     const unlistenOutput = listen<TerminalOutputEvent>('terminal-output', (event) => {
       const { data, terminalId } = event.payload;
@@ -240,20 +228,20 @@ export default function WorkspacePage() {
           break;
         }
       }
-    });
+    }).catch(() => {});
 
     return () => {
-      unlistenExit.then(fn => fn());
-      unlistenOutput.then(fn => fn());
+      unlistenExit.then(fn => fn?.());
+      unlistenOutput.then(fn => fn?.());
     };
   }, []);
 
   // Editor panel state
   const editorOpen = useWorkspaceStore(s => s.editorOpen);
   const setEditorOpen = useWorkspaceStore(s => s.setEditorOpen);
-  const selectedFile = useWorkspaceStore(s => s.selectedFile);
+  const selectedFile = useWorkspaceStore(s => s.fileToOpen);
 
-  // Open editor when a file is selected from FileExplorer
+  // Open editor when a file is requested from FileExplorer
   useEffect(() => {
     if (selectedFile) {
       setEditorOpen(true);
@@ -275,8 +263,9 @@ export default function WorkspacePage() {
 
   return (
     <div style={styles.container}>
-      {/* Agent area */}
-      <div style={styles.agentArea}>
+      <div style={styles.mainRow}>
+        {/* Agent area */}
+        <div style={styles.agentArea}>
         {/* Project summary bar */}
         <div style={{
           ...styles.summaryBar,
@@ -314,9 +303,9 @@ export default function WorkspacePage() {
             gap: isCompact ? 8 : 16,
             fontSize: isCompact ? 11 : undefined,
           }}>
-            <span>Tasks {stats?.tasks ?? '—'}</span>
-            <span>Issues {stats?.issues ?? '—'}</span>
-            <span>Docs {stats?.docs ?? '—'}</span>
+            <span>Tasks <span style={{ fontFamily: 'var(--font-mono)' }}>{stats?.tasks ?? '—'}</span></span>
+            <span>Issues <span style={{ fontFamily: 'var(--font-mono)' }}>{stats?.issues ?? '—'}</span></span>
+            <span>Docs <span style={{ fontFamily: 'var(--font-mono)' }}>{stats?.docs ?? '—'}</span></span>
           </div>
 
           <div style={{ flex: 1 }} />
@@ -358,32 +347,26 @@ export default function WorkspacePage() {
         {/* Agent content */}
         <div style={styles.agentContent}>
           <div style={styles.agentSplit}>
-            {/* Chat / Idle area */}
-            <div style={{
-              ...styles.agentPane,
-              flex: editorOpen ? `0 0 ${splitRatio * 100}%` : '1 1 100%',
-            }}>
-              <AgentTabBar onCloseTab={handleTabClose} />
-              {tabs.map(tab => (
-                <div
-                  key={tab.id}
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    overflow: 'hidden',
-                    display: tab.id === activeTabId ? 'flex' : 'none',
-                    flexDirection: 'column',
-                  }}
-                >
-                  <AgentTerminalMode
-                    ref={h => registerTerminalRef(tab.id, h)}
-                    mode={tab.agentMode}
-                    tabId={tab.id}
-                    style={{ flex: 1, minHeight: 0 }}
-                  />
+            {/* Editor panel (left) */}
+            {editorOpen && (
+              <div style={{ ...styles.editorPane, flex: `0 0 ${splitRatio * 100}%` }}>
+                <div style={styles.editorHeader}>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--md-on-surface)', fontFamily: 'var(--font-sans)' }}>
+                    Editor
+                  </span>
+                  <span
+                    className="material-symbols-outlined"
+                    role="button"
+                    aria-label="关闭编辑器"
+                    onClick={() => setEditorOpen(false)}
+                    style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 8, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >close</span>
                 </div>
-              ))}
-            </div>
+                <Suspense fallback={<div style={styles.loadingFallback} role="status"><div className="skeleton" style={{ width: '60%', height: 16 }} /></div>}>
+                  <CodeEditorPane onEmpty={() => setEditorOpen(false)} />
+                </Suspense>
+              </div>
+            )}
 
             {/* Draggable divider */}
             {editorOpen && (
@@ -427,27 +410,62 @@ export default function WorkspacePage() {
               </div>
             )}
 
-            {/* Editor panel */}
-            {editorOpen && (
-              <div style={{ ...styles.editorPane, flex: `0 0 ${(1 - splitRatio) * 100}%` }}>
-                <div style={styles.editorHeader}>
-                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--md-on-surface)', fontFamily: 'var(--font-sans)' }}>
-                    Editor
-                  </span>
-                  <span
-                    className="material-symbols-outlined"
-                    role="button"
-                    aria-label="关闭编辑器"
-                    onClick={() => setEditorOpen(false)}
-                    style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 8, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >close</span>
+            {/* Chat / Idle area (right) */}
+            <div style={{
+              ...styles.agentPane,
+              flex: editorOpen ? `0 0 ${(1 - splitRatio) * 100}%` : '1 1 100%',
+            }}>
+              <AgentTabBar onCloseTab={handleTabClose} />
+              {tabs.map(tab => (
+                <div
+                  key={tab.id}
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: tab.id === activeTabId ? 'flex' : 'none',
+                    flexDirection: 'column',
+                  }}
+                >
+                  <AgentTerminal
+                    tabId={tab.id}
+                    style={{ flex: 1, minHeight: 0 }}
+                  />
                 </div>
-                <Suspense fallback={<div style={styles.loadingFallback} role="status"><div className="skeleton" style={{ width: '60%', height: 16 }} /></div>}>
-                  <CodeEditorPane onEmpty={() => setEditorOpen(false)} />
-                </Suspense>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
+        </div>
+
+        {/* Floating terminal toggle — sits at bottom-right of agent area */}
+        <div
+          role="button"
+          aria-label={terminalExpanded ? '收起终端' : '展开终端'}
+          tabIndex={0}
+          onClick={() => setTerminalExpanded(v => !v)}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTerminalExpanded(v => !v); } }}
+          style={{
+            position: 'absolute',
+            bottom: 6,
+            right: 6,
+            width: 28,
+            height: 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            background: 'transparent',
+            color: 'var(--md-on-surface-variant)',
+            border: 'none',
+            transition: 'color 0.15s',
+            zIndex: 10,
+          }}
+          title={terminalExpanded ? '收起终端' : '展开终端'}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-primary)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--md-on-surface-variant)'; }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>terminal</span>
         </div>
 
         {/* Expanded terminal */}
@@ -464,6 +482,8 @@ export default function WorkspacePage() {
       <Suspense fallback={null}>
         <AgentRightPanel sessionId={planMode ? planSessionId : (activeTab?.sessionId ?? null)} cwd={effectiveCwd} />
       </Suspense>
+      </div>
+
     </div>
   );
 }
@@ -471,10 +491,17 @@ export default function WorkspacePage() {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
+    flexDirection: 'column',
     width: '100%',
     flex: 1,
     minHeight: 0,
     background: 'var(--color-bg-content)',
+    overflow: 'hidden',
+  },
+  mainRow: {
+    display: 'flex',
+    flex: 1,
+    minHeight: 0,
     overflow: 'hidden',
   },
   agentArea: {
@@ -484,6 +511,7 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     minWidth: 0,
     overflow: 'hidden',
+    position: 'relative',
   },
   summaryBar: {
     display: 'flex',

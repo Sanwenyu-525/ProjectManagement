@@ -7,7 +7,7 @@ import AgentContextPanel from './AgentContextPanel';
 import AgentPromptPanel from './AgentPromptPanel';
 import ResizeHandle from '../../../shared/ResizeHandle';
 
-type RightTab = 'plan' | 'git' | 'memory' | 'context' | 'prompts';
+type RightTab = 'plan' | 'git' | 'context' | 'memory' | 'prompts';
 
 const TABS: { key: RightTab; label: string; icon: string }[] = [
   { key: 'plan', label: '计划', icon: 'description' },
@@ -17,6 +17,8 @@ const TABS: { key: RightTab; label: string; icon: string }[] = [
   { key: 'prompts', label: '提示词', icon: 'record_voice_over' },
 ];
 
+const COLLAPSED_WIDTH = 48;
+
 interface AgentRightPanelProps {
   sessionId: string | null;
   cwd: string;
@@ -25,6 +27,8 @@ interface AgentRightPanelProps {
 export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps) {
   const panelWidth = useAgentWorkspaceStore(s => s.panelWidth);
   const setPanelWidth = useAgentWorkspaceStore(s => s.setPanelWidth);
+  const panelCollapsed = useAgentWorkspaceStore(s => s.panelCollapsed);
+  const togglePanelCollapsed = useAgentWorkspaceStore(s => s.togglePanelCollapsed);
   const [activeTab, setActiveTab] = useState<RightTab>('plan');
   const [hoveredTab, setHoveredTab] = useState<RightTab | null>(null);
 
@@ -45,6 +49,52 @@ export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps
     document.addEventListener('mouseup', onMouseUp);
   }, [panelWidth, setPanelWidth]);
 
+  const handleIconClick = useCallback((tabKey: RightTab) => {
+    setActiveTab(tabKey);
+    if (panelCollapsed) {
+      togglePanelCollapsed();
+    }
+  }, [panelCollapsed, togglePanelCollapsed]);
+
+  // ── Collapsed: icon strip ──
+  if (panelCollapsed) {
+    return (
+      <div style={styles.collapsedPanel} role="complementary" aria-label="辅助面板（已折叠）">
+        {/* Expand button — same height as expanded tabBar */}
+        <button
+          onClick={togglePanelCollapsed}
+          title="展开面板 (⌘\\)"
+          style={styles.collapseBtn}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-on-surface)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--md-on-surface-variant)'; }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>keyboard_tab_rtl</span>
+        </button>
+        <div style={styles.collapsedDivider} />
+        {TABS.map(tab => {
+          const isHovered = hoveredTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              title={tab.label}
+              onClick={() => handleIconClick(tab.key)}
+              onMouseEnter={() => setHoveredTab(tab.key)}
+              onMouseLeave={() => setHoveredTab(null)}
+              style={{
+                ...styles.iconBtn,
+                color: isHovered ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                background: isHovered ? 'var(--md-surface-container-low)' : 'transparent',
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{tab.icon}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ── Expanded: full panel ──
   return (
     <div style={{ ...styles.panel, width: panelWidth }} role="complementary" aria-label="辅助面板">
       {/* Resize handle */}
@@ -55,39 +105,52 @@ export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps
 
       {/* Tab bar */}
       <div style={styles.tabBar} role="tablist">
-        {TABS.map(tab => {
-          const isActive = activeTab === tab.key;
-          const isHovered = hoveredTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              role="tab"
-              aria-selected={isActive}
-              title={tab.label}
-              onClick={() => setActiveTab(tab.key)}
-              onMouseEnter={() => setHoveredTab(tab.key)}
-              onMouseLeave={() => setHoveredTab(null)}
-              style={{
-                ...styles.tab,
-                color: isActive
-                  ? 'var(--md-primary)'
-                  : isHovered
-                    ? 'var(--md-on-surface)'
-                    : 'var(--md-on-surface-variant)',
-                background: isActive
-                  ? 'var(--md-surface-container)'
-                  : isHovered
-                    ? 'var(--md-surface-container-low)'
-                    : 'transparent',
-                fontWeight: isActive ? 600 : 500,
-                borderBottom: isActive ? '2px solid var(--md-primary)' : '2px solid transparent',
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{tab.icon}</span>
-              {tab.label}
-            </button>
-          );
-        })}
+        <div style={styles.tabScroll}>
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.key;
+            const isHovered = hoveredTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                role="tab"
+                aria-selected={isActive}
+                title={tab.label}
+                onClick={() => setActiveTab(tab.key)}
+                onMouseEnter={() => setHoveredTab(tab.key)}
+                onMouseLeave={() => setHoveredTab(null)}
+                style={{
+                  ...styles.tab,
+                  color: isActive
+                    ? 'var(--md-primary)'
+                    : isHovered
+                      ? 'var(--md-on-surface)'
+                      : 'var(--md-on-surface-variant)',
+                  background: isActive
+                    ? 'var(--md-surface-container)'
+                    : isHovered
+                      ? 'var(--md-surface-container-low)'
+                      : 'transparent',
+                  fontWeight: isActive ? 600 : 500,
+                  borderBottom: isActive ? '2px solid var(--md-primary)' : '2px solid transparent',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{tab.icon}</span>
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Collapse button — pinned right */}
+        <button
+          onClick={togglePanelCollapsed}
+          title="收起面板 (⌘\\)"
+          style={styles.collapseBtn}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-on-surface)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--md-on-surface-variant)'; }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>keyboard_tab_rtl</span>
+        </button>
       </div>
 
       {/* Content */}
@@ -103,6 +166,37 @@ export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  collapsedPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    width: COLLAPSED_WIDTH,
+    flexShrink: 0,
+    background: 'var(--md-surface-container-lowest)',
+    borderLeft: '1px solid var(--border)',
+    paddingTop: 0,
+    paddingBottom: 8,
+    gap: 2,
+  },
+  collapsedDivider: {
+    width: 24,
+    height: 1,
+    background: 'var(--border)',
+    flexShrink: 0,
+    margin: '2px 0 4px',
+  },
+  iconBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    flexShrink: 0,
+  },
   panel: {
     display: 'flex',
     flexDirection: 'column',
@@ -115,10 +209,18 @@ const styles: Record<string, React.CSSProperties> = {
   tabBar: {
     display: 'flex',
     gap: 0,
-    padding: '0 4px',
+    padding: '0 4px 0 0',
     borderBottom: '1px solid var(--border)',
     flexShrink: 0,
     background: 'var(--md-surface-container-lowest)',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  tabScroll: {
+    display: 'flex',
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
   },
   tab: {
     display: 'flex',
@@ -133,6 +235,20 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'color 0.15s, background 0.15s, border-color 0.15s',
     whiteSpace: 'nowrap',
+  },
+  collapseBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--md-on-surface-variant)',
+    cursor: 'pointer',
+    transition: 'color 0.15s',
+    flexShrink: 0,
   },
   content: {
     display: 'flex',

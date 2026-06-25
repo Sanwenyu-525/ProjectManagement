@@ -36,6 +36,7 @@ import type {
   GroupMembership,
   SuggestedGroup,
   CreateGroupInput,
+  GitLogResult,
 } from '../types';
 
 // ==================== Projects ====================
@@ -206,7 +207,7 @@ export const healthApi = {
 export const gitApi = {
   status: (repoPath: string) =>
     cmd('git_status', { repoPath }),
-  log: (repoPath: string, limit?: number) =>
+  log: (repoPath: string, limit?: number): Promise<GitLogResult> =>
     cmd('git_log', { repoPath, limit: limit ?? null }),
   branches: (repoPath: string) =>
     cmd('git_branches', { repoPath }),
@@ -277,4 +278,9 @@ export const graphApi = {
     cmd<GroupMembership[]>('graph_get_group_memberships', { projectId }),
   suggestGroups: (projectId: string) =>
     cmd<SuggestedGroup[]>('graph_suggest_groups', { projectId }),
+  // AI Cache
+  getAiCache: (projectId: string, cacheKey: string) =>
+    cmd<string | null>('graph_get_ai_cache', { projectId, cacheKey }),
+  setAiCache: (projectId: string, cacheKey: string, resultJson: string) =>
+    cmd<void>('graph_set_ai_cache', { projectId, cacheKey, resultJson }),
 };

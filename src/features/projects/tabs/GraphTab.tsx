@@ -17,16 +17,28 @@ import {
   useCreateFeatureGroup, useDeleteFeatureGroup,
   useAddFilesToGroup, useRemoveFileFromGroup,
   useSuggestGroups,
+  useProject,
 } from '../../../hooks/useProjects';
-import type { GraphData, GraphSummary, FeatureGroup, SuggestedGroup } from '../../../types';
+import { classifyBusinessModules } from '../../../lib/graphClassifier';
+import type { GraphData, GraphSummary, FeatureGroup, SuggestedGroup, BusinessModule } from '../../../types';
+import BusinessGraphView from './BusinessGraphView';
 
 type LayoutType = 'force' | 'tree' | 'concentric' | 'matrix';
+type ViewMode = 'business' | 'architecture' | 'callchain' | 'impact' | 'dependency';
 
 const LAYOUT_OPTIONS = [
   { label: '力导向', value: 'force' },
   { label: '层次', value: 'tree' },
   { label: '同心圆', value: 'concentric' },
   { label: '矩阵', value: 'matrix' },
+];
+
+const VIEW_OPTIONS = [
+  { label: '业务', value: 'business' },
+  { label: '架构', value: 'architecture', disabled: true },
+  { label: '调用链', value: 'callchain', disabled: true },
+  { label: '影响分析', value: 'impact', disabled: true },
+  { label: '文件依赖', value: 'dependency' },
 ];
 
 const LANGUAGE_COLORS: Record<string, string> = {
@@ -394,6 +406,13 @@ export default function GraphTab({ projectId }: { projectId: string }) {
   const [createForm] = Form.useForm();
   const [suggestLoading, setSuggestLoading] = useState(false);
 
+  // View mode & AI classification
+  const [viewMode, setViewMode] = useState<ViewMode>('business');
+  const [aiModules, setAiModules] = useState<BusinessModule[] | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [selectedModuleIdx, setSelectedModuleIdx] = useState<number | null>(null);
+  const { data: project } = useProject(projectId);
+
   // Build nodeId -> GroupColorInfo map
   const nodeColorMap = useMemo(() => {
     const map = new Map<string, GroupColorInfo>();
@@ -486,6 +505,23 @@ export default function GraphTab({ projectId }: { projectId: string }) {
     message.success(`已创建 ${toCreate.length} 个功能组`);
   };
 
+  const handleAiAnalyze = async () => {
+    if (!graphData || !project?.localPath) {
+      message.error('无法获取项目路径');
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const result = await classifyBusinessModules(graphData, projectId, project.localPath);
+      setAiModules(result.modules);
+      message.success(`AI 识别出 ${result.modules.length} 个业务模块`);
+    } catch (err) {
+      message.error(`AI 分析失败: ${err instanceof Error ? err.message : '未知错误'}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   // Get nodeIds for a specific group from memberships
   const getGroupNodeIds = useCallback((groupId: string): Set<string> => {
     const set = new Set<string>();
@@ -547,14 +583,24 @@ export default function GraphTab({ projectId }: { projectId: string }) {
               刷新
             </Button>
           )}
-          <Button
-            icon={<GroupOutlined />}
-            type={groupsPanelOpen ? 'primary' : 'default'}
-            onClick={() => setGroupsPanelOpen(!groupsPanelOpen)}
-          >
-            功能组
-          </Button>
+          {hasData && viewMode === 'dependency' && (
+            <Button
+              icon={<GroupOutlined />}
+              type={groupsPanelOpen ? 'primary' : 'default'}
+              onClick={() => setGroupsPanelOpen(!groupsPanelOpen)}
+            >
+              功能组
+            </Button>
+          )}
           {hasData && (
+            <Segmented
+              options={VIEW_OPTIONS}
+              value={viewMode}
+              onChange={(v) => setViewMode(v as ViewMode)}
+              size="small"
+            />
+          )}
+          {hasData && viewMode === 'dependency' && (
             <Segmented
               options={LAYOUT_OPTIONS}
               value={layoutType}
@@ -584,7 +630,7 @@ export default function GraphTab({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      {/* Main area: graph + groups panel */}
+      {/* Main area: view-dependent content */}
       {!hasData ? (
         <Empty
           description="尚未扫描项目依赖图谱"
@@ -599,6 +645,15 @@ export default function GraphTab({ projectId }: { projectId: string }) {
             开始扫描
           </Button>
         </Empty>
+      ) : viewMode === 'business' ? (
+        <BusinessGraphView
+          graphData={graphData}
+          modules={aiModules}
+          loading={aiLoading}
+          onAnalyze={handleAiAnalyze}
+          selectedModuleIdx={selectedModuleIdx}
+          onModuleSelect={setSelectedModuleIdx}
+        />
       ) : (
         <div style={{ display: 'flex', flex: 1, minHeight: 400, gap: 0 }}>
           {/* Graph */}
@@ -607,6 +662,7 @@ export default function GraphTab({ projectId }: { projectId: string }) {
               option={option!}
               style={{ height: '100%', minHeight: 400 }}
               opts={{ renderer: 'canvas' }}
+              notMerge={true}
             />
           </div>
 

@@ -19,4 +19,8 @@ export const workspacesApi = {
     cmd('workspaces_load_layout', { id }),
   stats: (): Promise<{ tasks: number; issues: number; docs: number }> =>
     cmd('workspaces_stats'),
+  loadExplorerState: (): Promise<{ paths: string[]; expandedPaths: string[] }> =>
+    cmd('explorer_load_state'),
+  saveExplorerState: (paths: string[], expandedPaths: string[]): Promise<void> =>
+    cmd('explorer_save_state', { paths, expandedPaths }),
 };

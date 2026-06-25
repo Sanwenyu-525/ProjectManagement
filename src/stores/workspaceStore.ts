@@ -1,37 +1,19 @@
 import { create } from 'zustand';
-import { PanePosition } from '../shared/terminalTypes';
-
-interface PaneState {
-  activeId: string | null;
-}
 
 interface WorkspaceStore {
-  // Pane state
-  leftPane: PaneState;
-  rightPane: PaneState;
-  topPane: PaneState;
-  bottomPane: PaneState;
-  setActiveId: (pane: PanePosition, id: string | null) => void;
+  // File explorer selection (multi-select) — visual highlight only
+  selectedFiles: string[];
+  selectionAnchor: string | null;
+  selectFile: (path: string | null, mode?: 'single' | 'toggle' | 'range', visiblePaths?: string[]) => void;
+  clearSelection: () => void;
 
-  // Split pane - Horizontal
-  splitPaneOpen: boolean;
-  setSplitPaneOpen: (v: boolean) => void;
-  splitRatio: number;
-  setSplitRatio: (r: number) => void;
+  // Open file in editor (separate from selection so shift/ctrl selects don't trigger open)
+  fileToOpen: string | null;
+  requestOpenFile: (path: string | null) => void;
 
-  // Split pane - Vertical (for right pane)
-  splitVerticalOpen: boolean;
-  setSplitVerticalOpen: (v: boolean) => void;
-  splitVerticalRatio: number;
-  setSplitVerticalRatio: (r: number) => void;
-
-  // Tab bar width
-  tabBarWidth: number;
-  setTabBarWidth: (w: number) => void;
-
-  // File explorer selection
-  selectedFile: string | null;
-  selectFile: (path: string | null) => void;
+  // Reverse sync: editor tells explorer which file is currently active
+  activeEditorFile: string | null;
+  setActiveEditorFile: (path: string | null) => void;
 
   // Editor panel visibility
   editorOpen: boolean;
@@ -43,30 +25,47 @@ interface WorkspaceStore {
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
-  leftPane: { activeId: null },
-  rightPane: { activeId: null },
-  topPane: { activeId: null },
-  bottomPane: { activeId: null },
-  setActiveId: (pane, id) => set(() => {
-    const paneKey = pane === 'left' ? 'leftPane' : pane === 'right' ? 'rightPane' : pane === 'top' ? 'topPane' : 'bottomPane';
-    return { [paneKey]: { activeId: id } };
+  selectedFiles: [],
+  selectionAnchor: null,
+  selectFile: (path, mode = 'single', visiblePaths) => set((state) => {
+    if (!path) return { selectedFiles: [], selectionAnchor: null };
+
+    if (mode === 'single') {
+      return { selectedFiles: [path], selectionAnchor: path };
+    }
+
+    if (mode === 'toggle') {
+      const exists = state.selectedFiles.includes(path);
+      const next = exists
+        ? state.selectedFiles.filter((p) => p !== path)
+        : [...state.selectedFiles, path];
+      return {
+        selectedFiles: next,
+        selectionAnchor: path,
+      };
+    }
+
+    // mode === 'range': select from anchor to path using the full visible list
+    if (mode === 'range' && state.selectionAnchor && visiblePaths) {
+      const anchorIdx = visiblePaths.indexOf(state.selectionAnchor);
+      const targetIdx = visiblePaths.indexOf(path);
+      if (anchorIdx !== -1 && targetIdx !== -1) {
+        const start = Math.min(anchorIdx, targetIdx);
+        const end = Math.max(anchorIdx, targetIdx);
+        return { selectedFiles: visiblePaths.slice(start, end + 1) };
+      }
+      return { selectedFiles: [state.selectionAnchor, path] };
+    }
+
+    return { selectedFiles: [path], selectionAnchor: path };
   }),
+  clearSelection: () => set({ selectedFiles: [], selectionAnchor: null }),
 
-  splitPaneOpen: false,
-  setSplitPaneOpen: (v) => set({ splitPaneOpen: v }),
-  splitRatio: 0.5,
-  setSplitRatio: (r) => set({ splitRatio: Math.min(Math.max(r, 0.2), 0.8) }),
+  fileToOpen: null,
+  requestOpenFile: (path) => set({ fileToOpen: path }),
 
-  splitVerticalOpen: false,
-  setSplitVerticalOpen: (v) => set({ splitVerticalOpen: v }),
-  splitVerticalRatio: 0.5,
-  setSplitVerticalRatio: (r) => set({ splitVerticalRatio: Math.min(Math.max(r, 0.2), 0.8) }),
-
-  tabBarWidth: 200,
-  setTabBarWidth: (w) => set({ tabBarWidth: Math.min(Math.max(w, 140), 400) }),
-
-  selectedFile: null,
-  selectFile: (path) => set({ selectedFile: path ?? null }),
+  activeEditorFile: null,
+  setActiveEditorFile: (path) => set({ activeEditorFile: path, selectedFiles: [], selectionAnchor: null }),
 
   editorOpen: false,
   setEditorOpen: (v) => set({ editorOpen: v }),

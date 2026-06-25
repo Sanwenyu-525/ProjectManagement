@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { message, Modal } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { gitApi } from '../../../api';
+import type { GitLogResult } from '../../../types';
 
 interface GitFileChange {
   path: string;
@@ -116,12 +117,11 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
         status: mapStatus(String(f.status ?? '')),
         staged: Boolean(f.staged),
       }));
-      const logResult = logData as Record<string, unknown>;
-      const branchArr = Array.isArray(logResult?.branches) ? logResult.branches : [];
-      const current = branchArr.find((b: Record<string, unknown>) => b.current) as Record<string, unknown> | undefined;
+      const logResult = logData as GitLogResult;
+      const branchArr = logResult.branches ?? [];
+      const current = branchArr.find(b => b.current);
       setStatusData({ files, branch: String(current?.name ?? '') });
-      const logCommits = Array.isArray(logResult?.commits) ? logResult.commits : [];
-      setCommits(logCommits as GitCommit[]);
+      setCommits(logResult.commits as GitCommit[]);
     } catch (e) {
       setError(String(e));
     } finally {

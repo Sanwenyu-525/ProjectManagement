@@ -133,6 +133,44 @@ pub async fn workspaces_load_layout(db: State<'_, Database>, id: String) -> Resu
 }
 
 #[command]
+pub async fn explorer_load_state(db: State<'_, Database>) -> Result<JsonValue, String> {
+    let val = db.query_json(
+        "SELECT paths, expandedPaths FROM explorer_state WHERE id = 'default'",
+        rusqlite::params![],
+    ).map_err(|e| e.to_string())?;
+
+    match val {
+        serde_json::Value::Array(rows) if !rows.is_empty() => {
+            let row = &rows[0];
+            let paths: Vec<String> = row.get("paths")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let expanded: Vec<String> = row.get("expandedPaths")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            Ok(serde_json::json!({ "paths": paths, "expandedPaths": expanded }))
+        }
+        _ => Ok(serde_json::json!({ "paths": [], "expandedPaths": [] })),
+    }
+}
+
+#[command]
+pub async fn explorer_save_state(
+    db: State<'_, Database>,
+    paths: Vec<String>,
+    expanded_paths: Vec<String>,
+) -> Result<(), String> {
+    let now = now_str();
+    let paths_json = serde_json::to_string(&paths).map_err(|e| e.to_string())?;
+    let expanded_json = serde_json::to_string(&expanded_paths).map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE explorer_state SET paths = ?1, expandedPaths = ?2, updatedAt = ?3 WHERE id = 'default'",
+        rusqlite::params![paths_json, expanded_json, now],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[command]
 pub async fn workspaces_stats(db: State<'_, Database>) -> Result<JsonValue, String> {
     db.query_one_json(
         "SELECT

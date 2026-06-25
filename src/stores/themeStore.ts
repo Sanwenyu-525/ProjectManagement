@@ -47,6 +47,16 @@ function applyDensityToDOM(density: Density) {
   if (cls) el.classList.add(cls);
 }
 
+const VALID_THEME_MODES = new Set<string>(['light', 'dark']);
+const VALID_ACCENT_COLORS = new Set<string>(['default', 'blue', 'violet', 'rose']);
+const VALID_FONT_SIZES = new Set<string>(['sm', 'base', 'lg']);
+const VALID_DENSITIES = new Set<string>(['comfortable', 'compact', 'dense']);
+
+function readStorage<T extends string>(key: string, valid: Set<string>, fallback: T): T {
+  const raw = localStorage.getItem(key);
+  return raw && valid.has(raw) ? (raw as T) : fallback;
+}
+
 interface ThemeState {
   mode: ThemeMode;
   accent: AccentColor;
@@ -63,10 +73,10 @@ interface ThemeState {
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  mode: (localStorage.getItem('app_theme') as ThemeMode) || 'light',
-  accent: (localStorage.getItem('app_accent') as AccentColor) || 'default',
-  fontSize: (localStorage.getItem('app_fontSize') as FontSize) || 'base',
-  density: (localStorage.getItem('app_density') as Density) || 'comfortable',
+  mode: readStorage('app_theme', VALID_THEME_MODES, 'light'),
+  accent: readStorage('app_accent', VALID_ACCENT_COLORS, 'default'),
+  fontSize: readStorage('app_fontSize', VALID_FONT_SIZES, 'base'),
+  density: readStorage('app_density', VALID_DENSITIES, 'comfortable'),
   shortcutsModalOpen: false,
 
   toggle: () =>
@@ -105,10 +115,10 @@ export const useThemeStore = create<ThemeState>((set) => ({
 
 // Apply persisted values on load (called from Root component)
 export function initThemeFromStorage() {
-  const accent = (localStorage.getItem('app_accent') as AccentColor) || 'default';
-  const fontSize = (localStorage.getItem('app_fontSize') as FontSize) || 'base';
+  const accent = readStorage('app_accent', VALID_ACCENT_COLORS, 'default');
+  const fontSize = readStorage('app_fontSize', VALID_FONT_SIZES, 'base');
   applyAccentToDOM(accent);
   applyFontSizeToDOM(fontSize);
-  const density = (localStorage.getItem('app_density') as Density) || 'comfortable';
+  const density = readStorage('app_density', VALID_DENSITIES, 'comfortable');
   applyDensityToDOM(density);
 }

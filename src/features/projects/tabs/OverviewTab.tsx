@@ -1,20 +1,42 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Table } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { ProjectDetail } from '../../../types';
 import { useProjectBrain } from '../../../hooks/useProjects';
 import { useProjectTimeline } from '../../../hooks/useTimeline';
 import { useTerminalStore } from '../../../stores/terminalStore';
+import { gitApi } from '../../../api';
 import ProjectIcon from '../../../shared/ProjectIcon';
 import { StatusBadge } from '../../../shared/components/StatusBadge';
 
 export default function OverviewTab({ project }: { project: ProjectDetail }) {
   const navigate = useNavigate();
   const { requestLaunch } = useTerminalStore();
-  const [activityTab, setActivityTab] = useState<'tasks' | 'files'>('tasks');
 
   const { data: brain } = useProjectBrain(project.id);
   const { data: activityLogs = [] } = useProjectTimeline(project.id);
+
+  // Real git data for the status card
+  const [gitBranch, setGitBranch] = useState('—');
+  const [uncommittedCount, setUncommittedCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!project.localPath) return;
+    let cancelled = false;
+    Promise.all([
+      gitApi.branches(project.localPath).catch(() => []),
+      gitApi.status(project.localPath).catch(() => []),
+    ]).then(([branches, status]) => {
+      if (cancelled) return;
+      if (Array.isArray(branches)) {
+        const current = branches.find((b: { current: boolean }) => b.current);
+        if (current) setGitBranch(current.name);
+      }
+      if (Array.isArray(status)) {
+        setUncommittedCount(status.length);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [project.localPath]);
 
   const agentOutput = useMemo(() => {
     if (!brain) return ['> 正在加载项目分析...'];
@@ -109,15 +131,17 @@ export default function OverviewTab({ project }: { project: ProjectDetail }) {
             }}>
               <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--md-on-surface)', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>commit</span>
-                main
+                {gitBranch}
               </span>
               <span style={{ fontSize: 12, fontFamily: 'var(--font-label)', color: 'var(--md-on-surface-variant)' }}>最新</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
               <span style={{ fontSize: 13, color: 'var(--md-on-surface-variant)' }}>未提交文件</span>
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-label)', color: 'var(--md-error)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>error</span>
-                —
+              <span style={{ fontSize: 12, fontFamily: 'var(--font-label)', color: uncommittedCount && uncommittedCount > 0 ? 'var(--md-error)' : 'var(--md-on-surface-variant)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                {uncommittedCount !== null && uncommittedCount > 0 && (
+                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>error</span>
+                )}
+                {uncommittedCount !== null ? uncommittedCount : '—'}
               </span>
             </div>
             <button
@@ -203,26 +227,17 @@ export default function OverviewTab({ project }: { project: ProjectDetail }) {
         }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)' }}>工作区活动</div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {(['tasks', 'files'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActivityTab(tab)}
-                style={{
-                  padding: '4px 12px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 12,
-                  fontFamily: 'var(--font-label)',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  background: activityTab === tab ? 'var(--md-surface-container-high)' : 'transparent',
-                  color: activityTab === tab ? 'var(--md-on-surface)' : 'var(--md-on-surface-variant)',
-                }}
-              >
-                {tab === 'tasks' ? '任务' : '文件'}
-              </button>
-            ))}
+            <span style={{
+              padding: '4px 12px',
+              borderRadius: 6,
+              fontSize: 12,
+              fontFamily: 'var(--font-label)',
+              fontWeight: 500,
+              background: 'var(--md-surface-container-high)',
+              color: 'var(--md-on-surface)',
+            }}>
+              全部
+            </span>
           </div>
         </div>
         {/* Table */}

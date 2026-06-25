@@ -5,6 +5,9 @@ import { searchApi } from '../../api';
 import { filesApi } from '../../api/terminal';
 import { useThemeStore } from '../../stores/themeStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { COMMANDS, getCommandsByCategory, CATEGORY_LABELS } from '../../lib/commands';
+import { fuzzyMatch } from '../../lib/fuzzyMatch';
+import { getRecentCommandIds, recordCommandUse } from '../../lib/recentCommands';
 import type { FileEntry, ContentSearchMatch } from '../../api/types';
 import type { TaskWithProject, DocumentWithProject } from '../../types';
 
@@ -15,18 +18,8 @@ interface DropdownItem {
   icon: string;
   group: 'command' | 'project' | 'task' | 'document' | 'file' | 'content';
   action: () => void;
+  shortcut?: string;
 }
-
-const defaultCommands: DropdownItem[] = [
-  { id: 'workspace',  label: '前往工作区',   description: '/',          icon: 'terminal',    group: 'command', action: () => {} },
-  { id: 'projects',   label: '前往项目管理', description: '/projects',  icon: 'folder',      group: 'command', action: () => {} },
-  { id: 'settings',   label: '前往设置',     description: '/settings',  icon: 'settings',    group: 'command', action: () => {} },
-  { id: 'git',        label: '前往 Git',     description: '/git',       icon: 'code',        group: 'command', action: () => {} },
-  { id: 'new-project',label: '新建项目',     description: '创建一个新项目', icon: 'add',     group: 'command', action: () => {} },
-  { id: 'shortcuts',  label: '查看快捷键',   description: '?',          icon: 'keyboard',    group: 'command', action: () => {} },
-  { id: 'density',    label: '切换密度',     description: 'Ctrl+D',     icon: 'density_medium', group: 'command', action: () => {} },
-  { id: 'theme',      label: '切换主题',     description: 'Ctrl+Shift+D', icon: 'dark_mode', group: 'command', action: () => {} },
-];
 
 /** 代码文件扩展名 — 搜索结果中优先排序 */
 const CODE_EXTS = new Set(['ts','tsx','js','jsx','rs','py','go','java','c','cpp','h','cs','rb','swift','kt','dart','lua']);
@@ -85,27 +78,22 @@ export default function SearchBox() {
     setContentResults([]);
   }, []);
 
-  const commands: DropdownItem[] = defaultCommands.map(c => ({
-    ...c,
-    action: () => {
-      if (c.id === 'density') {
-        const order = ['comfortable', 'compact', 'dense'] as const;
-        const current = useThemeStore.getState().density;
-        const next = order[(order.indexOf(current) + 1) % 3];
-        useThemeStore.getState().setDensity(next);
-      } else if (c.id === 'theme') {
-        useThemeStore.getState().toggle();
-      } else if (c.id === 'shortcuts') {
-        useThemeStore.getState().setShortcutsModalOpen(true);
-      } else {
-        const routes: Record<string, string> = {
-          workspace: '/', projects: '/projects', settings: '/settings', git: '/git', 'new-project': '/projects?new=true',
-        };
-        navigate(routes[c.id] || '/');
-      }
-      close();
-    },
-  }));
+  // Build commands from registry, wrapping actions with record + close
+  const commands: DropdownItem[] = COMMANDS
+    .filter(c => c.id !== 'palette') // palette entry is for display/shortcut only
+    .map(c => ({
+      id: c.id,
+      label: c.label,
+      description: c.description,
+      icon: c.icon,
+      group: 'command' as const,
+      shortcut: c.shortcut,
+      action: () => {
+        recordCommandUse(c.id);
+        c.action();
+        close();
+      },
+    }));
 
   const q = query.trim();
   const qLower = q.toLowerCase();
@@ -116,15 +104,30 @@ export default function SearchBox() {
   const isContentMode = inPrefix === 0;
   const contentTerm = isContentMode ? q.slice(4) : '';
 
-  const filteredCommands = isContentMode ? [] : commands.filter(
-    c => c.label.toLowerCase().includes(qLower) || c.description?.toLowerCase().includes(qLower)
-  );
+  // Fuzzy-filter commands by query
+  const filteredCommands = isContentMode ? [] : (q
+    ? commands
+        .map(c => ({ item: c, match: fuzzyMatch(q, c.label) ?? fuzzyMatch(q, c.description ?? '') }))
+        .filter((x): x is { item: DropdownItem; match: { score: number; indices: number[] } } => x.match !== null)
+        .sort((a, b) => b.match.score - a.match.score)
+        .map(x => x.item)
+    : commands);
+
+  // Recent commands (shown when query is empty)
+  const recentItems: DropdownItem[] = [];
+  if (!q && !isContentMode) {
+    const recentIds = getRecentCommandIds();
+    for (const id of recentIds) {
+      const cmd = commands.find(c => c.id === id);
+      if (cmd) recentItems.push(cmd);
+    }
+  }
 
   const allItems = q
     ? (isContentMode
         ? contentResults
         : [...filteredCommands, ...projectResults, ...taskResults, ...docResults, ...fileResults])
-    : filteredCommands;
+    : [...recentItems, ...filteredCommands];
 
   // ── 分层搜索 ──
 
@@ -138,7 +141,9 @@ export default function SearchBox() {
         description: f.path,
         icon: fileIcon(f.extension), group: 'file' as const,
         action: () => {
-          useWorkspaceStore.getState().selectFile(f.path);
+          const store = useWorkspaceStore.getState();
+          store.selectFile(f.path, 'single');
+          store.requestOpenFile(f.path);
           navigate('/workspace');
           close();
         },
@@ -209,7 +214,9 @@ export default function SearchBox() {
           description: `L${m.lineNumber}: ${m.lineText}`,
           icon: fileIcon(m.extension), group: 'content' as const,
           action: () => {
-            useWorkspaceStore.getState().selectFile(m.filePath);
+            const store = useWorkspaceStore.getState();
+            store.selectFile(m.filePath);
+            store.requestOpenFile(m.filePath);
             navigate('/workspace');
             close();
           },
@@ -308,7 +315,22 @@ export default function SearchBox() {
 
   // 分组顺序
   const groups: { label: string; items: DropdownItem[] }[] = [];
-  if (filteredCommands.length) groups.push({ label: '命令', items: filteredCommands });
+  if (recentItems.length) groups.push({ label: '最近使用', items: recentItems });
+
+  if (q) {
+    // When searching, show filtered commands as a single group
+    if (filteredCommands.length) groups.push({ label: '命令', items: filteredCommands });
+  } else {
+    // When not searching, group commands by category
+    const catMap = getCommandsByCategory();
+    for (const [cat, catCmds] of catMap) {
+      const items = catCmds
+        .map(c => commands.find(cmd => cmd.id === c.id))
+        .filter((x): x is DropdownItem => !!x);
+      if (items.length) groups.push({ label: CATEGORY_LABELS[cat], items });
+    }
+  }
+
   if (projectResults.length) groups.push({ label: '项目', items: projectResults });
   if (taskResults.length) groups.push({ label: '任务', items: taskResults });
   if (docResults.length) groups.push({ label: '文档', items: docResults });
@@ -428,6 +450,17 @@ export default function SearchBox() {
                             </div>
                           )}
                         </div>
+                        {item.shortcut && (
+                          <kbd style={{
+                            fontSize: 10, color: 'var(--md-on-surface-variant)',
+                            background: 'var(--md-surface-container-high)',
+                            padding: '1px 5px', borderRadius: 3,
+                            border: '1px solid var(--border)',
+                            fontFamily: "'Fira Code', monospace", flexShrink: 0,
+                          }}>
+                            {item.shortcut}
+                          </kbd>
+                        )}
                       </div>
                     );
                   })}

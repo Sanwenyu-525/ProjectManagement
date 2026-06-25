@@ -7,6 +7,7 @@ import zhCN from 'antd/locale/zh_CN';
 import App from './App';
 import queryClient from './lib/queryClient';
 import { useThemeStore, initThemeFromStorage } from './stores/themeStore';
+import './styles/material-symbols.css';
 import './styles/design-system.css';
 import './index.css';
 
@@ -29,6 +30,7 @@ function cssVar(name: string): string {
 function Root() {
   const mode = useThemeStore(s => s.mode);
   const isDark = mode === 'dark';
+  const accent = useThemeStore(s => s.accent);
   const density = useThemeStore(s => s.density);
 
   // Sync data-theme/data-density attributes on <html> + apply accent/fontSize
@@ -163,7 +165,9 @@ function Root() {
         },
       },
     };
-  }, [isDark]);
+  // accent triggers DOM class swap which changes CSS vars; re-read them
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDark, accent]);
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -736,6 +736,7 @@ pub async fn projects_stop(
     }
 
     for comp in &requested {
+        // Column name is constrained to fixed values by the match — no SQL injection risk
         let col = match comp.as_str() {
             "frontend" => "frontendStatus",
             "backend" => "backendStatus",
@@ -911,6 +912,15 @@ pub async fn projects_batch_import(
     };
 
     for p in &projects {
+        // Validate: name is required and must be non-empty
+        let name = match p.get("name").and_then(|v| v.as_str()) {
+            Some(n) if !n.trim().is_empty() => n.trim(),
+            _ => {
+                errors.push("跳过：缺少有效 name 字段".into());
+                continue;
+            }
+        };
+
         let local_path = p.get("localPath").and_then(|v| v.as_str());
         if let Some(path) = local_path {
             if existing_paths.contains(&path.to_lowercase()) {
@@ -920,7 +930,6 @@ pub async fn projects_batch_import(
         }
 
         let id = crate::db::new_id();
-        let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled");
         let description = p.get("description").and_then(|v| v.as_str()).unwrap_or("");
         let tech_stack = p.get("techStack").map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".into())).unwrap_or_else(|| "[]".into());
         let source = p.get("source").and_then(|v| v.as_str()).unwrap_or("Local");

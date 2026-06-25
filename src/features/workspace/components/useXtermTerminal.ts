@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { LigaturesAddon } from '@xterm/addon-ligatures';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { listen } from '@tauri-apps/api/event';
 import { terminalApi } from '../../../api';
 import { getThemeColors } from '../../../shared/terminalThemes';
@@ -57,11 +57,9 @@ export function useXtermTerminal(
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace",
       theme: getThemeColors(theme).colors,
       allowProposedApi: true,
-      scrollback: 10000,
+      scrollback: 5000,
       lineHeight: 1.2,
       letterSpacing: 0.5,
-      drawBoldTextInBrightColors: true,
-      minimumContrastRatio: 1,
     });
 
     const fitAddon = new FitAddon();
@@ -73,41 +71,24 @@ export function useXtermTerminal(
 
     // Load enhanced addons (fail gracefully if unavailable)
     try { term.loadAddon(new WebLinksAddon()); } catch { /* optional */ }
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => { webgl.dispose(); });
-      term.loadAddon(webgl);
-    } catch { /* fallback to canvas renderer */ }
     try { term.loadAddon(new LigaturesAddon()); } catch { /* optional */ }
 
-    // IME composition guard — suppress onData during IME candidate selection
-    let composing = false;
-    let compositionData = '';
-    // On Windows, keydown may fire before IME sets isComposing, causing xterm to
-    // process the key via onData. compositionend then also sends the character.
-    // This flag blocks the onData that fires right after compositionend.
-    let justComposed = false;
-    const onCompositionStart = () => { composing = true; compositionData = ''; justComposed = false; };
-    const onCompositionEnd = (e: CompositionEvent) => {
-      composing = false;
-      const text = e.data || compositionData;
-      compositionData = '';
-      if (text && onDataRef.current) onDataRef.current(text);
-      // Block the next onData call (from xterm processing the same character)
-      justComposed = true;
-      setTimeout(() => { justComposed = false; }, 0);
-    };
-    const onCompositionUpdate = (e: CompositionEvent) => {
-      compositionData = e.data || '';
-    };
-    if (term.textarea) {
-      term.textarea.addEventListener('compositionstart', onCompositionStart);
-      term.textarea.addEventListener('compositionend', onCompositionEnd);
-      term.textarea.addEventListener('compositionupdate', onCompositionUpdate);
-    }
-    // Block key events during composition so xterm doesn't insert raw keycodes
+    // WebGL renderer: better truecolor support for ANSI art (e.g. Claude logo)
+    let webglAddon: WebglAddon | null = null;
+    try {
+      webglAddon = new WebglAddon();
+      term.loadAddon(webglAddon);
+    } catch { /* fall back to canvas renderer */ }
+
+    // xterm.js CompositionHelper handles IME natively:
+    // - compositionstart/update: shows composing text in .composition-view
+    // - compositionend → _finalizeComposition → triggerDataEvent (single send)
+    // - keydown(229): blocks during composition, defers to compositionend
+    // No custom composition handling needed — adding one causes double-input.
+    // Intercept Ctrl+V to prevent xterm's internal paste handling — we handle
+    // paste ourselves via the document keydown handler below.
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.type === 'keydown' && e.isComposing) return false;
+      if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key === 'v') return false;
       return true;
     });
 
@@ -120,7 +101,7 @@ export function useXtermTerminal(
       }
     };
 
-    // Track whether xterm has focus to gate document-level paste
+    // Track whether xterm has focus to gate keydown paste
     let xtermFocused = false;
     const onFocus = () => { xtermFocused = true; };
     const onBlur = () => { xtermFocused = false; };
@@ -129,19 +110,19 @@ export function useXtermTerminal(
       term.textarea.addEventListener('blur', onBlur);
     }
 
-    // Document-level paste — only forward to PTY when xterm has focus.
-    // Without the focus guard, pasting into the text editor would also
-    // send text to xterm via this global listener.
-    const onDocPaste = (e: ClipboardEvent) => {
-      if (!termRef.current) return;
-      if (!xtermFocused) return;
-      const text = e.clipboardData?.getData('text');
-      if (text) {
+    // Ctrl+V paste — clipboard read in keydown handler (user gesture context).
+    // xterm's internal paste relies on the browser paste event which may not
+    // fire in some Tauri WebView builds. Reading the clipboard directly on
+    // keydown ensures paste works regardless of WebView quirks.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && xtermFocused) {
         e.preventDefault();
-        sendPaste(text);
+        navigator.clipboard.readText()
+          .then(text => { if (text) sendPaste(text); })
+          .catch(() => {});
       }
     };
-    document.addEventListener('paste', onDocPaste);
+    document.addEventListener('keydown', onKeyDown);
 
     // Right-click paste (only when no text is selected)
     const onContextMenu = (e: MouseEvent) => {
@@ -158,18 +139,6 @@ export function useXtermTerminal(
     if (term.textarea) {
       term.textarea.addEventListener('contextmenu', onContextMenu);
     }
-
-    // Ctrl+V keyboard fallback — some Tauri WebView builds intercept the paste
-    // event before xterm's textarea receives it. Reading the clipboard directly
-    // on keydown ensures paste works regardless of WebView quirks.
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && xtermFocused) {
-        navigator.clipboard.readText()
-          .then(text => { if (text) sendPaste(text); })
-          .catch(() => {});
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
 
     // Fit after flex layout settles (tab switch / first render)
     const fitTimer = setTimeout(() => {
@@ -210,12 +179,23 @@ export function useXtermTerminal(
 
     // Stdin handler (only for interactive terminals, not agents)
     const inputDisposable = onDataRef.current
-      ? term.onData((data) => { if (!composing && !justComposed) onDataRef.current!(data); })
+      ? term.onData((data) => { onDataRef.current!(data); })
       : null;
 
     let cwdDebounce: ReturnType<typeof setTimeout> | null = null;
     let lastDetectedCwd = '';
     let titleDebounce: ReturnType<typeof setTimeout> | null = null;
+
+    // RAF-batched write buffer — coalesces multiple terminal-output events per frame
+    let writeBuffer = '';
+    let writeRafId = 0;
+    const flushWrite = () => {
+      writeRafId = 0;
+      if (writeBuffer) {
+        term.write(writeBuffer);
+        writeBuffer = '';
+      }
+    };
 
     const unlistenOutput = listen<TerminalOutputEvent>('terminal-output', (event) => {
       if (event.payload.terminalId !== terminalId) return;
@@ -235,7 +215,8 @@ export function useXtermTerminal(
         data = data.replace(/\x1b\][02];[^\x07\x1b]*(?:\x07|\x1b\\)/g, '');
       }
 
-      term.write(data);
+      writeBuffer += data;
+      if (!writeRafId) writeRafId = requestAnimationFrame(flushWrite);
 
       // Detect cwd from shell prompts
       if (onCwdChangeRef.current) {
@@ -273,6 +254,7 @@ export function useXtermTerminal(
       clearTimeout(fitTimer2);
       if (resizeTimer) clearTimeout(resizeTimer);
       if (rafId) cancelAnimationFrame(rafId);
+      if (writeRafId) cancelAnimationFrame(writeRafId);
       if (cwdDebounce) clearTimeout(cwdDebounce);
       if (titleDebounce) clearTimeout(titleDebounce);
       observer.disconnect();
@@ -280,15 +262,10 @@ export function useXtermTerminal(
       unlistenOutput.then(fn => fn());
       unlistenExit.then(fn => fn());
       if (term.textarea) {
-        term.textarea.removeEventListener('compositionstart', onCompositionStart);
-        term.textarea.removeEventListener('compositionend', onCompositionEnd);
-        term.textarea.removeEventListener('compositionupdate', onCompositionUpdate);
         term.textarea.removeEventListener('contextmenu', onContextMenu);
-        term.textarea.removeEventListener('focus', onFocus);
-        term.textarea.removeEventListener('blur', onBlur);
       }
-      document.removeEventListener('paste', onDocPaste);
       document.removeEventListener('keydown', onKeyDown);
+      webglAddon?.dispose();
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;

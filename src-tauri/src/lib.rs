@@ -116,6 +116,8 @@ pub fn run() {
             commands::project::graph::graph_remove_file_from_group,
             commands::project::graph::graph_get_group_memberships,
             commands::project::graph::graph_suggest_groups,
+            commands::project::graph::graph_get_ai_cache,
+            commands::project::graph::graph_set_ai_cache,
             // Agent sessions & browser memory
             commands::workspace::sessions::sessions_start,
             commands::workspace::sessions::sessions_append_message,
@@ -210,6 +212,8 @@ pub fn run() {
             commands::workspace::workspaces::workspaces_save_layout,
             commands::workspace::workspaces::workspaces_load_layout,
             commands::workspace::workspaces::workspaces_stats,
+            commands::workspace::workspaces::explorer_load_state,
+            commands::workspace::workspaces::explorer_save_state,
             // Builds
             commands::build::builds::builds_list,
             commands::build::builds::builds_get_by_id,

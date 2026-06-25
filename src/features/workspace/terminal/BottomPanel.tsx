@@ -342,7 +342,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     height: '100%',
     border: 'none',
-    background: '#ffffff',
+    background: 'var(--md-surface-container-lowest)',
   },
   empty: {
     display: 'flex',

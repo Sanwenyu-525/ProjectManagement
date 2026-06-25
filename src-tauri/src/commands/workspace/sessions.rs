@@ -14,7 +14,7 @@ pub async fn sessions_start(
     cwd: Option<String>,
     permission_mode: Option<String>,
 ) -> Result<String, String> {
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = crate::db::new_id();
     let now = now_str();
 
     db.execute(
@@ -193,7 +193,7 @@ pub async fn browser_record_visit(
     dom_analysis: Option<String>,
     project_id: Option<String>,
 ) -> Result<(), String> {
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = crate::db::new_id();
     let now = now_str();
 
     db.execute(

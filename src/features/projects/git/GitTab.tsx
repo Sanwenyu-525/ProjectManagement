@@ -34,6 +34,7 @@ export default function GitTab({ project }: GitTabProps) {
   const [diffLoading, setDiffLoading] = useState(false);
 
   const [pushing, setPushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [leftTab, setLeftTab] = useState<'staging' | 'tags'>('staging');
   const [leftSideTab, setLeftSideTab] = useState<'branches' | 'prs'>('branches');
   const [commitModalOpen, setCommitModalOpen] = useState(false);
@@ -144,6 +145,20 @@ export default function GitTab({ project }: GitTabProps) {
     }
   }, [repoPath, refresh]);
 
+  const handlePull = useCallback(async () => {
+    if (!repoPath) return;
+    setPulling(true);
+    try {
+      await gitApi.pull(repoPath);
+      message.success('拉取成功');
+      refresh();
+    } catch (err) {
+      message.error(String(err));
+    } finally {
+      setPulling(false);
+    }
+  }, [repoPath, refresh]);
+
   const handleToolbarCommit = () => {
     if (stagedCount === 0) {
       message.warning('没有已暂存的文件');
@@ -198,7 +213,7 @@ export default function GitTab({ project }: GitTabProps) {
     );
   }
 
-  const panelBg = isDark ? 'var(--md-surface-container)' : '#ffffff';
+  const panelBg = 'var(--md-surface-container-lowest)';
   const panelBorder = 'var(--border)';
 
   return (
@@ -239,7 +254,7 @@ export default function GitTab({ project }: GitTabProps) {
           </Tooltip>
         )}
         <Tooltip title="拉取">
-          <Button size="small" style={{ fontSize: 12 }}>
+          <Button size="small" onClick={handlePull} loading={pulling} style={{ fontSize: 12 }}>
             <span className="material-symbols-outlined" style={{ fontSize: 14, marginRight: 4 }}>download</span>
             Pull
           </Button>
@@ -309,7 +324,7 @@ export default function GitTab({ project }: GitTabProps) {
                       cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-mono)',
                       textAlign: 'left', transition: 'all 0.1s',
                     }}
-                    onMouseEnter={e => { if (!b.current) e.currentTarget.style.background = isDark ? 'var(--md-surface-container-high)' : 'var(--md-surface-container-high)'; }}
+                    onMouseEnter={e => { if (!b.current) e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
                     onMouseLeave={e => { if (!b.current) e.currentTarget.style.background = 'transparent'; }}
                   >
                     {b.current && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--md-primary)', flexShrink: 0 }} />}
@@ -398,7 +413,7 @@ export default function GitTab({ project }: GitTabProps) {
             <div style={{
               padding: '6px 12px', fontSize: 12, fontWeight: 600, color: 'var(--md-on-surface)',
               borderBottom: `1px solid ${panelBorder}`,
-              background: isDark ? 'var(--md-surface-container-low)' : 'var(--md-surface-container-low)',
+              background: 'var(--md-surface-container-low)',
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
               <span className="material-symbols-outlined" style={{ fontSize: 14 }}>history</span>

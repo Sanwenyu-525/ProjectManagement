@@ -55,8 +55,6 @@ interface AgentStore {
   loadMessages: (sessionId: string, dbMessages: Array<{ role: string; content: string; timestamp: string }>) => void;
   /** Clear messages for a session */
   clearMessages: (sessionId: string) => void;
-  /** Remove all messages from index onwards (used by retry) */
-  removeMessagesFrom: (sessionId: string, fromIndex: number) => void;
 
   /** Session ended tracking — key is sessionId, value is always true */
   endedSessionIds: Record<string, boolean>;
@@ -64,13 +62,6 @@ interface AgentStore {
   errorSessionIds: Record<string, boolean>;
   markSessionEnded: (sessionId: string) => void;
   markSessionError: (sessionId: string) => void;
-
-  /** Tool invocation events per session — deprecated, kept for AgentContextPanel compat */
-  toolEvents: Record<string, Array<{ id: string; toolName: string; description: string; timestamp: number }>>;
-  /** Append a tool event — deprecated */
-  appendToolEvent: (sessionId: string, event: { id: string; toolName: string; description: string; timestamp: number }) => void;
-  /** Clear tool events — deprecated */
-  clearToolEvents: (sessionId: string) => void;
 
   /** Currently active agent provider ID */
   activeProviderId: string | null;
@@ -194,13 +185,6 @@ export const useAgentStore = create<AgentStore>((set) => ({
       return { messages: rest, endedSessionIds: restEnded, errorSessionIds: restError };
     }),
 
-  removeMessagesFrom: (sessionId, fromIndex) =>
-    set((state) => {
-      const msgs = state.messages[sessionId];
-      if (!msgs) return state;
-      return { messages: { ...state.messages, [sessionId]: msgs.slice(0, fromIndex) } };
-    }),
-
   loadMessages: (sessionId, dbMessages) =>
     set((state) => {
       const mapped: AgentMessage[] = dbMessages.map(m => ({
@@ -209,23 +193,6 @@ export const useAgentStore = create<AgentStore>((set) => ({
         timestamp: new Date(m.timestamp).getTime(),
       }));
       return { messages: { ...state.messages, [sessionId]: mapped } };
-    }),
-
-  // Deprecated — kept for AgentContextPanel backward compat
-  toolEvents: {},
-
-  appendToolEvent: (sessionId, event) =>
-    set((state) => ({
-      toolEvents: {
-        ...state.toolEvents,
-        [sessionId]: [...(state.toolEvents[sessionId] || []), event],
-      },
-    })),
-
-  clearToolEvents: (sessionId) =>
-    set((state) => {
-      const { [sessionId]: _, ...rest } = state.toolEvents;
-      return { toolEvents: rest };
     }),
 
   endedSessionIds: {},

@@ -23,6 +23,8 @@ import { useScanProjects } from './useScanProjects';
 import { useThemeStore } from '../../stores/themeStore';
 
 const STATUS_OPTIONS = [...PROJECT_STATUSES];
+const VALID_STATUSES = new Set<string>(PROJECT_STATUSES);
+const VALID_PRIORITIES = new Set<string>(PRIORITY_OPTIONS);
 const SOURCE_OPTIONS = [
   { value: 'Local', label: '本地项目' },
   { value: 'Remote', label: '远程项目' },
@@ -192,8 +194,10 @@ export default function ProjectsPage() {
   const handleCreate = async (values: Record<string, unknown>) => {
     const name = String(values.name || '');
     const description = values.description ? String(values.description) : undefined;
-    const status = String(values.status || 'Active') as ProjectStatus;
-    const priority = String(values.priority || 'Medium') as ProjectPriority;
+    const rawStatus = String(values.status || 'Active');
+    const rawPriority = String(values.priority || 'Medium');
+    const status: ProjectStatus = VALID_STATUSES.has(rawStatus) ? rawStatus as ProjectStatus : 'Active';
+    const priority: ProjectPriority = VALID_PRIORITIES.has(rawPriority) ? rawPriority as ProjectPriority : 'Medium';
     const localPath = values.localPath ? String(values.localPath) : undefined;
     const openCommand = values.openCommand ? String(values.openCommand) : undefined;
 
@@ -400,6 +404,7 @@ export default function ProjectsPage() {
   ];
   const kanbanSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [kanbanColumns, setKanbanColumns] = useState<Record<string, ProjectWithStats[]> | null>(null);
 
   const projectsByStatus = useMemo(() => {
     const grouped: Record<string, ProjectWithStats[]> = {};
@@ -410,38 +415,52 @@ export default function ProjectsPage() {
 
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId) || null, [projects, activeProjectId]);
 
-  function kanbanFindColumn(projectId: string): string | undefined {
-    for (const [status, list] of Object.entries(projectsByStatus)) {
+  function kanbanFindColumn(projectId: string, source?: Record<string, ProjectWithStats[]>): string | undefined {
+    const data = source ?? kanbanColumns ?? projectsByStatus;
+    for (const [status, list] of Object.entries(data)) {
       if (list.some(p => p.id === projectId)) return status;
     }
     return undefined;
   }
 
-  function handleKanbanDragStart(e: DragStartEvent) { setActiveProjectId(e.active.id as string); }
+  function handleKanbanDragStart(e: DragStartEvent) {
+    setActiveProjectId(e.active.id as string);
+    // Snapshot the current layout for mutable drag tracking
+    const snapshot: Record<string, ProjectWithStats[]> = {};
+    for (const [key, list] of Object.entries(projectsByStatus)) {
+      snapshot[key] = [...list];
+    }
+    setKanbanColumns(snapshot);
+  }
 
   function handleKanbanDragOver(e: DragOverEvent) {
+    if (!kanbanColumns) return;
     const { active, over } = e;
     if (!over) return;
     const activeId = active.id as string;
     const overId = over.id as string;
-    const fromCol = kanbanFindColumn(activeId);
-    const toCol = kanbanFindColumn(overId);
+    const fromCol = kanbanFindColumn(activeId, kanbanColumns);
+    const toCol = kanbanFindColumn(overId, kanbanColumns);
     if (!fromCol || !toCol || fromCol === toCol) return;
-    const proj = projectsByStatus[fromCol].find(p => p.id === activeId);
+    const proj = kanbanColumns[fromCol].find(p => p.id === activeId);
     if (!proj) return;
-    projectsByStatus[fromCol] = projectsByStatus[fromCol].filter(p => p.id !== activeId);
-    (proj as ProjectWithStats).status = toCol as ProjectStatus;
-    projectsByStatus[toCol].push(proj);
+    setKanbanColumns(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, [fromCol]: prev[fromCol].filter(p => p.id !== activeId) };
+      next[toCol] = [...prev[toCol], proj];
+      return next;
+    });
   }
 
   async function handleKanbanDragEnd(e: DragEndEvent) {
     setActiveProjectId(null);
     const { active, over } = e;
-    if (!over) return;
+    if (!over) { setKanbanColumns(null); return; }
     const activeId = active.id as string;
     const original = projects.find(p => p.id === activeId);
-    if (!original) return;
+    if (!original) { setKanbanColumns(null); return; }
     const newStatus = kanbanFindColumn(activeId);
+    setKanbanColumns(null);
     if (!newStatus || newStatus === original.status) return;
     try {
       await projectsApi.updateStatus(activeId, newStatus);
@@ -991,7 +1010,7 @@ export default function ProjectsPage() {
         >
           <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
             {KANBAN_COLUMNS.map(({ key, label }) => {
-              const columnProjects = projectsByStatus[key] || [];
+              const columnProjects = (kanbanColumns ?? projectsByStatus)[key] || [];
               return (
                 <div key={key} style={{ flex: 1, minWidth: 220 }}>
                   <div style={{

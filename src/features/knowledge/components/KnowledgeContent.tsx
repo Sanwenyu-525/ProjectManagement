@@ -307,25 +307,25 @@ export default function KnowledgeContent() {
                 <div style={styles.listItemHeader}>
                   <SourceIcon source={kItem.source} />
                   <span style={styles.listItemTitle}>{kItem.title}</span>
-                  {(kItem.source === 'memory' || kItem.source === 'note') && (
-                    <button
-                      style={styles.listPinBtn}
-                      onClick={e => handleListPin(e, kItem)}
-                      title={kItem.isPinned ? '取消收藏' : '收藏'}
-                    >
-                      <span
-                        className="material-symbols-outlined"
-                        style={{
-                          fontSize: 16,
-                          color: kItem.isPinned ? 'var(--md-primary)' : undefined,
-                          fontVariationSettings: kItem.isPinned ? "'FILL' 1" : undefined,
-                        }}
-                      >
-                        {kItem.isPinned ? 'star' : 'star_border'}
-                      </span>
-                    </button>
-                  )}
                 </div>
+                {(kItem.source === 'memory' || kItem.source === 'note') && (
+                  <button
+                    style={styles.listPinBtn}
+                    onClick={e => handleListPin(e, kItem)}
+                    title={kItem.isPinned ? '取消收藏' : '收藏'}
+                  >
+                    <span
+                      className="material-symbols-outlined"
+                      style={{
+                        fontSize: 16,
+                        color: kItem.isPinned ? 'var(--md-primary)' : undefined,
+                        fontVariationSettings: kItem.isPinned ? "'FILL' 1" : undefined,
+                      }}
+                    >
+                      {kItem.isPinned ? 'star' : 'star_border'}
+                    </span>
+                  </button>
+                )}
                 <p style={styles.listItemPreview}>
                   {kItem.content.length > 120 ? kItem.content.slice(0, 120) + '...' : kItem.content}
                 </p>
@@ -782,11 +782,13 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 2,
   },
   listItem: {
+    position: 'relative',
     display: 'flex',
     flexDirection: 'column',
     gap: 6,
     width: '100%',
     padding: '14px 16px',
+    paddingRight: 44,
     border: 'none',
     borderRadius: 'var(--radius-sm)',
     background: 'transparent',
@@ -826,6 +828,10 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
   },
   listPinBtn: {
+    position: 'absolute',
+    right: 12,
+    top: '50%',
+    transform: 'translateY(-50%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

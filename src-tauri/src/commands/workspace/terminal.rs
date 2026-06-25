@@ -434,7 +434,6 @@ pub async fn terminal_start_agent(
     // are `.cmd` scripts — route through cmd.exe /C which handles .cmd/.bat/.exe.
     // NOTE: do NOT chain `chcp 65001` with "&" here — portable_pty quotes each
     // arg containing spaces, wrapping "&" in quotes and breaking command parsing.
-    // The claude CLI outputs UTF-8 by default in stream-json mode.
     #[cfg(target_os = "windows")]
     let mut cmd_builder = {
         let mut c = CommandBuilder::new("cmd.exe");
@@ -491,7 +490,7 @@ pub async fn terminal_start_agent(
         );
     }
 
-    // Output reader thread (with UTF-8 remnant handling for CJK characters)
+    // Agent output reader: forward raw PTY output to xterm
     spawn_output_reader(reader, app.clone(), terminal_id.clone(), "stdout");
 
     // Exit watcher thread (polling with try_wait, keeps registry entry alive
@@ -953,7 +952,8 @@ fn scan_claude_commands(dir: &std::path::Path) -> Vec<SlashCommandDef> {
 #[command]
 pub async fn terminal_open_external(cwd: String, skip_permissions: bool) -> Result<(), String> {
     let perm_flag = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
-    let cmd_str = format!("cd /d {} && claude{}", cwd, perm_flag);
+    // Quote cwd to handle paths with spaces or special characters
+    let cmd_str = format!("cd /d \"{}\" && claude{}", cwd.replace('"', ""), perm_flag);
     Command::new("cmd")
         .args(["/C", "start", "cmd.exe", "/K", &cmd_str])
         .spawn()

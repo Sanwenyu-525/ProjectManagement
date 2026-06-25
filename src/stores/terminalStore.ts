@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { DEFAULT_CWD } from '../lib/constants';
 import { Terminal, TerminalTheme, PanePosition } from '../shared/terminalTypes';
 import { useThemeStore } from './themeStore';
-import { useWorkspaceStore } from './workspaceStore';
 
 export interface LaunchRequest {
   cwd: string;
@@ -213,20 +212,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const terminal = state.terminals.find(t => t.id === terminalId);
     if (!terminal || terminal.pane === targetPane) return;
 
-    const sourcePane = terminal.pane;
-    const sourceTerminals = state.terminals.filter(t => t.pane === sourcePane && t.id !== terminalId);
-
-    // Update terminal.pane (in terminalStore)
+    // Update terminal.pane
     set({
       terminals: state.terminals.map(t =>
         t.id === terminalId ? { ...t, pane: targetPane } : t
       ),
     });
-
-    // Update pane activeId (in workspaceStore)
-    const ws = useWorkspaceStore.getState();
-    ws.setActiveId(sourcePane, sourceTerminals.length > 0 ? sourceTerminals[sourceTerminals.length - 1].id : null);
-    ws.setActiveId(targetPane, terminalId);
   },
 }));
 

@@ -1,31 +1,26 @@
 import { Modal } from 'antd';
+import { COMMANDS_WITH_SHORTCUTS, CATEGORY_LABELS, type CommandCategory } from '../lib/commands';
 
 interface ShortcutsModalProps {
   open: boolean;
   onClose: () => void;
 }
 
-const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-const mod = isMac ? '⌘' : 'Ctrl';
+// Group shortcuts by category, preserving definition order
+function buildGroups() {
+  const map = new Map<CommandCategory, { keys: string; label: string }[]>();
+  for (const cmd of COMMANDS_WITH_SHORTCUTS) {
+    const list = map.get(cmd.category) ?? [];
+    list.push({ keys: cmd.shortcut!, label: cmd.label });
+    map.set(cmd.category, list);
+  }
+  return Array.from(map.entries()).map(([cat, shortcuts]) => ({
+    title: CATEGORY_LABELS[cat],
+    shortcuts,
+  }));
+}
 
-const groups = [
-  {
-    title: '导航',
-    shortcuts: [
-      { keys: `${mod}+K`, label: '搜索 / 命令面板' },
-      { keys: '?', label: '显示快捷键面板' },
-      { keys: `${mod}+B`, label: '切换文件浏览器' },
-      { keys: `${mod}+N`, label: '新建项目' },
-    ],
-  },
-  {
-    title: '主题与显示',
-    shortcuts: [
-      { keys: `${mod}+D`, label: '切换密度（宽松/紧凑/密集）' },
-      { keys: `${mod}+Shift+D`, label: '切换暗色/亮色模式' },
-    ],
-  },
-];
+const groups = buildGroups();
 
 const styles: Record<string, React.CSSProperties> = {
   group: { marginBottom: 16 },

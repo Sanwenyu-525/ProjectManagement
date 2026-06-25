@@ -11,7 +11,6 @@ interface AgentTab {
   sessionId: string | null;
   label: string;
   cwd: string | null;
-  agentMode: 'xterm' | 'gui';
 }
 
 interface PersistedTab {
@@ -19,12 +18,11 @@ interface PersistedTab {
   sessionId: string | null;
   label: string;
   cwd: string | null;
-  agentMode: 'xterm' | 'gui';
 }
 
 function saveTabsToStorage(tabs: AgentTab[], activeTabId: string | null): void {
   const data: { tabs: PersistedTab[]; activeTabId: string | null } = {
-    tabs: tabs.map(t => ({ id: t.id, sessionId: t.sessionId, label: t.label, cwd: t.cwd, agentMode: t.agentMode })),
+    tabs: tabs.map(t => ({ id: t.id, sessionId: t.sessionId, label: t.label, cwd: t.cwd })),
     activeTabId,
   };
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* quota */ }
@@ -37,11 +35,7 @@ function loadTabsFromStorage(): { tabs: AgentTab[]; activeTabId: string | null }
     const data = JSON.parse(raw) as { tabs: PersistedTab[]; activeTabId: string | null };
     if (!Array.isArray(data.tabs) || data.tabs.length === 0) return null;
     return {
-      tabs: data.tabs.map(t => ({
-        ...t,
-        // xterm buffer can't be restored from DB — switch to GUI so message history loads
-        agentMode: t.sessionId && t.agentMode === 'xterm' ? 'gui' : t.agentMode,
-      })),
+      tabs: data.tabs.map(t => ({ ...t })),
       activeTabId: data.activeTabId,
     };
   } catch { return null; }
@@ -57,13 +51,12 @@ interface AgentTabStore {
   setSessionId: (tabId: string, sessionId: string | null) => void;
   setLabel: (tabId: string, label: string) => void;
   setCwd: (tabId: string, cwd: string) => void;
-  setAgentMode: (tabId: string, mode: 'xterm' | 'gui') => void;
   getActiveTab: () => AgentTab | undefined;
 }
 
 export const useAgentTabStore = create<AgentTabStore>((set, get) => {
   const saved = loadTabsFromStorage();
-  const initialTabs = saved?.tabs ?? [{ id: generateTabId(), sessionId: null, label: '新对话', cwd: null, agentMode: 'xterm' as const }];
+  const initialTabs = saved?.tabs ?? [{ id: generateTabId(), sessionId: null, label: '新对话', cwd: null }];
   const initialActiveId = saved?.activeTabId ?? initialTabs[0].id;
 
   const save = () => {
@@ -83,7 +76,6 @@ export const useAgentTabStore = create<AgentTabStore>((set, get) => {
       sessionId: null,
       label: '新对话',
       cwd: null,
-      agentMode: 'xterm',
     };
     set({ tabs: [...tabs, newTab], activeTabId: id });
     save();
@@ -107,7 +99,7 @@ export const useAgentTabStore = create<AgentTabStore>((set, get) => {
     if (activeTabId === tabId) {
       if (newTabs.length === 0) {
         // Create a fresh empty tab
-        const fresh: AgentTab = { id: generateTabId(), sessionId: null, label: '新对话', cwd: null, agentMode: 'xterm' };
+        const fresh: AgentTab = { id: generateTabId(), sessionId: null, label: '新对话', cwd: null };
         newTabs.push(fresh);
         newActiveId = fresh.id;
       } else {
@@ -139,14 +131,6 @@ export const useAgentTabStore = create<AgentTabStore>((set, get) => {
     const { tabs } = get();
     set({
       tabs: tabs.map(t => t.id === tabId ? { ...t, cwd } : t),
-    });
-    save();
-  },
-
-  setAgentMode: (tabId, agentMode) => {
-    const { tabs } = get();
-    set({
-      tabs: tabs.map(t => t.id === tabId ? { ...t, agentMode } : t),
     });
     save();
   },

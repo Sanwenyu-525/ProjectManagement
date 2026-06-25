@@ -42,7 +42,7 @@ export class ClaudeProvider implements AgentProvider {
    *  Uses a queue instead of single value to prevent token events from being overwritten by done/error. */
   private pendingEvents: AgentStreamEvent[] = [];
 
-  constructor(_config?: { runtimeId?: string }) {}
+  constructor() {}
 
   async start(options: StartOptions): Promise<string> {
     this.config = options;

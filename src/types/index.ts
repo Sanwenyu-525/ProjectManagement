@@ -61,9 +61,10 @@ export interface ProjectWithStats extends Project {
 }
 
 export interface ProjectDetail extends ProjectWithStats {
-  repos: RemoteRepo[];
+  remoteRepos: RemoteRepo[];
   milestones: Milestone[];
   tags: Tag[];
+  _count?: Record<string, number>;
 }
 
 export interface Task {
@@ -100,6 +101,31 @@ export interface RemoteRepo {
   integrationId?: UUID;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
+}
+
+// Git types
+export interface GitCommit {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  date: string;
+  parents: string[];
+  branchIdx: number;
+}
+
+export interface GitBranchInfo {
+  name: string;
+  current: boolean;
+  isRemote: boolean;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+}
+
+export interface GitLogResult {
+  commits: GitCommit[];
+  branches: GitBranchInfo[];
 }
 
 export interface Milestone {
@@ -774,4 +800,20 @@ export interface CreateGroupInput {
   name: string;
   description?: string;
   color?: string;
+}
+
+// ── Business Module Classification ──
+
+export interface BusinessModule {
+  id: string;
+  name: string;
+  description: string;
+  fileNodeIds: string[];
+  filePaths: string[];
+  dependsOn: string[];
+}
+
+export interface BusinessClassification {
+  modules: BusinessModule[];
+  uncategorized: string[];
 }

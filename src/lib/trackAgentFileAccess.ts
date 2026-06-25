@@ -38,7 +38,7 @@ export function extractFilePath(
 
 /**
  * 处理一个 tool_use block，将文件操作记录到 context store。
- * 在 ClaudeProvider 和 AgentGUIPanel 中共用。
+ * 在 AgentTerminal 中使用。
  */
 export function trackToolFileAccess(
   sessionId: string,

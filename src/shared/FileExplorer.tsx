@@ -1,22 +1,25 @@
-import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef, memo } from 'react';
+import { useState, useEffect, useCallback, useRef, useImperativeHandle, useMemo, forwardRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { Modal, message } from 'antd';
 import { listen } from '@tauri-apps/api/event';
-import { filesApi } from '../api';
+import { filesApi, workspacesApi } from '../api';
 import { useTerminalStore } from '../stores/terminalStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useThemeStore } from '../stores/themeStore';
+import { useFileTreeExpand, mergeTrees, normPath, type DirState } from './useFileTreeExpand';
 import type { FileTreeNode, FileChangedEvent } from '../api';
 
 const STORAGE_KEY = 'devhub_explorer_dirs';
+const EXPANDED_KEY = 'devhub_explorer_expanded';
 
-function loadDirs(): string[] {
+function loadDirsLocal(): string[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
   catch { return []; }
 }
 
-function saveDirs(dirs: string[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(dirs));
+function loadExpandedLocal(): string[] {
+  try { return JSON.parse(localStorage.getItem(EXPANDED_KEY) || '[]'); }
+  catch { return []; }
 }
 
 function dirLabel(path: string): string {
@@ -36,11 +39,11 @@ function formatModified(iso: string): string {
   return new Date(iso).toLocaleDateString('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-interface DirState {
-  path: string;
-  tree: FileTreeNode[];
-  expanded: Set<string>;
-  loading: boolean;
+/** Check if a path belongs to a directory (normalized comparison) */
+function isDirContainedIn(dirPath: string, targetPath: string): boolean {
+  const nd = normPath(dirPath);
+  const nt = normPath(targetPath);
+  return nt === nd || nt.startsWith(nd + '/');
 }
 
 // 剪贴板状态
@@ -54,23 +57,48 @@ interface Props {
   collapsed: boolean;
 }
 
+/** 深度优先遍历展开的文件树，返回所有可见文件路径（目录不包含在内） */
+function getVisibleFilePaths(dirs: DirState[]): string[] {
+  const result: string[] = [];
+  const walk = (nodes: FileTreeNode[], expanded: Set<string>) => {
+    for (const node of nodes) {
+      if (!node.isDir) result.push(node.path);
+      if (node.isDir && expanded.has(normPath(node.path)) && node.children) {
+        walk(node.children, expanded);
+      }
+    }
+  };
+  for (const dir of dirs) {
+    if (dir.expanded.has(normPath(dir.path)) && dir.tree.length > 0) {
+      walk(dir.tree, dir.expanded);
+    }
+  }
+  return result;
+}
+
 export interface FileExplorerHandle {
   openAddDirectory: () => void;
 }
 
 export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ collapsed }, ref) {
   const isDark = useThemeStore(s => s.mode === 'dark');
-  const [dirs, setDirs] = useState<DirState[]>([]);
+  const selectedFiles = useWorkspaceStore(s => s.selectedFiles);
+  const activeEditorFile = useWorkspaceStore(s => s.activeEditorFile);
+  const selectedFilesSet = useMemo(() => new Set(selectedFiles), [selectedFiles]);
   const [hoveredDir, setHoveredDir] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [inputPath, setInputPath] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const fetchingRef = useRef(new Set<string>());
   const loadedRef = useRef(false);
   const changeDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const suppressWatcherRef = useRef(new Set<string>());
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const expandState = useFileTreeExpand([], (expandedPaths) => {
+    workspacesApi.saveExplorerState(dirsRef.current.map(d => d.path), expandedPaths).catch(() => {});
+  });
+  const { dirs, toggleDir, loadChildren, refreshDir: hookRefreshDir, initRootTrees, updateDirs: setDirs } = expandState;
   const dirsRef = useRef(dirs);
   dirsRef.current = dirs;
 
@@ -92,50 +120,90 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
     openAddDirectory: () => setIsAdding(true),
   }));
 
-  // Persist dir list to localStorage whenever it changes
+  // Persist dir list: localStorage immediately, backend debounced
   useEffect(() => {
     if (!loadedRef.current) return;
-    saveDirs(dirs.map(d => d.path));
+    const paths = dirs.map(d => d.path);
+    const expandedList = [...new Set(dirs.flatMap(d => [...d.expanded]))];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(paths));
+    localStorage.setItem(EXPANDED_KEY, JSON.stringify(expandedList));
+    clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      workspacesApi.saveExplorerState(paths, expandedList).catch(() => {});
+    }, 500);
   }, [dirs]);
 
-  // Load dirs from localStorage on mount
+  // Load dirs from backend (fallback to localStorage) on mount
   useEffect(() => {
-    const saved = loadDirs();
-    if (saved.length === 0) {
-      loadedRef.current = true;
-      return;
-    }
-    const initial = saved.map(path => ({
-      path,
-      tree: [] as FileTreeNode[],
-      expanded: new Set<string>(),
-      loading: true,
-    }));
-    setDirs(initial);
-    // Fetch trees for all saved dirs in parallel, register watchers
-    initial.forEach(dir => {
-      fetchTree(dir.path);
-      filesApi.watcherAddRoot(dir.path).catch(() => {});
-    });
-    loadedRef.current = true;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    let cancelled = false;
 
-  const fetchTree = useCallback((path: string) => {
-    if (fetchingRef.current.has(path)) return;
-    fetchingRef.current.add(path);
-    filesApi.getTree(path, 3)
+    const initWithData = (paths: string[], expandedPaths: string[]) => {
+      if (cancelled || paths.length === 0) {
+        loadedRef.current = true;
+        return;
+      }
+      initRootTrees(
+        paths.map(p => ({ path: p })),
+        new Set(expandedPaths),
+        (rootPath) => fetchTree(rootPath),
+      );
+      paths.forEach(p => filesApi.watcherAddRoot(p).catch(() => {}));
+      loadedRef.current = true;
+    };
+
+    workspacesApi.loadExplorerState()
+      .then(state => {
+        if (state.paths.length > 0) {
+          initWithData(state.paths, state.expandedPaths);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state.paths));
+          localStorage.setItem(EXPANDED_KEY, JSON.stringify(state.expandedPaths));
+        } else {
+          const localPaths = loadDirsLocal();
+          const localExpanded = loadExpandedLocal();
+          if (localPaths.length > 0) {
+            workspacesApi.saveExplorerState(localPaths, localExpanded).catch(() => {});
+          }
+          initWithData(localPaths, localExpanded);
+        }
+      })
+      .catch(() => {
+        initWithData(loadDirsLocal(), loadExpandedLocal());
+      });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initRootTrees]);
+
+  const fetchTree = useCallback((path: string, depth?: number) => {
+    const np = normPath(path);
+    filesApi.getTree(np, depth ?? 1)
       .then(tree => {
-        setDirs(prev => prev.map(d =>
-          d.path === path ? { ...d, tree, loading: false } : d
-        ));
+        setDirs(prev => {
+          const updated = prev.map(d => {
+            if (normPath(d.path) !== np) return d;
+            const merged = mergeTrees(tree, d.tree, d.expanded);
+            return { ...d, tree: merged, loading: false };
+          });
+          // Auto-expand: queue lazy-load for expanded children that have no data yet
+          const dir = updated.find(d => normPath(d.path) === np);
+          if (dir) {
+            for (const node of dir.tree) {
+              if (!node.isDir) continue;
+              const nodeNp = normPath(node.path);
+              if (dir.expanded.has(nodeNp) && (!node.children || node.children.length === 0)) {
+                loadChildren(nodeNp);
+              }
+            }
+          }
+          return updated;
+        });
       })
       .catch(() => {
         setDirs(prev => prev.map(d =>
-          d.path === path ? { ...d, tree: [], loading: false } : d
+          normPath(d.path) === np ? { ...d, tree: [], loading: false } : d
         ));
-      })
-      .finally(() => { fetchingRef.current.delete(path); });
-  }, []);
+      });
+  }, [loadChildren]);
 
   // Listen for filesystem change events from backend watcher
   useEffect(() => {
@@ -151,11 +219,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       if (existing) clearTimeout(existing);
       const timer = setTimeout(() => {
         changeDebounceRef.current.delete(rootPath);
-        fetchingRef.current.delete(rootPath);
-        setDirs(prev => {
-          if (prev.some(d => d.path === rootPath)) fetchTree(rootPath);
-          return prev;
-        });
+        fetchTree(rootPath);
       }, 500);
       changeDebounceRef.current.set(rootPath, timer);
     });
@@ -222,8 +286,9 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
   const addDir = useCallback((path: string) => {
     const trimmed = path.trim();
     if (!trimmed) return;
+    const np = normPath(trimmed);
     setDirs(prev => {
-      if (prev.some(d => d.path === trimmed)) return prev;
+      if (prev.some(d => normPath(d.path) === np)) return prev;
       return [...prev, { path: trimmed, tree: [], expanded: new Set<string>(), loading: true }];
     });
     setInputPath('');
@@ -241,56 +306,27 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
   }, [addDir]);
 
   const removeDir = useCallback((path: string) => {
-    setDirs(prev => prev.filter(d => d.path !== path));
+    const np = normPath(path);
+    setDirs(prev => prev.filter(d => normPath(d.path) !== np));
     filesApi.watcherRemoveRoot(path).catch(() => {});
-  }, []);
-
-  const toggleDir = useCallback((path: string) => {
-    setDirs(prev => {
-      const idx = prev.findIndex(d =>
-        d.path === path ||
-        path.startsWith(d.path + '/') || path.startsWith(d.path + '\\')
-      );
-      if (idx < 0) return prev;
-      const dir = prev[idx];
-      // Early bailout: skip if toggle would be a no-op
-      if (dir.expanded.has(path) === false && dir.path !== path) {
-        // Expanding — always proceed
-      } else if (dir.expanded.has(path) && dir.path !== path) {
-        // Collapsing a subdirectory — proceed
-      } else if (dir.path === path && dir.expanded.size === 0) {
-        // Expanding root with no children yet — proceed
-      }
-      const next = new Set(dir.expanded);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      const updated = [...prev];
-      updated[idx] = { ...dir, expanded: next };
-      return updated;
-    });
   }, []);
 
   // 刷新指定目录
   const refreshDir = useCallback((path: string) => {
-    fetchingRef.current.delete(path);
-    setDirs(prev => prev.map(d => {
-      if (d.path === path || path.startsWith(d.path + '/') || path.startsWith(d.path + '\\')) {
-        return { ...d, tree: [], loading: true };
-      }
-      return d;
-    }));
-    // 找到根目录并刷新
-    setDirs(prev => {
-      const rootDir = prev.find(d =>
-        d.path === path || path.startsWith(d.path + '/') || path.startsWith(d.path + '\\')
-      );
-      if (rootDir) fetchTree(rootDir.path);
-      return prev;
-    });
-  }, [fetchTree]);
+    hookRefreshDir(path, fetchTree);
+  }, [hookRefreshDir, fetchTree]);
 
-  const selectFile = useCallback((path: string) => {
-    useWorkspaceStore.getState().selectFile(path);
+  const selectFile = useCallback((path: string, e?: React.MouseEvent) => {
+    const store = useWorkspaceStore.getState();
+    if (e?.shiftKey) {
+      const visiblePaths = getVisibleFilePaths(dirsRef.current);
+      store.selectFile(path, 'range', visiblePaths);
+    } else if (e?.ctrlKey || e?.metaKey) {
+      store.selectFile(path, 'toggle');
+    } else {
+      store.selectFile(path, 'single');
+      store.requestOpenFile(path);
+    }
   }, []);
 
   const handleMouseEnter = useCallback((path: string) => {
@@ -351,9 +387,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       message.success(`已创建 ${isDir ? '文件夹' : '文件'}`);
       // 找到根目录并刷新
       setDirs(prev => {
-        const rootDir = prev.find(d =>
-          d.path === path || path.startsWith(d.path + '/') || path.startsWith(d.path + '\\')
-        );
+        const rootDir = prev.find(d => isDirContainedIn(d.path, path));
         if (rootDir) {
           suppressWatcherRef.current.add(rootDir.path);
           fetchTree(rootDir.path);
@@ -383,9 +417,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       useWorkspaceStore.getState().setRenamedFile({ oldPath, newPath });
       // 找到根目录并刷新
       setDirs(prev => {
-        const rootDir = prev.find(d =>
-          d.path === oldPath || oldPath.startsWith(d.path + '/') || oldPath.startsWith(d.path + '\\')
-        );
+        const rootDir = prev.find(d => isDirContainedIn(d.path, oldPath));
         if (rootDir) {
           suppressWatcherRef.current.add(rootDir.path);
           fetchTree(rootDir.path);
@@ -398,33 +430,48 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
     setEditingPath(null);
   }, [fetchTree]);
 
-  // 删除
+  // 删除（支持批量：右键的文件在选中列表中时，删除所有选中文件）
   const handleDelete = useCallback((path: string, isDir: boolean) => {
-    const name = dirLabel(path);
+    const store = useWorkspaceStore.getState();
+    // 如果右键的文件在多选列表中且有多个，批量删除
+    const targets = store.selectedFiles.length > 1 && store.selectedFiles.includes(path)
+      ? store.selectedFiles
+      : [path];
+    const count = targets.length;
     const type = isDir ? '文件夹' : '文件';
+    const label = count > 1
+      ? `${count} 个文件`
+      : (isDir ? `文件夹 "${dirLabel(path)}"` : `文件 "${dirLabel(path)}"`);
     Modal.confirm({
-      title: `删除${type}`,
-      content: `确定要删除 "${name}" 吗？${isDir ? '文件夹内的所有内容都会被删除。' : ''}`,
+      title: `删除${count > 1 ? '' : type}`,
+      content: `确定要删除${label}吗？${count > 1 ? '部分可能是文件夹，其内容也会被删除。' : isDir ? '文件夹内的所有内容都会被删除。' : ''}`,
       okText: '删除',
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
-        try {
-          await filesApi.delete(path);
-          message.success(`已删除 ${type}`);
-          // 找到根目录并刷新
-          setDirs(prev => {
-            const rootDir = prev.find(d =>
-              d.path === path || path.startsWith(d.path + '/') || path.startsWith(d.path + '\\')
-            );
-            if (rootDir) {
-              suppressWatcherRef.current.add(rootDir.path);
-              fetchTree(rootDir.path);
-            }
-            return prev;
-          });
-        } catch (err) {
-          message.error(`删除失败: ${err}`);
+        let deleted = 0;
+        const rootsToRefresh = new Set<string>();
+        for (const target of targets) {
+          try {
+            await filesApi.delete(target);
+            deleted++;
+            const rootDir = dirsRef.current.find(d => isDirContainedIn(d.path, target));
+            if (rootDir) rootsToRefresh.add(rootDir.path);
+          } catch (err) {
+            message.error(`删除失败: ${target.split(/[/\\]/).pop()} — ${err}`);
+          }
+        }
+        if (deleted > 0) {
+          if (deleted < count) {
+            message.success(`已删除 ${deleted}/${count} 个`);
+          } else {
+            message.success(`已删除 ${deleted} 个${type}`);
+          }
+          store.clearSelection();
+          for (const root of rootsToRefresh) {
+            suppressWatcherRef.current.add(root);
+            fetchTree(root);
+          }
         }
       },
     });
@@ -468,18 +515,14 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       }
       // 刷新
       setDirs(prev => {
-        const rootDir = prev.find(d =>
-          d.path === targetDir || targetDir.startsWith(d.path + '/') || targetDir.startsWith(d.path + '\\')
-        );
+        const rootDir = prev.find(d => isDirContainedIn(d.path, targetDir));
         if (rootDir) {
           suppressWatcherRef.current.add(rootDir.path);
           fetchTree(rootDir.path);
         }
         // 如果是剪切，也需要刷新源目录
         if (clipboard.type === 'cut') {
-          const srcRoot = prev.find(d =>
-            d.path === clipboard.path || clipboard.path.startsWith(d.path + '/') || clipboard.path.startsWith(d.path + '\\')
-          );
+          const srcRoot = prev.find(d => isDirContainedIn(d.path, clipboard.path));
           if (srcRoot) {
             suppressWatcherRef.current.add(srcRoot.path);
             fetchTree(srcRoot.path);
@@ -503,9 +546,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       message.success(result.message);
       // 刷新目标目录
       setDirs(prev => {
-        const rootDir = prev.find(d =>
-          d.path === targetDir || targetDir.startsWith(d.path + '/') || targetDir.startsWith(d.path + '\\')
-        );
+        const rootDir = prev.find(d => isDirContainedIn(d.path, targetDir));
         if (rootDir) {
           suppressWatcherRef.current.add(rootDir.path);
           fetchTree(rootDir.path);
@@ -642,7 +683,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
             title={collapsed ? dirLabel(dir.path) : dir.path}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 16, flexShrink: 0 }}>
-              {dir.expanded.size > 0 ? 'folder_open' : 'folder'}
+              {dir.expanded.has(normPath(dir.path)) ? 'folder_open' : 'folder'}
             </span>
             {!collapsed && (
               <>
@@ -702,7 +743,7 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
           )}
 
           {/* Children */}
-          {!collapsed && dir.expanded.has(dir.path) && (
+          {!collapsed && dir.expanded.has(normPath(dir.path)) && (
             <div>
               {dir.loading && (
                 <span style={{ fontSize: 12, color: 'var(--md-outline-variant)', padding: '4px 28px', display: 'block' }}>
@@ -721,6 +762,8 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
                   depth={1}
                   collapsed={collapsed}
                   expanded={dir.expanded}
+                  selectedFiles={selectedFilesSet}
+                  activeEditorFile={activeEditorFile}
                   onToggle={toggleDir}
                   onSelectFile={selectFile}
                   onContextMenu={handleContextMenu}
@@ -959,6 +1002,8 @@ const TreeNode = memo(function TreeNode({
   depth,
   collapsed,
   expanded,
+  selectedFiles,
+  activeEditorFile,
   onToggle,
   onSelectFile,
   onContextMenu,
@@ -979,8 +1024,10 @@ const TreeNode = memo(function TreeNode({
   depth: number;
   collapsed: boolean;
   expanded: Set<string>;
+  selectedFiles: Set<string>;
+  activeEditorFile: string | null;
   onToggle: (path: string) => void;
-  onSelectFile: (path: string) => void;
+  onSelectFile: (path: string, e?: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isDir: boolean) => void;
   editingPath: string | null;
   editingValue: string;
@@ -996,15 +1043,16 @@ const TreeNode = memo(function TreeNode({
   onCreateCancel: () => void;
 }) {
   const isDark = useThemeStore(s => s.mode === 'dark');
-  const isExpanded = expanded.has(node.path);
+  const isExpanded = expanded.has(normPath(node.path));
   const showChildren = node.isDir && isExpanded && !collapsed;
+  const isSelected = !node.isDir && (selectedFiles.has(node.path) || node.path === activeEditorFile);
   const icon = node.isDir
     ? (isExpanded ? 'folder_open' : 'folder')
     : fileIcon(node.extension);
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
     if (node.isDir) onToggle(node.path);
-    else onSelectFile(node.path);
+    else onSelectFile(node.path, e);
   };
 
   const isEditing = editingPath === node.path;
@@ -1028,12 +1076,13 @@ const TreeNode = memo(function TreeNode({
           fontFamily: 'var(--font-mono)',
           fontSize: 12,
           lineHeight: '16px',
-          color: 'var(--md-on-surface-variant)',
-          background: 'transparent',
+          color: isSelected ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
+          background: isSelected ? 'var(--md-primary-container)' : 'transparent',
           transition: 'background 0.15s',
+          userSelect: 'none',
         }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
+        onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
       >
         <span className="material-symbols-outlined" style={{ fontSize: 16, flexShrink: 0 }}>{icon}</span>
         {!collapsed && (
@@ -1132,6 +1181,8 @@ const TreeNode = memo(function TreeNode({
           depth={depth + 1}
           collapsed={collapsed}
           expanded={expanded}
+          selectedFiles={selectedFiles}
+          activeEditorFile={activeEditorFile}
           onToggle={onToggle}
           onSelectFile={onSelectFile}
           onContextMenu={onContextMenu}

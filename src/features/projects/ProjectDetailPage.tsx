@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Button, Skeleton, Empty, message } from 'antd';
 import { ArrowLeftOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined } from '@ant-design/icons';
 import { useProject, useRefreshProject } from '../../hooks/useProjects';
-import type { ProjectDetail, RemoteRepo } from '../../types';
 import ConfigTab from './tabs/ConfigTab';
 import TasksTab from './tabs/TasksTab';
 import MilestonesTab from './tabs/MilestonesTab';
@@ -102,9 +101,8 @@ export default function ProjectDetailPage() {
     </div>
   );
 
-  const p = project as ProjectDetail & Record<string, unknown>;
-  const remoteRepos = (p.remoteRepos || []) as RemoteRepo[];
-  const count = (p._count || {}) as Record<string, number>;
+  const remoteRepos = project.remoteRepos || [];
+  const count = project._count || {};
 
   return (
     <div style={{ padding: 'var(--space-8) var(--layout-container-padding)', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>

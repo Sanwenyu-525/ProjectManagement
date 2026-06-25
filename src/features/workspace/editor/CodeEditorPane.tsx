@@ -87,6 +87,12 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
+  // Reverse sync: tell explorer which file is active in the editor
+  useEffect(() => {
+    const activeFile = activeId ? filesRef.current.find(f => f.id === activeId) : null;
+    useWorkspaceStore.getState().setActiveEditorFile(activeFile?.path ?? null);
+  }, [activeId]);
+
   // Index-based update on every keystroke — only clones 1 file, not all
   const handleChange = useCallback((value: string) => {
     setFiles(prev => {
@@ -155,7 +161,9 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
         changes: { from: 0, to: view.state.doc.length, insert: activeFile.content },
       });
     }
-  }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Only re-run on tab switch; activeFile.content changes are handled by handleChange
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   // Load project files from backend
   useEffect(() => {
@@ -177,25 +185,26 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
         message.warning('无法自动加载项目文件');
       });
     }).finally(() => setLoading(false));
-  }, [projectRoot]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectRoot]);
 
-  // Open file selected from FileExplorer sidebar — consume-and-clear pattern
-  const selectedFile = useWorkspaceStore(s => s.selectedFile);
+  // Open file requested from FileExplorer sidebar
+  const fileToOpen = useWorkspaceStore(s => s.fileToOpen);
   const renamedFile = useWorkspaceStore(s => s.renamedFile);
   useEffect(() => {
-    if (!selectedFile) return;
+    if (!fileToOpen) return;
     // Already open? just activate it
-    const existing = filesRef.current.find(f => f.path === selectedFile);
+    const existing = filesRef.current.find(f => f.path === fileToOpen);
     if (existing) {
       setActiveId(existing.id);
     } else {
-      openFile(selectedFile).catch(e => {
+      openFile(fileToOpen).catch(e => {
         message.error(`Failed to open: ${e}`);
       });
     }
-    // Clear after consumption so re-selecting the same file works
-    useWorkspaceStore.getState().selectFile(null);
-  }, [selectedFile, openFile]);
+    // Clear the open request only — selection is managed separately
+    useWorkspaceStore.getState().requestOpenFile(null);
+  }, [fileToOpen, openFile]);
 
   // Sync file path when FileExplorer renames a file — consume-and-clear
   useEffect(() => {

@@ -6,6 +6,7 @@ import { SettingOutlined } from '@ant-design/icons';
 import SearchBox from './components/SearchBox';
 import ShortcutsModal from './ShortcutsModal';
 import { useThemeStore } from '../stores/themeStore';
+import { COMMANDS, matchesShortcut, setCommandNavigate, setToggleFilePanel } from '../lib/commands';
 import type { FileExplorerHandle } from './FileExplorer';
 
 // Lazy-load heavy components — only needed when panels are open
@@ -15,10 +16,10 @@ const WorkspacePage = lazy(() => import('../features/workspace/WorkspacePage'));
 
 const navItems = [
   { key: '/workspace', icon: 'smart_toy', label: '工作区' },
-  { key: '/projects', icon: 'work', label: '项目' },
+  { key: '__file-explorer', icon: 'folder', label: '文件浏览器' },
+  { key: '/projects', icon: 'dashboard', label: '项目' },
   { key: '/timeline', icon: 'calendar_month', label: '时间线' },
   { key: '/data-screen', icon: 'monitoring', label: '数据大屏' },
-  { key: '__file-explorer', icon: 'folder', label: '文件浏览器' },
   { key: '/knowledge', icon: 'menu_book', label: '知识库' },
   { key: '/graph', icon: 'hub', label: '图谱' },
 ];
@@ -34,49 +35,39 @@ export default function MainLayout() {
   const toggleShortcutsModal = useThemeStore(s => s.toggleShortcutsModal);
   const setShortcutsModalOpen = useThemeStore(s => s.setShortcutsModalOpen);
 
-  // Global keyboard shortcuts
+  // Register navigate bridge for command palette
+  useEffect(() => {
+    setCommandNavigate(navigate);
+  }, [navigate]);
+
+  // Register file panel toggle bridge
+  useEffect(() => {
+    setToggleFilePanel(() => setFilePanelOpen(prev => !prev));
+  }, []);
+
+  // Global keyboard shortcuts — ? handled locally, Ctrl+ via command registry
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // ? — open shortcuts panel (skip if in input)
       const tag = (e.target as HTMLElement).tagName;
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
-
-      // ? — open shortcuts panel (skip if in input)
       if (e.key === '?' && !e.ctrlKey && !e.metaKey && !isInput) {
         e.preventDefault();
         toggleShortcutsModal();
         return;
       }
-      // Ctrl+B — toggle file explorer
-      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-        e.preventDefault();
-        setFilePanelOpen(prev => !prev);
-        return;
-      }
-      // Ctrl+N — new project
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault();
-        navigate('/projects?new=true');
-        return;
-      }
-      // Ctrl+D — cycle density (skip if in input)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'd' && !e.shiftKey && !isInput) {
-        e.preventDefault();
-        const order = ['comfortable', 'compact', 'dense'] as const;
-        const current = useThemeStore.getState().density;
-        const next = order[(order.indexOf(current) + 1) % 3];
-        useThemeStore.getState().setDensity(next);
-        return;
-      }
-      // Ctrl+Shift+D — toggle dark mode (skip if in input)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'D' && e.shiftKey && !isInput) {
-        e.preventDefault();
-        useThemeStore.getState().toggle();
-        return;
+      // Ctrl+ shortcuts via command registry
+      for (const cmd of COMMANDS) {
+        if (cmd.keys && matchesShortcut(e, cmd)) {
+          e.preventDefault();
+          cmd.action();
+          return;
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigate]);
+  }, [navigate, toggleShortcutsModal]);
 
   // Auto-collapse file panel on narrow viewports to prevent covering content
   useEffect(() => {
@@ -144,8 +135,11 @@ export default function MainLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [filePanelOpen]);
 
-  const railW = 52;
-  const [filePanelWidth, setFilePanelWidth] = useState(220);
+  const railW = 48;
+  const [filePanelWidth, setFilePanelWidth] = useState(() => {
+    const stored = localStorage.getItem('devhub_filePanelWidth');
+    return stored ? Math.min(500, Math.max(160, Number(stored))) : 220;
+  });
   const [filePanelHover, setFilePanelHover] = useState(false);
   const [filePanelDragging, setFilePanelDragging] = useState(false);
   const filePanelW = filePanelOpen ? filePanelWidth : 0;
@@ -156,13 +150,17 @@ export default function MainLayout() {
     setFilePanelDragging(true);
     const startX = e.clientX;
     const startWidth = filePanelWidth;
+    const widthRef = { current: filePanelWidth };
 
     const onMouseMove = (ev: MouseEvent) => {
       const delta = ev.clientX - startX;
-      setFilePanelWidth(Math.min(500, Math.max(160, startWidth + delta)));
+      const newWidth = Math.min(500, Math.max(160, startWidth + delta));
+      widthRef.current = newWidth;
+      setFilePanelWidth(newWidth);
     };
     const onMouseUp = () => {
       setFilePanelDragging(false);
+      localStorage.setItem('devhub_filePanelWidth', String(widthRef.current));
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -582,7 +580,7 @@ export default function MainLayout() {
                   width: '100%', height: '100%',
                   background: 'linear-gradient(135deg, var(--md-primary), var(--md-primary-container))',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#fff', fontSize: 11, fontWeight: 700,
+                  color: 'var(--md-on-primary)', fontSize: 11, fontWeight: 700,
                 }}>D</div>
               </button>
             </Dropdown>
