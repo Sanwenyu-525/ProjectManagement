@@ -1,41 +1,51 @@
-import { useState, useEffect, useCallback, useRef, useMemo, Suspense, lazy } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useThemeStore } from '../../stores/themeStore';
 import { useTerminalStore } from '../../stores/terminalStore';
-import { usePreviewStore } from '../../stores/previewStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useAgentTabStore } from '../../stores/agentTabStore';
 import { useAgentPlanStore } from '../../stores/agentPlanStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import { terminalApi, sessionsApi, gitApi, workspacesApi } from '../../api';
+import { sessionsApi, gitApi, workspacesApi, networkApi } from '../../api';
 import { queryKeys } from '../../api/queryKeys';
-import type { TerminalExitEvent, TerminalOutputEvent } from '../../shared/terminalTypes';
+import { usePreviewStore } from '../../stores/previewStore';
 import AgentTabBar from './agent/AgentTabBar';
 import AgentTerminal from './agent/AgentTerminal';
-import { DEFAULT_SHELL, SHELL_MAP } from '../../lib/constants';
 import { folderName } from './components/terminalFactory';
+import { useLaunchQueue } from './hooks/useLaunchQueue';
+import { useTerminalEvents } from './hooks/useTerminalEvents';
+import { styles } from './WorkspacePage.styles';
 
 // Lazy-load heavy components — only needed when editor/terminal/right-panel are open
 const CodeEditorPane = lazy(() => import('./editor/CodeEditorPane'));
+const PreviewPane = lazy(() => import('./editor/PreviewPane'));
 const BottomPanel = lazy(() => import('./terminal/BottomPanel'));
 const AgentRightPanel = lazy(() => import('./agent/AgentRightPanel'));
 
 let staleSessionsCleanedUp = false; // Run cleanupStale only once per app session
 
-// Regex patterns for detecting dev server URLs in terminal output
-const URL_PATTERNS = [
-  /Local:\s+(https?:\/\/[^\s]+)/,
-  /- Local:\s+(https?:\/\/[^\s]+)/,
-  /Network:\s+(https?:\/\/[^\s]+)/,
-  /(https?:\/\/localhost:\d+[^\s]*)/,
-];
-
 export default function WorkspacePage() {
-  const launchQueueLength = useTerminalStore(s => s.launchQueue.length);
   const tabs = useAgentTabStore(s => s.tabs);
   const activeTabId = useAgentTabStore(s => s.activeTabId);
   const addTab = useAgentTabStore(s => s.addTab);
+
+  useLaunchQueue();
+  useTerminalEvents();
+
+  // Port scan polling — detect external dev servers every 15s
+  useEffect(() => {
+    const scan = async () => {
+      try {
+        const activePorts = await networkApi.scanActivePorts();
+        for (const port of activePorts) {
+          usePreviewStore.getState().addPreview(`http://localhost:${port}`, 'port-scan');
+        }
+      } catch { /* ignore scan errors */ }
+    };
+    scan();
+    const id = setInterval(scan, 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Defer non-critical queries to let first paint complete
   const [deferredReady, setDeferredReady] = useState(false);
@@ -98,6 +108,17 @@ export default function WorkspacePage() {
   // Terminal expand/collapse state
   const [terminalExpanded, setTerminalExpanded] = useState(false);
 
+  // Preview panel state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previews = usePreviewStore(s => s.previews);
+  const prevPreviewCount = useRef(previews.length);
+  useEffect(() => {
+    if (previews.length > 0 && prevPreviewCount.current === 0) {
+      setPreviewOpen(true);
+    }
+    prevPreviewCount.current = previews.length;
+  }, [previews.length]);
+
   // Agent ↔ Editor split ratio (0.2 – 0.8)
   const [splitRatio, setSplitRatio] = useState(0.5);
 
@@ -123,12 +144,12 @@ export default function WorkspacePage() {
 
   // Close a tab — the AgentTerminal handles its own cleanup via unmount
   const handleTabClose = useCallback((tabId: string) => {
-    const tab = tabs.find(t => t.id === tabId);
+    const tab = useAgentTabStore.getState().tabs.find(t => t.id === tabId);
     if (tab?.sessionId) {
       sessionsApi.end(tab.sessionId).catch(() => {});
     }
     useAgentTabStore.getState().closeTab(tabId);
-  }, [tabs]);
+  }, []);
 
   // Auto-create a tab when none is active
   useEffect(() => {
@@ -157,89 +178,12 @@ export default function WorkspacePage() {
     window.addEventListener('mouseup', onMouseUp);
   }, [splitRatio]);
 
-  // Process launch queue from project pages
-  const processingRef = useRef(false);
-  useEffect(() => {
-    if (launchQueueLength === 0) return;
-    if (processingRef.current) return;
-    processingRef.current = true;
-
-    const process = async () => {
-      let req = useTerminalStore.getState().consumeLaunchRequest();
-      while (req) {
-        const state = useTerminalStore.getState();
-        if (state.terminals.length >= 10) break;
-
-        const id = `global-${Math.random().toString(36).slice(2, 10)}`;
-        try {
-          const shellPref = localStorage.getItem('devhub_terminal_shell') || DEFAULT_SHELL;
-          const cfg = SHELL_MAP[shellPref] || SHELL_MAP[DEFAULT_SHELL];
-
-          const newTerminal = {
-            id,
-            label: req.label || folderName(req.cwd || state.defaultCwd),
-            createdAt: new Date(),
-            shell: cfg.shell,
-            cwd: req.cwd || state.defaultCwd,
-            status: 'running' as const,
-            projectId: req.projectId || null,
-            groupId: null,
-            pane: 'left' as const,
-          };
-
-          await terminalApi.startShell(id, cfg.shell, newTerminal.cwd, cfg.args);
-          state.addTerminal(newTerminal);
-
-          if (req.command) {
-            await terminalApi.input(id, req.command + '\r');
-          }
-        } catch (e) {
-          console.error('Failed to create terminal from launch queue:', e);
-        }
-
-        req = useTerminalStore.getState().consumeLaunchRequest();
-      }
-      processingRef.current = false;
-    };
-
-    process();
-  }, [launchQueueLength]);
-
-  // Listen for terminal events (exit + URL detection)
-  const urlLastSeenRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const unlistenExit = listen<TerminalExitEvent>('terminal-exit', (event) => {
-      const { terminalId, code } = event.payload;
-      if (terminalId.startsWith('agent-')) return;
-      useTerminalStore.getState().updateTerminal(terminalId, { status: code === 0 ? 'exited' : 'error' });
-      usePreviewStore.getState().removePreviewsByTerminal(terminalId);
-    }).catch(() => {});
-
-    const unlistenOutput = listen<TerminalOutputEvent>('terminal-output', (event) => {
-      const { data, terminalId } = event.payload;
-      if (!data.includes('http')) return;
-      for (const pattern of URL_PATTERNS) {
-        const match = data.match(pattern);
-        if (match) {
-          const url = match[1] || match[0];
-          if (urlLastSeenRef.current.has(url)) break;
-          urlLastSeenRef.current.add(url);
-          usePreviewStore.getState().addPreview(url, terminalId);
-          break;
-        }
-      }
-    }).catch(() => {});
-
-    return () => {
-      unlistenExit.then(fn => fn?.());
-      unlistenOutput.then(fn => fn?.());
-    };
-  }, []);
-
   // Editor panel state
   const editorOpen = useWorkspaceStore(s => s.editorOpen);
   const setEditorOpen = useWorkspaceStore(s => s.setEditorOpen);
   const selectedFile = useWorkspaceStore(s => s.fileToOpen);
+  const pendingAgentMsg = useWorkspaceStore(s => s.pendingAgentMessage);
+  const setPendingAgentMsg = useWorkspaceStore(s => s.setPendingAgentMessage);
 
   // Open editor when a file is requested from FileExplorer
   useEffect(() => {
@@ -247,6 +191,18 @@ export default function WorkspacePage() {
       setEditorOpen(true);
     }
   }, [selectedFile, setEditorOpen]);
+
+  // Send pending agent message when arriving from another page
+  useEffect(() => {
+    if (pendingAgentMsg) {
+      // Clear immediately to avoid re-sending
+      setPendingAgentMsg(null);
+      // Dispatch to agent terminal via custom event
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('agentQuickCommand', { detail: pendingAgentMsg + '\n' }));
+      }, 500);
+    }
+  }, [pendingAgentMsg, setPendingAgentMsg]);
 
   // Reset planMode when plan execution completes
   const planModeState = useAgentPlanStore(s => s.mode);
@@ -320,12 +276,52 @@ export default function WorkspacePage() {
             </>
           )}
 
+          {/* Effective cwd path */}
+          <span
+            style={{
+              fontSize: isCompact ? 10 : 'var(--text-xs)',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--md-on-surface-variant)',
+              maxWidth: 160,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+            title={effectiveCwd}
+          >
+            {folderName(effectiveCwd)}
+          </span>
+
           {/* Agent status */}
           <div style={{
             ...styles.summaryStatus,
             marginLeft: isCompact ? 0 : 'auto',
             gap: isCompact ? 4 : 6,
           }}>
+            <div
+              role="button"
+              aria-label="切换预览面板"
+              tabIndex={0}
+              onClick={() => setPreviewOpen(v => !v)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPreviewOpen(v => !v); } }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+                cursor: 'pointer',
+                background: previewOpen ? 'var(--md-primary-container, #e8def8)' : 'transparent',
+                color: previewOpen ? 'var(--md-on-primary-container, #1d192b)' : 'var(--md-on-surface-variant)',
+                border: 'none',
+                transition: 'all 0.15s',
+              }}
+              title={previewOpen ? '关闭预览' : '打开预览'}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>language</span>
+            </div>
             <div style={{
               width: isCompact ? 5 : 8,
               height: isCompact ? 5 : 8,
@@ -349,7 +345,7 @@ export default function WorkspacePage() {
           <div style={styles.agentSplit}>
             {/* Editor panel (left) */}
             {editorOpen && (
-              <div style={{ ...styles.editorPane, flex: `0 0 ${splitRatio * 100}%` }}>
+              <div style={{ ...styles.editorPane, flex: `0 0 ${splitRatio * (previewOpen ? 55 : 100)}%` }}>
                 <div style={styles.editorHeader}>
                   <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--md-on-surface)', fontFamily: 'var(--font-sans)' }}>
                     Editor
@@ -368,7 +364,7 @@ export default function WorkspacePage() {
               </div>
             )}
 
-            {/* Draggable divider */}
+            {/* Draggable divider — editor | preview/chat */}
             {editorOpen && (
               <div
                 className="resize-divider"
@@ -410,10 +406,44 @@ export default function WorkspacePage() {
               </div>
             )}
 
+            {/* Preview panel (middle) */}
+            {previewOpen && (
+              <>
+                <div style={{
+                  ...styles.editorPane,
+                  flex: editorOpen ? '0 0 45%' : '0 0 45%',
+                }}>
+                  <div style={styles.editorHeader}>
+                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--md-on-surface)', fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>language</span>
+                      Preview
+                    </span>
+                    <span
+                      className="material-symbols-outlined"
+                      role="button"
+                      aria-label="关闭预览"
+                      onClick={() => setPreviewOpen(false)}
+                      style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 8, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >close</span>
+                  </div>
+                  <Suspense fallback={<div style={styles.loadingFallback} role="status"><div className="skeleton" style={{ width: '60%', height: 16 }} /></div>}>
+                    <PreviewPane />
+                  </Suspense>
+                </div>
+                {/* Divider between preview and chat */}
+                <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', flexShrink: 0 }} />
+              </>
+            )}
+
             {/* Chat / Idle area (right) */}
             <div style={{
               ...styles.agentPane,
-              flex: editorOpen ? `0 0 ${(1 - splitRatio) * 100}%` : '1 1 100%',
+              flex: (() => {
+                if (editorOpen && previewOpen) return '1 1 0';
+                if (editorOpen) return `0 0 ${(1 - splitRatio) * 100}%`;
+                if (previewOpen) return '1 1 0';
+                return '1 1 100%';
+              })(),
             }}>
               <AgentTabBar onCloseTab={handleTabClose} />
               {tabs.map(tab => (
@@ -437,45 +467,50 @@ export default function WorkspacePage() {
           </div>
         </div>
 
-        {/* Floating terminal toggle — sits at bottom-right of agent area */}
-        <div
-          role="button"
-          aria-label={terminalExpanded ? '收起终端' : '展开终端'}
-          tabIndex={0}
-          onClick={() => setTerminalExpanded(v => !v)}
-          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTerminalExpanded(v => !v); } }}
-          style={{
-            position: 'absolute',
-            bottom: 6,
-            right: 6,
-            width: 28,
-            height: 28,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 6,
-            cursor: 'pointer',
-            background: 'transparent',
-            color: 'var(--md-on-surface-variant)',
-            border: 'none',
-            transition: 'color 0.15s',
-            zIndex: 10,
-          }}
-          title={terminalExpanded ? '收起终端' : '展开终端'}
-          onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-primary)'; }}
-          onMouseLeave={e => { e.currentTarget.style.color = 'var(--md-on-surface-variant)'; }}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>terminal</span>
-        </div>
-
-        {/* Expanded terminal */}
-        {terminalExpanded && (
-          <div style={styles.terminalExpanded}>
-            <Suspense fallback={<div style={styles.loadingFallback} role="status"><div className="skeleton" style={{ width: '40%', height: 16 }} /></div>}>
-              <BottomPanel defaultHeight={240} />
-            </Suspense>
+        {/* Floating terminal toggle — only visible when terminal is collapsed */}
+        {!terminalExpanded && (
+          <div
+            role="button"
+            aria-label="展开终端"
+            tabIndex={0}
+            onClick={() => setTerminalExpanded(true)}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTerminalExpanded(true); } }}
+            style={{
+              position: 'absolute',
+              bottom: 6,
+              right: 6,
+              width: 28,
+              height: 28,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 6,
+              cursor: 'pointer',
+              background: 'transparent',
+              color: 'var(--md-on-surface-variant)',
+              border: 'none',
+              transition: 'color 0.15s',
+              zIndex: 10,
+            }}
+            title="展开终端"
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-primary)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--md-on-surface-variant)'; }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>terminal</span>
           </div>
         )}
+
+        {/* Bottom terminal panel — always mounted, hidden via display:none */}
+        <div style={{ ...styles.terminalExpanded, display: terminalExpanded ? 'block' : 'none' }}>
+          <Suspense fallback={<div style={styles.loadingFallback} role="status"><div className="skeleton" style={{ width: '40%', height: 16 }} /></div>}>
+            <BottomPanel
+              defaultHeight={240}
+              cwd={effectiveCwd}
+              visible={terminalExpanded}
+              onToggleTerminal={() => setTerminalExpanded(false)}
+            />
+          </Suspense>
+        </div>
       </div>
 
       {/* Plan/Right panel */}
@@ -487,105 +522,3 @@ export default function WorkspacePage() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    width: '100%',
-    flex: 1,
-    minHeight: 0,
-    background: 'var(--color-bg-content)',
-    overflow: 'hidden',
-  },
-  mainRow: {
-    display: 'flex',
-    flex: 1,
-    minHeight: 0,
-    overflow: 'hidden',
-  },
-  agentArea: {
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 1,
-    minHeight: 0,
-    minWidth: 0,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  summaryBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-4)',
-    height: 52,
-    padding: '0 var(--space-5)',
-    borderBottom: '1px solid var(--color-divider)',
-    flexShrink: 0,
-  },
-  projectName: {
-    fontSize: 'var(--text-base)',
-    fontWeight: 600,
-    color: 'var(--md-on-surface)',
-    fontFamily: 'var(--font-sans)',
-  },
-  summaryStats: {
-    display: 'flex',
-    gap: 'var(--space-4)',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--md-on-surface-variant)',
-    fontFamily: 'var(--font-sans)',
-  },
-  summaryStatus: {
-    marginLeft: 'auto',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  },
-  agentContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 1,
-    minHeight: 0,
-    overflow: 'hidden',
-  },
-  agentSplit: {
-    display: 'flex',
-    flex: 1,
-    minHeight: 0,
-    gap: 0,
-  },
-  agentPane: {
-    display: 'flex',
-    flexDirection: 'column',
-    minHeight: 0,
-    minWidth: 0,
-    overflow: 'hidden',
-  },
-  editorPane: {
-    display: 'flex',
-    flexDirection: 'column',
-    minWidth: 0,
-    overflow: 'hidden',
-  },
-  editorHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '6px 12px',
-    borderBottom: '1px solid var(--color-divider)',
-    flexShrink: 0,
-    background: 'var(--md-surface-container-low)',
-  },
-  terminalExpanded: {
-    flexShrink: 0,
-  },
-  loadingFallback: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    fontSize: 'var(--text-sm)',
-    color: 'var(--md-on-surface-variant)',
-    fontFamily: 'var(--font-sans)',
-  },
-};

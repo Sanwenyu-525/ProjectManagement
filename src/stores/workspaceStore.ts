@@ -22,6 +22,18 @@ interface WorkspaceStore {
   // File rename notification (consumed by CodeEditorPane)
   renamedFile: { oldPath: string; newPath: string } | null;
   setRenamedFile: (v: { oldPath: string; newPath: string } | null) => void;
+
+  // File delete notification (consumed by CodeEditorPane to close stale tabs)
+  deletedFiles: string[];
+  setDeletedFiles: (paths: string[]) => void;
+
+  // Preview open request (consumed by CodeEditorPane)
+  previewToOpen: string | null;
+  requestOpenPreview: (url: string | null) => void;
+
+  // Pending message for Agent (consumed by WorkspacePage to auto-send)
+  pendingAgentMessage: string | null;
+  setPendingAgentMessage: (msg: string | null) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
@@ -72,4 +84,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
 
   renamedFile: null,
   setRenamedFile: (v) => set({ renamedFile: v }),
+
+  deletedFiles: [],
+  setDeletedFiles: (paths) => set({ deletedFiles: paths }),
+
+  previewToOpen: null,
+  requestOpenPreview: (url) => set({ previewToOpen: url }),
+
+  pendingAgentMessage: null,
+  setPendingAgentMessage: (msg) => set({ pendingAgentMessage: msg }),
 }));

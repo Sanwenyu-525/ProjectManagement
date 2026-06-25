@@ -1,20 +1,26 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Statistic, message, Spin } from 'antd';
-import { ThunderboltOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, FolderOpenOutlined, RobotOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import { getThemeColors } from '../../../lib/themeColors';
+import { useWorkspaceStore } from '../../../stores/workspaceStore';
 import { useComputeImpact } from '../../../hooks/useProjects';
 import { buildImpactOption } from './graphLayouts';
-import type { GraphData, ImpactResult } from '../../../types';
+import type { GraphData, ImpactResult, Project } from '../../../types';
 
 interface ImpactViewProps {
   graphData: GraphData;
   projectId: string;
+  project?: Project;
 }
 
-export default function ImpactView({ graphData, projectId }: ImpactViewProps) {
+export default function ImpactView({ graphData, projectId, project }: ImpactViewProps) {
   const tc = getThemeColors();
+  const navigate = useNavigate();
   const impactMutation = useComputeImpact(projectId);
+  const requestOpenFile = useWorkspaceStore(s => s.requestOpenFile);
+  const setPendingAgentMsg = useWorkspaceStore(s => s.setPendingAgentMessage);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [impactResult, setImpactResult] = useState<ImpactResult | null>(null);
 
@@ -144,6 +150,51 @@ export default function ImpactView({ graphData, projectId }: ImpactViewProps) {
             suffix="层"
           />
           <div style={{ flex: 1 }} />
+          {/* Action buttons for selected nodes */}
+          {selectedNodeIds.size === 1 && (() => {
+            const selectedId = Array.from(selectedNodeIds)[0];
+            const node = graphData.nodes.find(n => n.id === selectedId);
+            const fp = node?.filePath;
+            return fp ? (
+              <>
+                <div
+                  onClick={() => {
+                    const fullPath = project?.localPath ? `${project.localPath}/${fp}` : fp;
+                    requestOpenFile(fullPath);
+                    navigate('/');
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '4px 10px', borderRadius: 6,
+                    border: `1px solid ${tc.border}`,
+                    cursor: 'pointer', fontSize: 12, color: tc.text,
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = tc.primaryBg || 'rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <FolderOpenOutlined style={{ fontSize: 12 }} /> 打开文件
+                </div>
+                <div
+                  onClick={() => {
+                    setPendingAgentMsg(`分析这个文件的代码，给出架构分析和改进建议：${fp}`);
+                    navigate('/');
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '4px 10px', borderRadius: 6,
+                    border: `1px solid ${tc.border}`,
+                    cursor: 'pointer', fontSize: 12, color: tc.text,
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = tc.primaryBg || 'rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <RobotOutlined style={{ fontSize: 12 }} /> 交给 Agent
+                </div>
+              </>
+            ) : null;
+          })()}
           <span
             style={{ fontSize: 12, color: tc.textSecondary, cursor: 'pointer' }}
             onClick={() => {

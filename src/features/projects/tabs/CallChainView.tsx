@@ -1,23 +1,34 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Select, Statistic, Spin } from 'antd';
-import { BranchesOutlined, SwapOutlined } from '@ant-design/icons';
+import { BranchesOutlined, SwapOutlined, FolderOpenOutlined, RobotOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import { getThemeColors } from '../../../lib/themeColors';
+import { useWorkspaceStore } from '../../../stores/workspaceStore';
 import { useTraceChain } from '../../../hooks/useProjects';
 import { buildChainOption } from './graphLayouts';
-import type { GraphData, ChainResult } from '../../../types';
+import type { GraphData, ChainResult, Project } from '../../../types';
 
 interface CallChainViewProps {
   graphData: GraphData;
   projectId: string;
+  project?: Project;
 }
 
-export default function CallChainView({ graphData, projectId }: CallChainViewProps) {
+export default function CallChainView({ graphData, projectId, project }: CallChainViewProps) {
   const tc = getThemeColors();
+  const navigate = useNavigate();
   const chainMutation = useTraceChain(projectId);
+  const requestOpenFile = useWorkspaceStore(s => s.requestOpenFile);
+  const setPendingAgentMsg = useWorkspaceStore(s => s.setPendingAgentMessage);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
   const [chainResult, setChainResult] = useState<ChainResult | null>(null);
+
+  const selectedFilePath = useMemo(() => {
+    if (!selectedNodeId) return null;
+    return graphData.nodes.find(n => n.id === selectedNodeId)?.filePath || null;
+  }, [selectedNodeId, graphData]);
 
   const nodeOptions = useMemo(() =>
     graphData.nodes
@@ -106,6 +117,46 @@ export default function CallChainView({ graphData, projectId }: CallChainViewPro
               value={chainResult.maxDepth}
               valueStyle={{ fontSize: 14 }}
             />
+          </>
+        )}
+        <div style={{ flex: 1 }} />
+        {selectedFilePath && (
+          <>
+            <div
+              onClick={() => {
+                const fullPath = project?.localPath ? `${project.localPath}/${selectedFilePath}` : selectedFilePath;
+                requestOpenFile(fullPath);
+                navigate('/');
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '4px 10px', borderRadius: 6,
+                border: `1px solid ${tc.border}`,
+                cursor: 'pointer', fontSize: 12, color: tc.text,
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = tc.primaryBg || 'rgba(0,0,0,0.04)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <FolderOpenOutlined style={{ fontSize: 12 }} /> 打开文件
+            </div>
+            <div
+              onClick={() => {
+                setPendingAgentMsg(`分析这个文件的代码，给出架构分析和改进建议：${selectedFilePath}`);
+                navigate('/');
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '4px 10px', borderRadius: 6,
+                border: `1px solid ${tc.border}`,
+                cursor: 'pointer', fontSize: 12, color: tc.text,
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = tc.primaryBg || 'rgba(0,0,0,0.04)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <RobotOutlined style={{ fontSize: 12 }} /> 交给 Agent
+            </div>
           </>
         )}
       </div>

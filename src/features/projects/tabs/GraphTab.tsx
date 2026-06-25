@@ -309,11 +309,11 @@ export default function GraphTab({ projectId }: { projectId: string }) {
           onModuleSelect={setSelectedModuleIdx}
         />
       ) : viewMode === 'impact' ? (
-        <ImpactView graphData={graphData} projectId={projectId} />
+        <ImpactView graphData={graphData} projectId={projectId} project={project} />
       ) : viewMode === 'callchain' ? (
-        <CallChainView graphData={graphData} projectId={projectId} />
+        <CallChainView graphData={graphData} projectId={projectId} project={project} />
       ) : viewMode === 'architecture' ? (
-        <LayersView graphData={graphData} layerResult={layerResult} isLoading={layersLoading} />
+        <LayersView graphData={graphData} layerResult={layerResult} isLoading={layersLoading} project={project} />
       ) : (
         <div style={{ display: 'flex', flex: 1, minHeight: 400, gap: 0 }}>
           {/* Graph */}

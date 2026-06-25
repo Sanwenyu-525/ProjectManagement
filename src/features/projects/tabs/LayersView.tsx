@@ -4,15 +4,16 @@ import { WarningOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { getThemeColors } from '../../../lib/themeColors';
 import { buildLayersOption } from './graphLayouts';
-import type { GraphData, LayerResult } from '../../../types';
+import type { GraphData, LayerResult, Project } from '../../../types';
 
 interface LayersViewProps {
   graphData: GraphData;
   layerResult: LayerResult | undefined;
   isLoading: boolean;
+  project?: Project;
 }
 
-export default function LayersView({ graphData, layerResult, isLoading }: LayersViewProps) {
+export default function LayersView({ graphData, layerResult, isLoading, project: _project }: LayersViewProps) {
   const tc = getThemeColors();
 
   const option = useMemo(() => {
