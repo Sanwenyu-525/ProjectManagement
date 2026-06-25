@@ -561,12 +561,16 @@ export function buildLayersOption(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartEdges: any[] = [];
 
-  const layerGap = Math.max(120, 800 / Math.max(layers.length, 1));
+  const maxNodesInLayer = Math.max(...layers.map(l => l.nodes.length), 1);
+  const chartWidth = Math.max(800, maxNodesInLayer * 100);
+  const chartHeight = Math.max(500, layers.length * 150);
+  const layerGap = chartHeight / (layers.length + 1);
+  const centerX = chartWidth / 2;
 
   layers.forEach((layer, layerIdx) => {
-    const y = 60 + layerIdx * layerGap;
-    const nodeGap = Math.max(80, 1200 / Math.max(layer.nodes.length, 1));
-    const startX = -(layer.nodes.length - 1) * nodeGap / 2;
+    const y = 40 + layerIdx * layerGap;
+    const nodeGap = Math.min(100, (chartWidth - 100) / Math.max(layer.nodes.length, 1));
+    const startX = centerX - (layer.nodes.length - 1) * nodeGap / 2;
     const color = LAYER_COLORS[layerIdx % LAYER_COLORS.length];
 
     layer.nodes.forEach((node, nodeIdx) => {
@@ -578,13 +582,13 @@ export function buildLayersOption(
         x,
         y,
         fixed: true,
-        symbolSize: 14,
+        symbolSize: 16,
         itemStyle: {
           color: cycleNodeIds.has(node.id) ? '#e74c3c' : color,
           borderColor: cycleNodeIds.has(node.id) ? '#c0392b' : undefined,
           borderWidth: cycleNodeIds.has(node.id) ? 2 : 0,
         },
-        label: { show: layer.nodes.length <= 20, fontSize: 9 },
+        label: { show: layer.nodes.length <= 15, fontSize: 10 },
         filePath: node.filePath,
         fileName: node.fileName,
       });
@@ -631,17 +635,7 @@ export function buildLayersOption(
         return '';
       },
     },
-    graphic: layers.map((_layer, idx) => ({
-      type: 'text' as const,
-      left: 16,
-      top: 60 + idx * layerGap - 10,
-      style: {
-        text: `Layer ${idx}`,
-        fill: tc.textSecondary,
-        fontSize: 11,
-        fontWeight: 600,
-      },
-    })),
+    graphic: [],
     series: [{
       type: 'graph' as const,
       layout: 'none' as const,

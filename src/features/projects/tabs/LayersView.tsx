@@ -35,6 +35,11 @@ export default function LayersView({ graphData, layerResult, isLoading }: Layers
   const hasCycle = layerResult.cycles.length > 0;
   const cycleNodeCount = layerResult.cycles.reduce((sum, c) => sum + c.nodeIds.length, 0);
 
+  const LAYER_COLORS = [
+    '#3498db', '#2ecc71', '#e67e22', '#9b59b6', '#1abc9c',
+    '#e74c3c', '#f1c40f', '#00cec9', '#6c5ce7', '#e84393',
+  ];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Stats */}
@@ -61,9 +66,24 @@ export default function LayersView({ graphData, layerResult, isLoading }: Layers
         />
         {hasCycle && (
           <Tag color="error" icon={<WarningOutlined />}>
-            检测到循环依赖: {cycleNodeCount} 个文件
+            循环依赖: {cycleNodeCount} 个文件
           </Tag>
         )}
+        <div style={{ flex: 1 }} />
+        {/* Layer color legend */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {layerResult.layers.map((layer, idx) => (
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{
+                width: 10, height: 10, borderRadius: '50%',
+                background: LAYER_COLORS[idx % LAYER_COLORS.length],
+              }} />
+              <span style={{ fontSize: 11, color: tc.textSecondary }}>
+                L{idx} ({layer.nodes.length})
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Cycle warning */}
