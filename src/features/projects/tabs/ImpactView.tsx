@@ -40,10 +40,59 @@ export default function ImpactView({ graphData, projectId }: ImpactViewProps) {
     }
   }, [selectedNodeIds, impactMutation]);
 
-  const option = useMemo(() => {
+  // Base option: all nodes dimmed, clickable
+  const baseOption = useMemo(() => {
+    const chartNodes = graphData.nodes.map(n => ({
+      id: n.id,
+      name: n.filePath,
+      symbolSize: 12,
+      itemStyle: { color: tc.primary, opacity: 0.35 },
+      label: { show: false },
+      filePath: n.filePath,
+      fileName: n.fileName,
+    }));
+    const chartEdges = graphData.edges.map(e => ({
+      source: e.sourceNodeId,
+      target: e.targetNodeId,
+      lineStyle: { width: 1, opacity: 0.08, color: tc.borderSubtle },
+    }));
+    return {
+      tooltip: {
+        trigger: 'item' as const,
+        backgroundColor: tc.bgElevated,
+        borderColor: tc.border,
+        textStyle: { color: tc.text, fontSize: 12 },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        formatter: (params: any) => {
+          const d = params.data;
+          if (d.filePath) return `<strong>${d.filePath}</strong><br/>点击选择此文件`;
+          return '';
+        },
+      },
+      series: [{
+        type: 'graph' as const,
+        layout: 'force' as const,
+        roam: true,
+        draggable: true,
+        force: { repulsion: 400, edgeLength: [100, 250], gravity: 0.08 },
+        data: chartNodes,
+        links: chartEdges,
+        edgeSymbol: ['none', 'arrow'],
+        edgeSymbolSize: 6,
+        label: { position: 'right' as const, fontSize: 10, color: tc.textSecondary },
+        emphasis: { focus: 'adjacency' as const, lineStyle: { width: 2 } },
+        lineStyle: { opacity: 0.08, curveness: 0.3, color: tc.borderSubtle },
+        animationDuration: 600,
+      }],
+    };
+  }, [graphData, tc]);
+
+  const impactOption = useMemo(() => {
     if (!impactResult) return null;
     return buildImpactOption(graphData, impactResult, selectedNodeIds, tc);
   }, [graphData, impactResult, selectedNodeIds, tc]);
+
+  const option = impactOption || baseOption;
 
   const handleChartClick = useCallback((params: { data?: { id?: string } }) => {
     if (params.data?.id) {
@@ -120,33 +169,21 @@ export default function ImpactView({ graphData, projectId }: ImpactViewProps) {
       </div>
 
       {/* Graph */}
-      {!option ? (
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', flex: 1, gap: 16,
-        }}>
-          <ThunderboltOutlined style={{ fontSize: 48, color: tc.primary }} />
-          <div style={{ color: tc.textSecondary, fontSize: 13 }}>
-            点击图中任意节点，分析其影响范围
+      <div style={{ flex: 1, minHeight: 400 }}>
+        {impactMutation.isPending ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <Spin size="large" />
           </div>
-        </div>
-      ) : (
-        <div style={{ flex: 1, minHeight: 400 }}>
-          {impactMutation.isPending ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Spin size="large" />
-            </div>
-          ) : (
-            <ReactECharts
-              option={option}
-              style={{ height: '100%', minHeight: 400 }}
-              opts={{ renderer: 'canvas' }}
-              notMerge={true}
-              onEvents={events}
-            />
-          )}
-        </div>
-      )}
+        ) : (
+          <ReactECharts
+            option={option}
+            style={{ height: '100%', minHeight: 400 }}
+            opts={{ renderer: 'canvas' }}
+            notMerge={true}
+            onEvents={events}
+          />
+        )}
+      </div>
     </div>
   );
 }
