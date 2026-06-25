@@ -2,7 +2,19 @@
 
 ## Current Focus
 
-UI 优化全阶段（P0-P3）+ 已知限制修复全部完成。主要新增：密度模式（comfortable/compact/dense）、微交互动画、Toast/Undo、soft-delete、快捷键面板、`react-transition-group` 路由过渡、`prefers-reduced-motion` 支持。
+Q3 路线图执行中。P1（图谱三个视图）已完成，当前进行 P2（知识库 Q&A + Agent 集成）。
+
+**已完成：**
+- P1 图谱：启用影响分析、调用链、架构分层三个视图（5/5 视图全部可用）
+- 节点操作：选中节点可"打开文件"或"交给 Agent 分析"
+- 编辑器修复：Windows 换行符标准化（\r\n → \n），消除误报 modified 状态
+
+**待做（P2-P4）：**
+- P2：知识库 Q&A + Agent 引用知识库（2 周）
+- P3：Agent 集成图谱（图谱查询 + 改前检查）（2 周）
+- P4：多 Agent 并行 + 项目巡检报告（4 周）
+
+详见 `docs/superpowers/specs/2026-06-25-q3-roadmap-design.md`。
 
 ## Commands
 
@@ -94,7 +106,7 @@ Frontend: projectsApi.list()
 ### Backend Pattern (Rust)
 
 每个领域一个 command 模块：`src-tauri/src/commands/<domain>/`
-- `project/` — projects, tasks, repos, documents, milestones, tags, search, timeline, detect, brain, dependencies, health, feature_groups
+- `project/` — projects, tasks, repos, documents, milestones, tags, search, timeline, detect, brain, dependencies, health, feature_groups, graph（含 impact/chain/layers 分析命令）
 - `workspace/` — terminal, files, sessions, agent_tasks, workspaces, memory, knowledge
 - `git/` — git 操作
 - `build/` — builds, templates, integrations
