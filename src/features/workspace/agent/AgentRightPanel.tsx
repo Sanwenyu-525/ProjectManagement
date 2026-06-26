@@ -232,7 +232,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid var(--border)',
     flexShrink: 0,
     background: 'var(--md-surface-container-lowest)',
-    alignItems: 'center',
+    alignItems: 'stretch',
     minWidth: 0,
   },
   tabScroll: {
@@ -240,6 +240,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     overflow: 'auto',
+    alignItems: 'stretch',
   },
   tab: {
     display: 'flex',
@@ -260,7 +261,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     width: 28,
-    height: 28,
+    alignSelf: 'stretch',
     borderRadius: 6,
     border: 'none',
     background: 'transparent',
