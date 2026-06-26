@@ -1,12 +1,12 @@
 import { formatShortcut } from './keyboard';
 import { useThemeStore } from '../stores/themeStore';
-import { useAgentWorkspaceStore } from '../stores/agentWorkspaceStore';
+import { useAgentUIStore } from '../stores/agentUIStore';
 import { useAgentTabStore } from '../stores/agentTabStore';
-import { useGlobalEditorStore } from '../stores/globalEditorStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type CommandCategory = 'navigation' | 'workspace' | 'project' | 'theme' | 'agent';
+export type CommandCategory = 'navigation' | 'workspace' | 'project' | 'theme' | 'agent' | 'git';
 
 export interface CommandDef {
   id: string;
@@ -18,6 +18,7 @@ export interface CommandDef {
   keys?: { ctrl?: boolean; shift?: boolean; key: string };
   when?: (e: KeyboardEvent) => boolean;
   action: () => void;
+  keywords?: string[];     // 额外搜索词（中英文别名）
 }
 
 // ── Navigate bridge ─────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ export const CATEGORY_LABELS: Record<CommandCategory, string> = {
   project: '项目',
   theme: '主题与显示',
   agent: 'Agent',
+  git: 'Git',
 };
 
 // ── Command definitions ─────────────────────────────────────────────────────
@@ -122,7 +124,7 @@ export const COMMANDS: CommandDef[] = [
     shortcut: formatShortcut({ ctrl: true, key: '\\' }),
     keys: { ctrl: true, key: '\\' },
     action: () => {
-      useAgentWorkspaceStore.getState().togglePanelCollapsed();
+      useAgentUIStore.getState().togglePanelCollapsed();
     },
   },
   {
@@ -133,7 +135,7 @@ export const COMMANDS: CommandDef[] = [
     shortcut: formatShortcut({ ctrl: true, key: 'e' }),
     keys: { ctrl: true, key: 'e' },
     action: () => {
-      useGlobalEditorStore.getState().toggleDrawer();
+      useWorkspaceStore.getState().toggleDrawer();
     },
   },
 
@@ -155,9 +157,107 @@ export const COMMANDS: CommandDef[] = [
     label: '新建 Agent 标签页',
     icon: 'add_comment',
     category: 'agent',
+    keywords: ['新建', 'new', 'agent', '标签'],
     action: () => {
       useAgentTabStore.getState().addTab();
     },
+  },
+  {
+    id: 'clear-agent-history',
+    label: '清除 Agent 历史',
+    icon: 'delete_sweep',
+    category: 'agent',
+    keywords: ['clear', '清除', '历史', 'history'],
+    action: () => {
+      const store = useAgentTabStore.getState();
+      for (const tab of store.tabs) store.closeTab(tab.id);
+      store.addTab();
+    },
+  },
+
+  // ── Git ──
+  {
+    id: 'git-status',
+    label: '查看 Git 状态',
+    description: '打开工作区 Git 面板',
+    icon: 'source',
+    category: 'git',
+    keywords: ['git', 'status', '状态', 'git status'],
+    action: () => _navigate('/workspace'),
+  },
+  {
+    id: 'git-commit',
+    label: 'Git 提交',
+    description: '在 Git 面板创建提交',
+    icon: 'commit',
+    category: 'git',
+    keywords: ['git', 'commit', '提交', '保存'],
+    action: () => _navigate('/workspace'),
+  },
+  {
+    id: 'git-push',
+    label: 'Git 推送',
+    description: '推送到远程仓库',
+    icon: 'upload',
+    category: 'git',
+    keywords: ['git', 'push', '推送', '上传'],
+    action: () => _navigate('/workspace'),
+  },
+  {
+    id: 'git-pull',
+    label: 'Git 拉取',
+    description: '从远程仓库拉取',
+    icon: 'download',
+    category: 'git',
+    keywords: ['git', 'pull', '拉取', '同步'],
+    action: () => _navigate('/workspace'),
+  },
+  {
+    id: 'git-branches',
+    label: '分支管理',
+    description: '查看和切换分支',
+    icon: 'account_tree',
+    category: 'git',
+    keywords: ['git', 'branch', '分支', '切换'],
+    action: () => _navigate('/workspace'),
+  },
+
+  // ── Project actions ──
+  {
+    id: 'run-health-check',
+    label: '运行健康检查',
+    description: '检查所有项目健康状态',
+    icon: 'health_and_safety',
+    category: 'project',
+    keywords: ['health', '健康', '检查', '诊断'],
+    action: () => _navigate('/projects'),
+  },
+  {
+    id: 'run-audit',
+    label: '运行项目审计',
+    description: '多维度项目评估',
+    icon: 'assessment',
+    category: 'project',
+    keywords: ['audit', '审计', '评估', '报告'],
+    action: () => _navigate('/projects'),
+  },
+  {
+    id: 'open-knowledge',
+    label: '打开知识库',
+    description: '/knowledge',
+    icon: 'menu_book',
+    category: 'navigation',
+    keywords: ['knowledge', '知识', '知识库', '笔记'],
+    action: () => _navigate('/knowledge'),
+  },
+  {
+    id: 'open-timeline',
+    label: '打开时间线',
+    description: '/timeline',
+    icon: 'timeline',
+    category: 'navigation',
+    keywords: ['timeline', '时间线', '历史', '活动'],
+    action: () => _navigate('/timeline'),
   },
 
   // ── Theme ──

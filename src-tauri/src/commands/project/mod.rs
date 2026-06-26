@@ -7,6 +7,7 @@ pub mod tags;
 pub mod search;
 pub mod timeline;
 pub mod detect;
+pub mod detect_languages;
 pub mod brain;
 pub mod dependencies;
 pub mod health;

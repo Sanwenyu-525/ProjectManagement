@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { message, Modal } from 'antd';
 import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { gitApi } from '../../../api';
@@ -32,19 +32,7 @@ interface GitStatusData {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diff = Math.max(0, now - then);
-  const secs = Math.floor(diff / 1000);
-  if (secs < 60) return '刚刚';
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}分钟前`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}小时前`;
-  const days = Math.floor(hrs / 24);
-  return `${days}天前`;
-}
+import { formatRelativeTime as relativeTime } from '@/lib/format';
 
 /** Status → display metadata. Uses semantic color tokens for consistency */
 function statusMeta(status: string): { icon: string; color: string; bg: string; label: string } {
@@ -95,6 +83,7 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
 
   // Diff state
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
+  const expandedFileRef = useRef<string | null>(null);
   const [diffContent, setDiffContent] = useState<string>('');
   const [diffLoading, setDiffLoading] = useState(false);
 
@@ -102,8 +91,11 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   const [hoveredFile, setHoveredFile] = useState<string | null>(null);
 
+  const loadIdRef = useRef(0);
+
   const load = useCallback(async () => {
     if (!repoPath) return;
+    const loadId = ++loadIdRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -111,6 +103,8 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
         gitApi.status(repoPath),
         gitApi.log(repoPath, 8),
       ]);
+      // 陈旧检查：repoPath 可能已在 await 期间改变
+      if (loadId !== loadIdRef.current) return;
       const rawEntries = Array.isArray(statusResult) ? statusResult : [];
       const files: GitFileChange[] = rawEntries.map((f: Record<string, unknown>) => ({
         path: String(f.path ?? ''),
@@ -123,9 +117,11 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
       setStatusData({ files, branch: String(current?.name ?? '') });
       setCommits(logResult.commits as GitCommit[]);
     } catch (e) {
+      if (loadId !== loadIdRef.current) return;
       setError(String(e));
     } finally {
-      setLoading(false);
+      // 仅在未过期时更新 loading 状态
+      if (loadId === loadIdRef.current) setLoading(false);
     }
   }, [repoPath]);
 
@@ -175,17 +171,22 @@ export default function AgentGitTab({ repoPath }: AgentGitTabProps) {
   const toggleFile = async (file: GitFileChange) => {
     if (expandedFile === file.path) {
       setExpandedFile(null);
+      expandedFileRef.current = null;
       setDiffContent('');
       return;
     }
     setExpandedFile(file.path);
+    expandedFileRef.current = file.path;
     setDiffContent('');
     if (!repoPath) return;
     setDiffLoading(true);
     try {
       const diff = await gitApi.diff(repoPath, file.path, file.staged);
+      // 陈旧检查：用户可能已点击其他文件（用 ref 而非 state 避免闭包过期）
+      if (expandedFileRef.current !== file.path) return;
       setDiffContent(typeof diff === 'string' ? diff : '');
     } catch {
+      if (expandedFileRef.current !== file.path) return;
       setDiffContent('(无法获取 diff)');
     } finally {
       setDiffLoading(false);

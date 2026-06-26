@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Select, Button, Space, Table, Tag, Modal, Form, Input, Empty, message } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { milestonesApi } from '../../../api';
@@ -17,16 +17,16 @@ export default function MilestonesTab({ projectId }: { projectId: string }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
 
-  useEffect(() => { loadMilestones(); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function loadMilestones() {
+  const loadMilestones = useCallback(async () => {
     try {
       const data = await milestonesApi.list(projectId);
       setMilestones(data);
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId]);
+
+  useEffect(() => { loadMilestones(); }, [loadMilestones]);
 
   const handleCreate = async (values: CreateMilestoneInput) => {
     await milestonesApi.create(projectId, values);

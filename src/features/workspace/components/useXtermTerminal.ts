@@ -275,6 +275,8 @@ export function useXtermTerminal(
       unlistenExit.then(fn => fn());
       if (term.textarea) {
         term.textarea.removeEventListener('contextmenu', onContextMenu);
+        term.textarea.removeEventListener('focus', onFocus);
+        term.textarea.removeEventListener('blur', onBlur);
       }
       document.removeEventListener('keydown', onKeyDown);
       webglAddon?.dispose();

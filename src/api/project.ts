@@ -49,32 +49,32 @@ import type {
 
 export const projectsApi = {
   list: (params?: Record<string, string | undefined>): Promise<ProjectWithStats[]> =>
-    cmd('projects_list', { params: params ?? null })
-      .then((data) => normalizeProjects(data) as ProjectWithStats[]),
+    cmd<unknown>('projects_list', { params: params ?? null })
+      .then((data) => normalizeProjects(data as unknown as Record<string, unknown>[]) as unknown as ProjectWithStats[]),
   getById: (id: string): Promise<ProjectDetail> =>
-    cmd('projects_get_by_id', { id })
-      .then((data) => normalizeProject(data) as ProjectDetail),
+    cmd<unknown>('projects_get_by_id', { id })
+      .then((data) => normalizeProject(data as unknown as Record<string, unknown>) as unknown as ProjectDetail),
   create: (data: CreateProjectInput): Promise<Project> =>
-    cmd('projects_create', { data })
-      .then((data) => normalizeProject(data) as Project),
+    cmd<unknown>('projects_create', { data })
+      .then((data) => normalizeProject(data as unknown as Record<string, unknown>) as unknown as Project),
   update: (id: string, data: UpdateProjectInput): Promise<Project> =>
-    cmd('projects_update', { id, data })
-      .then((data) => normalizeProject(data) as Project),
+    cmd<unknown>('projects_update', { id, data })
+      .then((data) => normalizeProject(data as unknown as Record<string, unknown>) as unknown as Project),
   delete: (id: string): Promise<void> =>
     cmd('projects_delete', { id }),
   restore: (id: string): Promise<Project> =>
-    cmd('projects_restore', { id })
-      .then((data) => normalizeProject(data) as Project),
+    cmd<unknown>('projects_restore', { id })
+      .then((data) => normalizeProject(data as unknown as Record<string, unknown>) as unknown as Project),
   updateStatus: (id: string, status: string): Promise<Project> =>
-    cmd('projects_update_status', { id, status })
-      .then((data) => normalizeProject(data) as Project),
+    cmd<unknown>('projects_update_status', { id, status })
+      .then((data) => normalizeProject(data as unknown as Record<string, unknown>) as unknown as Project),
   getStats: (id: string): Promise<ProjectWithStats> =>
     cmd('projects_get_stats', { id }),
   open: (id: string): Promise<void> =>
     cmd('projects_open', { id }),
   refresh: (id: string): Promise<Project> =>
-    cmd('projects_refresh', { id })
-      .then((data) => normalizeProject(data) as Project),
+    cmd<unknown>('projects_refresh', { id })
+      .then((data) => normalizeProject(data as unknown as Record<string, unknown>) as unknown as Project),
   detectCwd: (projectPath: string, command: string): Promise<string | null> =>
     cmd('detect_project_cwd', { projectPath, command }),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,6 +106,14 @@ export const tasksApi = {
     cmd('tasks_delete', { id }),
   updateStatus: (id: string, status: string): Promise<Task> =>
     cmd('tasks_update_status', { id, status }),
+  getCommits: (taskId: string): Promise<Array<{ commitHash: string; linkedAt: string; linkSource: string }>> =>
+    cmd('tasks_get_commits', { taskId }),
+  linkCommit: (taskId: string, commitHash: string): Promise<void> =>
+    cmd('tasks_link_commit', { taskId, commitHash }),
+  unlinkCommit: (taskId: string, commitHash: string): Promise<void> =>
+    cmd('tasks_unlink_commit', { taskId, commitHash }),
+  scanCommits: (projectId: string, repoPath: string): Promise<{ linked: number }> =>
+    cmd('tasks_scan_commits', { projectId, repoPath }),
 };
 
 // ==================== Repos ====================
@@ -215,43 +223,43 @@ export const healthApi = {
 
 export const gitApi = {
   status: (repoPath: string) =>
-    cmd('git_status', { repoPath }),
+    cmd<Array<{ path: string; status: string; staged: boolean }>>('git_status', { repoPath }),
   log: (repoPath: string, limit?: number): Promise<GitLogResult> =>
     cmd('git_log', { repoPath, limit: limit ?? null }),
   branches: (repoPath: string) =>
-    cmd('git_branches', { repoPath }),
+    cmd<Array<{ name: string; current: boolean }>>('git_branches', { repoPath }),
   diff: (repoPath: string, file?: string, staged?: boolean) =>
-    cmd('git_diff', { repoPath, file: file ?? null, staged: staged ?? null }),
+    cmd<string>('git_diff', { repoPath, file: file ?? null, staged: staged ?? null }),
   branchSwitch: (repoPath: string, branch: string) =>
-    cmd('git_branch_switch', { repoPath, branch }),
+    cmd<string>('git_branch_switch', { repoPath, branch }),
   stashList: (repoPath: string) =>
-    cmd('git_stash_list', { repoPath }),
+    cmd<unknown[]>('git_stash_list', { repoPath }),
   add: (repoPath: string, files: string[]) =>
-    cmd('git_add', { repoPath, files }),
+    cmd<string>('git_add', { repoPath, files }),
   commit: (repoPath: string, message: string) =>
-    cmd('git_commit', { repoPath, message }),
+    cmd<string>('git_commit', { repoPath, message }),
   push: (repoPath: string, remote?: string, branch?: string) =>
-    cmd('git_push', { repoPath, remote: remote ?? null, branch: branch ?? null }),
+    cmd<string>('git_push', { repoPath, remote: remote ?? null, branch: branch ?? null }),
   diffCommit: (repoPath: string, hash: string) =>
-    cmd('git_diff_commit', { repoPath, hash }),
+    cmd<string>('git_diff_commit', { repoPath, hash }),
   unstage: (repoPath: string, files: string[]) =>
-    cmd('git_reset_head', { repoPath, files }),
+    cmd<string>('git_reset_head', { repoPath, files }),
   pull: (repoPath: string, remote?: string, branch?: string) =>
-    cmd('git_pull', { repoPath, remote: remote ?? null, branch: branch ?? null }),
+    cmd<string>('git_pull', { repoPath, remote: remote ?? null, branch: branch ?? null }),
   tagList: (repoPath: string) =>
-    cmd('git_tag_list', { repoPath }),
+    cmd<Array<{ name: string; hash: string; message: string; date: string }>>('git_tag_list', { repoPath }),
   tagCreate: (repoPath: string, name: string, message?: string) =>
-    cmd('git_tag_create', { repoPath, name, message: message ?? null }),
+    cmd<string>('git_tag_create', { repoPath, name, message: message ?? null }),
   tagDelete: (repoPath: string, name: string) =>
-    cmd('git_tag_delete', { repoPath, name }),
+    cmd<string>('git_tag_delete', { repoPath, name }),
   restore: (repoPath: string, files: string[]) =>
     cmd<string>('git_restore', { repoPath, files }),
   showFile: (repoPath: string, file: string) =>
     cmd<string>('git_show_file', { repoPath, file }),
   fetch: (repoPath: string) =>
-    cmd('git_fetch', { repoPath }),
+    cmd<string>('git_fetch', { repoPath }),
   branchCreate: (repoPath: string, branchName: string) =>
-    cmd('git_branch_create', { repoPath, branchName }),
+    cmd<string>('git_branch_create', { repoPath, branchName }),
   revert: (repoPath: string, hash: string) =>
     cmd('git_revert', { repoPath, hash }),
 };

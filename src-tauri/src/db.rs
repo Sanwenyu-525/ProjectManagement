@@ -33,7 +33,7 @@ impl serde::Serialize for DbError {
 
 // Single-user, no auth needed. Removed DEFAULT_USER_ID.
 
-struct ConnectionManager {
+pub(crate) struct ConnectionManager {
     db_path: std::path::PathBuf,
 }
 
@@ -76,7 +76,7 @@ impl Database {
         Ok(db)
     }
 
-    fn get_conn(&self) -> Result<r2d2::PooledConnection<ConnectionManager>, DbError> {
+    pub(crate) fn get_conn(&self) -> Result<r2d2::PooledConnection<ConnectionManager>, DbError> {
         self.pool.get().map_err(|e| DbError::Lock(e.to_string()))
     }
 
@@ -219,6 +219,7 @@ impl Database {
         self.run_migration(&conn, "024_explorer_state", include_str!("../migrations/024_explorer_state.sql"))?;
         self.run_migration(&conn, "025_mcp_servers", include_str!("../migrations/025_mcp_servers.sql"))?;
         self.run_migration(&conn, "026_project_audits", include_str!("../migrations/026_project_audits.sql"))?;
+        self.run_migration(&conn, "027_performance_indexes", include_str!("../migrations/027_performance_indexes.sql"))?;
 
         Ok(())
     }
@@ -282,6 +283,19 @@ impl Database {
         let conn = self.get_conn()?;
         let changes = conn.execute(sql, params)?;
         Ok(changes)
+    }
+
+    /// 在事务中执行闭包。闭包返回 Ok 时提交，Err 时自动回滚。
+    /// drop 时也会自动回滚（panic 保护）。
+    pub fn with_transaction<F, T>(&self, f: F) -> Result<T, DbError>
+    where
+        F: FnOnce(&rusqlite::Transaction) -> Result<T, DbError>,
+    {
+        let mut conn = self.get_conn()?;
+        let tx = conn.transaction()?;
+        let result = f(&tx)?;
+        tx.commit()?;
+        Ok(result)
     }
 
     pub fn log_activity(

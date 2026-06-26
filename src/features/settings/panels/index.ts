@@ -1,0 +1,10 @@
+export { default as GeneralSettings } from './GeneralSettings';
+export { default as TerminalSettings } from './TerminalSettings';
+export { default as GitToolsSettings } from './GitToolsSettings';
+export { default as DataManagementSettings } from './DataManagementSettings';
+export { default as AppearanceSettings } from './AppearanceSettings';
+export { default as WorkspaceSettings } from './WorkspaceSettings';
+export { default as McpServersSettings } from './McpServersSettings';
+export { default as BuildSettings } from './BuildSettings';
+export { default as AgentConfigsSettings } from './AgentConfigsSettings';
+export { default as CustomCommandsSettings } from './CustomCommandsSettings';

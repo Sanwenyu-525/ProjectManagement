@@ -5,7 +5,6 @@ import { filesApi } from '../../../api';
 import type { FileEntry } from '../../../api';
 import { useTerminalStore } from '../../../stores/terminalStore';
 import { useWorkspaceStore } from '../../../stores/workspaceStore';
-import { useGlobalEditorStore } from '../../../stores/globalEditorStore';
 import { useThemeStore } from '../../../stores/themeStore';
 import FileViewer, { getFileIcon } from './FileViewer';
 import { useWheelScroll } from '../../../hooks/useWheelScroll';
@@ -158,6 +157,8 @@ export default function CodeEditorPane({ variant = 'workspace', onEmpty }: CodeE
   }, [doCloseTab]);
 
   const handleCreateEditor = useCallback((view: EditorView) => {
+    // 清理旧实例，避免内存泄漏和事件监听器残留
+    if (viewRef.current) viewRef.current.destroy();
     viewRef.current = view;
   }, []);
 
@@ -202,10 +203,10 @@ export default function CodeEditorPane({ variant = 'workspace', onEmpty }: CodeE
   // Open file requested from FileExplorer sidebar
   const fileToOpen = isWorkspace
     ? useWorkspaceStore(s => s.fileToOpen)
-    : useGlobalEditorStore(s => s.fileToOpen);
+    : useWorkspaceStore(s => s.fileToOpen);
   const renamedFile = isWorkspace
     ? useWorkspaceStore(s => s.renamedFile)
-    : useGlobalEditorStore(s => s.renamedFile);
+    : useWorkspaceStore(s => s.renamedFile);
   useEffect(() => {
     if (!fileToOpen) return;
     // Already open? just activate it
@@ -221,7 +222,7 @@ export default function CodeEditorPane({ variant = 'workspace', onEmpty }: CodeE
     if (isWorkspace) {
       useWorkspaceStore.getState().requestOpenFile(null);
     } else {
-      useGlobalEditorStore.getState().requestOpenFile(null);
+      useWorkspaceStore.getState().requestOpenFile(null);
     }
   }, [fileToOpen, openFile, isWorkspace]);
 
@@ -239,14 +240,14 @@ export default function CodeEditorPane({ variant = 'workspace', onEmpty }: CodeE
     if (isWorkspace) {
       useWorkspaceStore.getState().setRenamedFile(null);
     } else {
-      useGlobalEditorStore.getState().setRenamedFile(null);
+      useWorkspaceStore.getState().setRenamedFile(null);
     }
   }, [renamedFile, isWorkspace]);
 
   // Close tabs when files are deleted from FileExplorer
   const deletedFiles = isWorkspace
     ? useWorkspaceStore(s => s.deletedFiles)
-    : useGlobalEditorStore(s => s.deletedFiles);
+    : useWorkspaceStore(s => s.deletedFiles);
   useEffect(() => {
     if (deletedFiles.length === 0) return;
     const deletedSet = new Set(deletedFiles);
@@ -264,7 +265,7 @@ export default function CodeEditorPane({ variant = 'workspace', onEmpty }: CodeE
     if (isWorkspace) {
       useWorkspaceStore.getState().setDeletedFiles([]);
     } else {
-      useGlobalEditorStore.getState().setDeletedFiles([]);
+      useWorkspaceStore.getState().setDeletedFiles([]);
     }
   }, [deletedFiles, isWorkspace]);
 

@@ -70,6 +70,18 @@ export default function BottomPanel({ defaultHeight = 280, onHeightChange, cwd, 
     setActiveTerminalId(id);
   }, [effectiveCwd]);
 
+  // P1-8: 卸载时清理所有终端进程
+  useEffect(() => {
+    return () => {
+      for (const tab of tabs) {
+        if (tab.status === 'running') {
+          terminalApi.stop(tab.id).catch(() => {});
+        }
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Listen for terminal exit
   useEffect(() => {
     const unlisten = listen<TerminalExitEvent>('terminal-exit', (event) => {

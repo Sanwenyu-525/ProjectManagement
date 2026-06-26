@@ -6,7 +6,6 @@ import { useLocation } from 'react-router-dom';
 import { filesApi, workspacesApi } from '../api';
 import { useTerminalStore } from '../stores/terminalStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
-import { useGlobalEditorStore } from '../stores/globalEditorStore';
 import { useThemeStore } from '../stores/themeStore';
 import { useFileTreeExpand, mergeTrees, normPath, isLoadChildrenBusy, type DirState } from './useFileTreeExpand';
 import type { FileTreeNode, FileChangedEvent } from '../api';
@@ -81,9 +80,11 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
   const changeDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const suppressWatcherRef = useRef(new Set<string>());
   const persistTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const expandState = useFileTreeExpand([], (expandedPaths) => {
+  // 用 useCallback 包装避免 persistExpanded 引用变化导致 debounce 被不断重置
+  const handlePersistExpanded = useCallback((expandedPaths: string[]) => {
     workspacesApi.saveExplorerState(dirsRef.current.map(d => d.path), expandedPaths).catch(() => {});
-  });
+  }, []);
+  const expandState = useFileTreeExpand([], handlePersistExpanded);
   const { dirs, toggleDir, collapseAll, loadChildren, refreshDir: hookRefreshDir, initRootTrees, updateDirs: setDirs, loadingDirPaths } = expandState;
   const dirsRef = useRef(dirs);
   dirsRef.current = dirs;
@@ -326,9 +327,8 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
     if (location.pathname.startsWith('/workspace')) {
       store.requestOpenFile(path);
     } else {
-      const globalStore = useGlobalEditorStore.getState();
-      globalStore.requestOpenFile(path);
-      globalStore.setDrawerOpen(true);
+      store.requestOpenFile(path);
+      store.setDrawerOpen(true);
     }
   }, [location.pathname]);
 
@@ -418,7 +418,6 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
       message.success('已重命名');
       // Notify editor of the path change
       useWorkspaceStore.getState().setRenamedFile({ oldPath, newPath });
-      useGlobalEditorStore.getState().setRenamedFile({ oldPath, newPath });
       // 找到根目录并刷新
       setDirs(prev => {
         const rootDir = prev.find(d => isDirContainedIn(d.path, oldPath));
@@ -472,7 +471,6 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
             message.success(`已删除 ${deleted} 个${type}`);
           }
           store.setDeletedFiles(targets);
-          useGlobalEditorStore.getState().setDeletedFiles(targets);
           store.clearSelection();
           for (const root of rootsToRefresh) {
             suppressWatcherRef.current.add(root);
@@ -504,14 +502,8 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
 
     try {
       if (clipboard.type === 'copy') {
-        // 复制文件/文件夹
-        if (clipboard.isDir) {
-          // 递归复制目录
-          await copyDirectoryRecursive(clipboard.path, destPath);
-        } else {
-          const content = await filesApi.read(clipboard.path);
-          await filesApi.write(destPath, content.content);
-        }
+        // 使用原生复制避免二进制文件数据损坏
+        await filesApi.copy(clipboard.path, destPath);
         message.success('已粘贴');
       } else {
         // 剪切 = 重命名/移动
@@ -841,25 +833,3 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
     </div>
   );
 })
-
-// 递归复制目录
-async function copyDirectoryRecursive(src: string, dest: string) {
-  // 创建目标目录
-  await filesApi.create(dest, true);
-
-  // 列出源目录内容
-  const entries = await filesApi.listDirectory(src);
-
-  for (const entry of entries) {
-    const srcPath = entry.path;
-    const destPath = dest + (dest.includes('\\') ? '\\' : '/') + entry.name;
-
-    if (entry.isDir) {
-      await copyDirectoryRecursive(srcPath, destPath);
-    } else {
-      // 复制文件内容
-      const content = await filesApi.read(srcPath);
-      await filesApi.write(destPath, content.content);
-    }
-  }
-}

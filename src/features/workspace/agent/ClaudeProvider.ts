@@ -84,17 +84,18 @@ export class ClaudeProvider implements AgentProvider {
     // Fallback: if process exited without streaming text, surface result, leftover buffer, or error
     if (!this.hasStreamedText && !this.hasError) {
       if (this.resultText) {
+        this.hasStreamedText = true;
         this.emit({ type: 'token', text: this.resultText });
       } else if (leftover) {
+        this.hasStreamedText = true;
         this.emit({ type: 'token', text: leftover });
       } else if (code !== null && code !== 0) {
+        this.hasError = true;
         this.emit({ type: 'error', error: `Agent exited with code ${code}` });
       } else {
+        this.hasError = true;
         this.emit({ type: 'error', error: 'Agent returned empty response' });
       }
-    }
-    if (code !== null && code !== 0 && !this.hasError) {
-      this.emit({ type: 'error', error: `Agent exited with code ${code}` });
     }
 
     // Check for 429 rate-limit before finalizing
@@ -154,8 +155,8 @@ export class ClaudeProvider implements AgentProvider {
 
       await terminalApi.startAgent(terminalId, 'claude', args, cwd);
 
-      // 等待 PTY 就绪
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // 等待 PTY 就绪（TODO: 监听首次输出替代固定延迟）
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
     // 每次 send 前重置解析状态，为下一轮对话做准备
@@ -246,6 +247,7 @@ export class ClaudeProvider implements AgentProvider {
       this.activeTerminalId = null;
     }
     this.cleanupListeners();
+    this.config = null;
     this.cliSessionId = null;
     this.clearRetryTimer();
     this.jsonBuffer = '';
@@ -520,8 +522,11 @@ export class ClaudeProvider implements AgentProvider {
       useAgentStore.getState().markSessionError(this.config.sessionId);
     }
     if (this.listeners.size === 0) {
-      // Buffer all events so they're not lost if AgentChat hasn't subscribed yet
-      // (previously only done/error were buffered, causing token events to be silently dropped)
+      // Buffer events when no listener attached, with capacity limit
+      const MAX_PENDING = 10000;
+      if (this.pendingEvents.length >= MAX_PENDING) {
+        this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING + 1);
+      }
       this.pendingEvents.push(event);
       return;
     }

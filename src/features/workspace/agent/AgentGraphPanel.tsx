@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useAgentContextStore } from '../../../stores/agentContextStore';
 
 const QUERY_ICONS: Record<string, string> = {
@@ -16,6 +16,7 @@ const QUERY_LABELS: Record<string, string> = {
 export default function AgentGraphPanel() {
   const [filePath, setFilePath] = useState('');
   const [lastQuery, setLastQuery] = useState<string | null>(null);
+  const graphInputRef = useRef<HTMLInputElement>(null);
 
   const sessionContext = useAgentContextStore(s => {
     // Get the most recent session's context
@@ -24,8 +25,8 @@ export default function AgentGraphPanel() {
     return s.contexts[keys[keys.length - 1]];
   });
 
-  const graphQueries = useMemo(() => sessionContext?.graphQueries ?? [], [sessionContext]);
-  const impactWarnings = useMemo(() => sessionContext?.impactWarnings ?? [], [sessionContext]);
+  const graphQueries = useMemo(() => sessionContext?.graphQueries ?? [], [sessionContext?.graphQueries]);
+  const impactWarnings = useMemo(() => sessionContext?.impactWarnings ?? [], [sessionContext?.impactWarnings]);
 
   const dispatch = useCallback((text: string) => {
     setLastQuery(text);
@@ -40,9 +41,8 @@ export default function AgentGraphPanel() {
       dispatch(`/graph ${subCmd} ${filePath.trim()}`);
     } else {
       // Focus input to hint user
-      const input = document.querySelector('[data-graph-input]') as HTMLInputElement | null;
-      input?.focus();
-      input?.select();
+      graphInputRef.current?.focus();
+      graphInputRef.current?.select();
     }
   }, [filePath, dispatch]);
 
@@ -86,6 +86,7 @@ export default function AgentGraphPanel() {
             description
           </span>
           <input
+            ref={graphInputRef}
             data-graph-input
             value={filePath}
             onChange={e => setFilePath(e.target.value)}

@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
+
+use crate::path_guard;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{command, AppHandle, Emitter, State};
@@ -186,6 +188,67 @@ fn spawn_output_reader(
     });
 }
 
+/// PTY 退出监听线程（共享实现，消除 3 处重复代码）
+fn spawn_pty_exit_watcher(app: AppHandle, terminal_id: String) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let mut terminals = recover_lock(&PTY_TERMINALS);
+            match terminals.get_mut(&terminal_id) {
+                Some(terminal) => {
+                    if let Ok(Some(status)) = terminal.child.try_wait() {
+                        let code = status.exit_code() as i32;
+                        drop(terminals);
+                        let _ = app.emit(
+                            "terminal-exit",
+                            TerminalExit {
+                                terminal_id: terminal_id.clone(),
+                                code: Some(code),
+                            },
+                        );
+                        let mut terminals = recover_lock(&PTY_TERMINALS);
+                        terminals.remove(&terminal_id);
+                        break;
+                    }
+                }
+                None => break,
+            }
+        }
+    });
+}
+
+/// 非 PTY 进程退出监听线程
+fn spawn_process_exit_watcher(app: AppHandle, terminal_id: String) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let exited = {
+                let mut procs = recover_lock(&PROCESSES);
+                match procs.get_mut(&terminal_id) {
+                    Some(child) => child.try_wait().ok().flatten().is_some(),
+                    None => break,
+                }
+            };
+            if !exited {
+                continue;
+            }
+            let code = {
+                let mut procs = recover_lock(&PROCESSES);
+                procs.remove(&terminal_id).and_then(|mut c| {
+                    c.try_wait().ok().flatten().and_then(|s| s.code())
+                })
+            };
+            let _ = app.emit(
+                "terminal-exit",
+                TerminalExit {
+                    terminal_id: terminal_id.clone(),
+                    code,
+                },
+            );
+        }
+    });
+}
+
 // ── Non-interactive command ──────────────────────────────────────────────
 
 #[command]
@@ -242,38 +305,7 @@ pub async fn terminal_start(
         procs.insert(terminal_id.clone(), child);
     }
 
-    // Exit watcher thread (polling with try_wait, keeps registry entry alive
-    // so terminal_stop/input can still reach the process while running)
-    let app_exit = app.clone();
-    let tid_exit = terminal_id.clone();
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            let exited = {
-                let mut procs = recover_lock(&PROCESSES);
-                match procs.get_mut(&tid_exit) {
-                    Some(child) => child.try_wait().ok().flatten().is_some(),
-                    None => break,
-                }
-            };
-            if !exited {
-                continue;
-            }
-            let code = {
-                let mut procs = recover_lock(&PROCESSES);
-                procs.remove(&tid_exit).and_then(|mut c| {
-                    c.try_wait().ok().flatten().and_then(|s| s.code())
-                })
-            };
-            let _ = app_exit.emit(
-                "terminal-exit",
-                TerminalExit {
-                    terminal_id: tid_exit.clone(),
-                    code,
-                },
-            );
-        }
-    });
+    spawn_process_exit_watcher(app.clone(), terminal_id.clone());
 
     Ok(terminal_id)
 }
@@ -288,6 +320,9 @@ pub async fn terminal_start_shell(
     args: Option<Vec<String>>,
     cwd: String,
 ) -> Result<String, String> {
+    // 校验 cwd 存在性，避免使用已删除的路径启动终端
+    path_guard::validate_path_exists(&cwd)?;
+
     let pty_system = native_pty_system();
 
     let size = PtySize {
@@ -374,39 +409,7 @@ pub async fn terminal_start_shell(
     // Output reader thread (with UTF-8 remnant handling for CJK characters)
     spawn_output_reader(reader, app.clone(), terminal_id.clone(), "stdout");
 
-    // Exit watcher thread (polling with try_wait, keeps registry entry alive)
-    let app_exit = app.clone();
-    let tid_exit = terminal_id.clone();
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            // Single lock acquisition: check if exited AND get exit code together
-            let mut terminals = recover_lock(&PTY_TERMINALS);
-            match terminals.get_mut(&tid_exit) {
-                Some(terminal) => {
-                    if let Ok(Some(status)) = terminal.child.try_wait() {
-                        let code = status.exit_code() as i32;
-                        // Emit exit event BEFORE removing from registry so
-                        // terminal_stop/input/resize can still reach the process
-                        // while the frontend processes the exit.
-                        drop(terminals);
-                        let _ = app_exit.emit(
-                            "terminal-exit",
-                            TerminalExit {
-                                terminal_id: tid_exit.clone(),
-                                code: Some(code),
-                            },
-                        );
-                        let mut terminals = recover_lock(&PTY_TERMINALS);
-                        terminals.remove(&tid_exit);
-                        break;
-                    }
-                    // still running or error — re-lock on next iteration
-                }
-                None => break, // removed externally (e.g. terminal_stop)
-            }
-        }
-    });
+    spawn_pty_exit_watcher(app.clone(), terminal_id.clone());
 
     Ok(terminal_id)
 }
@@ -497,40 +500,7 @@ pub async fn terminal_start_agent(
     // Agent output reader: forward raw PTY output to xterm
     spawn_output_reader(reader, app.clone(), terminal_id.clone(), "stdout");
 
-    // Exit watcher thread (polling with try_wait, keeps registry entry alive
-    // so terminal_stop/input/resize can still reach the process while running)
-    let app_exit = app.clone();
-    let tid_exit = terminal_id.clone();
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            // Single lock acquisition: check if exited AND get exit code together
-            let mut terminals = recover_lock(&PTY_TERMINALS);
-            match terminals.get_mut(&tid_exit) {
-                Some(terminal) => {
-                    if let Ok(Some(status)) = terminal.child.try_wait() {
-                        let code = status.exit_code() as i32;
-                        drop(terminals);
-                        // Emit exit event BEFORE removing from registry so
-                        // terminal_stop/input/resize can still reach the process
-                        // while the frontend processes the exit.
-                        let _ = app_exit.emit(
-                            "terminal-exit",
-                            TerminalExit {
-                                terminal_id: tid_exit.clone(),
-                                code: Some(code),
-                            },
-                        );
-                        let mut terminals = recover_lock(&PTY_TERMINALS);
-                        terminals.remove(&tid_exit);
-                        break;
-                    }
-                    // still running or error — re-lock on next iteration
-                }
-                None => break, // removed externally (e.g. terminal_stop)
-            }
-        }
-    });
+    spawn_pty_exit_watcher(app.clone(), terminal_id.clone());
 
     Ok(terminal_id)
 }
@@ -954,10 +924,16 @@ fn scan_claude_commands(dir: &std::path::Path) -> Vec<SlashCommandDef> {
 // ── Open external terminal ────────────────────────────────────────────
 
 #[command]
-pub async fn terminal_open_external(cwd: String, skip_permissions: bool) -> Result<(), String> {
-    let perm_flag = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
-    // Quote cwd to handle paths with spaces or special characters
-    let cmd_str = format!("cd /d \"{}\" && claude{}", cwd.replace('"', ""), perm_flag);
+pub async fn terminal_open_external(cwd: String, _skip_permissions: bool) -> Result<(), String> {
+    // 校验路径，防止命令注入
+    if path_guard::contains_shell_metachars(&cwd) {
+        return Err("路径包含不允许的字符".into());
+    }
+    let canonical = path_guard::validate_path_exists(&cwd)?;
+
+    // skip_permissions 参数已由前端硬编码为 false，忽略用户传入值
+    let perm_flag = "";
+    let cmd_str = format!("cd /d \"{}\" && claude{}", canonical.to_string_lossy(), perm_flag);
     Command::new("cmd")
         .args(["/C", "start", "cmd.exe", "/K", &cmd_str])
         .spawn()

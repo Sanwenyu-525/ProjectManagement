@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 interface StatusDotProps {
   status: 'running' | 'idle' | 'ended' | 'error' | 'none';
 }
@@ -18,7 +20,7 @@ const COLORS: Record<StatusDotProps['status'], string> = {
   none: 'var(--md-outline-variant)',
 };
 
-export default function StatusDot({ status }: StatusDotProps) {
+const StatusDot = memo(function StatusDot({ status }: StatusDotProps) {
   return (
     <span style={{
       display: 'flex', height: 8, width: 8, flexShrink: 0,
@@ -39,4 +41,6 @@ export default function StatusDot({ status }: StatusDotProps) {
       }} title={TOOLTIPS[status]} />
     </span>
   );
-}
+});
+
+export default StatusDot;

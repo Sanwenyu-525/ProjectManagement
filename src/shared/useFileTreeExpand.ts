@@ -210,8 +210,8 @@ export function useFileTreeExpand(
 
   // Toggle a directory's expand/collapse state
   const toggleDir = useCallback((path: string) => {
-    const fetchPathRef = { current: null as string | null };
     const np = normPath(path);
+    let fetchPath: string | null = null;
 
     setDirs(prev => {
       const dir = findDir(prev, np);
@@ -223,7 +223,7 @@ export function useFileTreeExpand(
       else next.delete(np);
 
       if (isExpanding) {
-        // Check if node needs lazy loading using current (not stale) state
+        // Check if node needs lazy loading
         const findNode = (nodes: FileTreeNode[], p: string): FileTreeNode | undefined => {
           const target = normPath(p);
           for (const n of nodes) {
@@ -237,7 +237,7 @@ export function useFileTreeExpand(
         };
         const node = findNode(dir.tree, np);
         if (node && node.isDir && (!node.children || node.children.length === 0)) {
-          fetchPathRef.current = np;
+          fetchPath = np;
         }
       }
 
@@ -246,14 +246,14 @@ export function useFileTreeExpand(
       );
     });
 
-    if (fetchPathRef.current) {
+    if (fetchPath) {
       // Mark as loading synchronously so the render before loadChildren's async setLoadingDirPaths shows "加载中..."
       setLoadingDirPaths(prev => {
         const next = new Set(prev);
-        next.add(fetchPathRef.current!);
+        next.add(fetchPath!);
         return next;
       });
-      loadChildren(fetchPathRef.current);
+      loadChildren(fetchPath);
     }
   }, [loadChildren]);
 
@@ -327,6 +327,11 @@ export function useFileTreeExpand(
       for (const path of rootFetches) next.add(path);
       return next;
     });
+  }, []);
+
+  // 清理模块级 in-flight 路径集合，防止卸载后残留脏数据
+  useEffect(() => {
+    return () => { loadChildrenInFlight.clear(); };
   }, []);
 
   return { dirs, loadingDirPaths, expanded, toggleDir, collapseAll, loadChildren, refreshDir, initRootTrees, updateDirs: setDirs };

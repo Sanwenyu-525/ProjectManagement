@@ -27,8 +27,8 @@ export const terminalApi: TerminalApi = {
     cmd('terminal_input', { terminalId, data }),
   resize: (terminalId: string, cols: number, rows: number) =>
     cmd('terminal_resize', { terminalId, cols, rows }),
-  openExternal: (cwd: string, skipPermissions: boolean) =>
-    cmd<void>('terminal_open_external', { cwd, skipPermissions }),
+  openExternal: (cwd: string) =>
+    cmd<void>('terminal_open_external', { cwd, skipPermissions: false }),
 };
 
 // ==================== Files ====================
@@ -52,6 +52,8 @@ export const filesApi = {
     cmd<void>('files_rename', { oldPath, newPath }),
   delete: (path: string) =>
     cmd<void>('files_delete', { path }),
+  copy: (source: string, destination: string) =>
+    cmd<void>('files_copy', { source, destination }),
   searchAcrossProjects: (query: string, maxResults?: number) =>
     cmd<FileEntry[]>('files_search_across_projects', { query, maxResults: maxResults ?? 20 }),
   searchContent: (query: string, maxResults?: number) =>

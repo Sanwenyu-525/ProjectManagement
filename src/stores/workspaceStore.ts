@@ -19,6 +19,11 @@ interface WorkspaceStore {
   editorOpen: boolean;
   setEditorOpen: (v: boolean) => void;
 
+  // Global editor drawer (merged from globalEditorStore)
+  drawerOpen: boolean;
+  setDrawerOpen: (v: boolean) => void;
+  toggleDrawer: () => void;
+
   // File rename notification (consumed by CodeEditorPane)
   renamedFile: { oldPath: string; newPath: string } | null;
   setRenamedFile: (v: { oldPath: string; newPath: string } | null) => void;
@@ -85,10 +90,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
   requestOpenFile: (path) => set({ fileToOpen: path }),
 
   activeEditorFile: null,
-  setActiveEditorFile: (path) => set({ activeEditorFile: path, selectedFiles: [], selectionAnchor: null }),
+  setActiveEditorFile: (path) => set({ activeEditorFile: path }),
 
   editorOpen: false,
   setEditorOpen: (v) => set({ editorOpen: v }),
+
+  drawerOpen: localStorage.getItem('devhub_globalEditorOpen') === 'true',
+  setDrawerOpen: (v) => {
+    localStorage.setItem('devhub_globalEditorOpen', String(v));
+    set({ drawerOpen: v });
+  },
+  toggleDrawer: () => set((s) => {
+    const next = !s.drawerOpen;
+    localStorage.setItem('devhub_globalEditorOpen', String(next));
+    return { drawerOpen: next };
+  }),
 
   renamedFile: null,
   setRenamedFile: (v) => set({ renamedFile: v }),

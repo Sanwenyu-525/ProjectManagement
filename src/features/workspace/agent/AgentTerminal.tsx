@@ -21,7 +21,7 @@ function useKeystrokeRecorder(
 
   const onData = useCallback((data: string) => {
     // Forward to PTY
-    terminalApi.input(terminalId, data).catch(() => {});
+    terminalApi.input(terminalId, data).catch((e) => console.error('[AgentTerminal] input failed:', e));
 
     for (const ch of data) {
       const code = ch.charCodeAt(0);
@@ -261,9 +261,13 @@ export default function AgentTerminal({ tabId, style: extraStyle }: AgentTermina
     spawnClaude(terminalId, cwdRef.current);
     sessionsApi.start(tabId, 'claude', undefined, cwdRef.current, 'dangerously-skip-permissions')
       .then(sid => {
-        useAgentTabStore.getState().setSessionId(tabId, sid);
+        if (!cleanupRef.current) {
+          useAgentTabStore.getState().setSessionId(tabId, sid);
+        }
       })
-      .catch(() => {});
+      .catch(e => {
+        console.error('[AgentTerminal] Failed to create session:', e);
+      });
     return () => {
       cleanupRef.current = true;
       terminalApi.stop(terminalId).catch(() => {});

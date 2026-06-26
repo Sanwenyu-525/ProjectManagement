@@ -12,7 +12,8 @@ interface SessionResult {
   numTurns?: number;
 }
 
-export interface AgentMessage {
+/** UI 侧消息表示（与 types/index.ts 中的 DB 侧 AgentMessage 区分） */
+export interface UIAgentMessage {
   role: 'user' | 'assistant' | 'error';
   blocks: MessageBlock[];
   timestamp: number;
@@ -42,6 +43,66 @@ function parseMessageContent(content: string, role: string): MessageBlock[] {
   return [{ type: 'text', text: content }];
 }
 
+// ── Token batching buffer (P0 性能修复) ──
+// 累积 token 并按固定间隔刷新到 store，避免每个 token 触发完整 state 替换
+const _tokenBuffer: Record<string, string> = {};
+let _flushTimer: number | null = null;
+
+type StoreSetter = (fn: (state: AgentStore) => Partial<AgentStore>) => void;
+
+function _scheduleFlush(storeSet: StoreSetter) {
+  if (_flushTimer !== null) return;
+  _flushTimer = requestAnimationFrame(() => {
+    _flushTimer = null;
+    const buffered = { ..._tokenBuffer };
+    for (const key of Object.keys(buffered)) {
+      delete _tokenBuffer[key];
+    }
+    if (Object.keys(buffered).length === 0) return;
+    storeSet((state) => {
+      const newBlocks = { ...state.streamingBlocks };
+      for (const [sessionId, token] of Object.entries(buffered)) {
+        const blocks = [...(newBlocks[sessionId] || [])];
+        const last = blocks[blocks.length - 1];
+        if (last && last.type === 'text') {
+          blocks[blocks.length - 1] = { ...last, text: last.text + token };
+        } else {
+          blocks.push({ type: 'text', text: token });
+        }
+        newBlocks[sessionId] = blocks;
+      }
+      return { streamingBlocks: newBlocks };
+    });
+  });
+}
+
+/** 立即刷新所有缓冲的 token（在 finishStreaming 前调用） */
+function _flushNow(storeSet: StoreSetter) {
+  if (_flushTimer !== null) {
+    cancelAnimationFrame(_flushTimer);
+    _flushTimer = null;
+  }
+  const buffered = { ..._tokenBuffer };
+  for (const key of Object.keys(buffered)) {
+    delete _tokenBuffer[key];
+  }
+  if (Object.keys(buffered).length === 0) return;
+  storeSet((state) => {
+    const newBlocks = { ...state.streamingBlocks };
+    for (const [sessionId, token] of Object.entries(buffered)) {
+      const blocks = [...(newBlocks[sessionId] || [])];
+      const last = blocks[blocks.length - 1];
+      if (last && last.type === 'text') {
+        blocks[blocks.length - 1] = { ...last, text: last.text + token };
+      } else {
+        blocks.push({ type: 'text', text: token });
+      }
+      newBlocks[sessionId] = blocks;
+    }
+    return { streamingBlocks: newBlocks };
+  });
+}
+
 interface AgentStore {
   /** Structured streaming blocks per session */
   streamingBlocks: Record<string, MessageBlock[]>;
@@ -67,7 +128,7 @@ interface AgentStore {
   clearStreaming: () => void;
 
   /** Completed messages per session */
-  messages: Record<string, AgentMessage[]>;
+  messages: Record<string, UIAgentMessage[]>;
   /** Append a user message (plain text) */
   appendMessage: (sessionId: string, role: 'user' | 'assistant' | 'error', content: string) => void;
   /** Load messages from DB into store */
@@ -118,17 +179,11 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   streamingSessionId: null,
   streamingStartTime: {},
 
-  appendToken: (sessionId, token) =>
-    set((state) => {
-      const blocks = [...(state.streamingBlocks[sessionId] || [])];
-      const last = blocks[blocks.length - 1];
-      if (last && last.type === 'text') {
-        blocks[blocks.length - 1] = { ...last, text: last.text + token };
-      } else {
-        blocks.push({ type: 'text', text: token });
-      }
-      return { streamingBlocks: { ...state.streamingBlocks, [sessionId]: blocks } };
-    }),
+  appendToken: (sessionId, token) => {
+    // 累积到缓冲区，按帧/定时器批量刷新
+    _tokenBuffer[sessionId] = (_tokenBuffer[sessionId] || '') + token;
+    _scheduleFlush(set);
+  },
 
   appendThinkingBlock: (sessionId, text) =>
     set((state) => {
@@ -173,11 +228,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       };
     }),
 
-  finishStreaming: (sessionId) =>
+  finishStreaming: (sessionId) => {
+    // 立即刷新缓冲的 token 再结束
+    _flushNow(set);
     set((state) => {
       const blocks = state.streamingBlocks[sessionId] || [];
       const existing = state.messages[sessionId] || [];
-      const updated: AgentMessage[] = blocks.length > 0
+      const updated: UIAgentMessage[] = blocks.length > 0
         ? [...existing, { role: 'assistant' as const, blocks, timestamp: Date.now() }]
         : existing;
       const trimmed = updated.length > MAX_MESSAGES_PER_SESSION
@@ -197,7 +254,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         streamingStartTime: restStart,
         endedSessionIds: { ...state.endedSessionIds, [sessionId]: true },
       };
-    }),
+    });
+  },
 
   clearStreaming: () =>
     set({ streamingBlocks: {}, streamingSessionIds: {}, streamingSessionId: null, streamingStartTime: {} }),
@@ -207,7 +265,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   appendMessage: (sessionId, role, content) =>
     set((state) => {
       const existing = state.messages[sessionId] || [];
-      const msg: AgentMessage = {
+      const msg: UIAgentMessage = {
         role,
         blocks: [{ type: 'text', text: content }],
         timestamp: Date.now(),
@@ -228,12 +286,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       const { [sessionId]: _, ...rest } = state.messages;
       const { [sessionId]: _2, ...restEnded } = state.endedSessionIds;
       const { [sessionId]: _3, ...restError } = state.errorSessionIds;
-      return { messages: rest, endedSessionIds: restEnded, errorSessionIds: restError };
+      const { [sessionId]: _4, ...restResults } = state.sessionResults;
+      return { messages: rest, endedSessionIds: restEnded, errorSessionIds: restError, sessionResults: restResults };
     }),
 
   loadMessages: (sessionId, dbMessages) =>
     set((state) => {
-      const mapped: AgentMessage[] = dbMessages.map(m => ({
+      const mapped: UIAgentMessage[] = dbMessages.map(m => ({
         role: (m.role === 'output' ? 'assistant' : m.role === 'input' ? 'user' : m.role) as 'user' | 'assistant' | 'error',
         blocks: parseMessageContent(m.content, m.role),
         timestamp: new Date(m.timestamp).getTime(),

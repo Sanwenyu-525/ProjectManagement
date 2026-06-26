@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { SlashCommandDef } from '../../../api';
+import { customCommandsApi } from '../../../api/customCommands';
+import type { CustomCommand } from '../../../api/customCommands';
 
 // ── Command list ─────────────────────────────────────────────────
 
@@ -116,14 +118,31 @@ export function useSlashCommands() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
+  const [customCmds, setCustomCmds] = useState<CustomCommand[]>([]);
   const anchorRef = useRef<HTMLDivElement>(null);
+
+  // 加载自定义命令
+  useEffect(() => {
+    customCommandsApi.list().then(setCustomCmds).catch(() => {});
+  }, []);
+
+  const allCommands = useMemo(() => {
+    const builtIn: SlashCommandDef[] = SLASH_COMMANDS;
+    const custom: SlashCommandDef[] = customCmds.map(c => ({
+      name: c.name,
+      description: c.description || c.content.slice(0, 40),
+      icon: c.icon,
+      category: 'custom' as const,
+    }));
+    return [...builtIn, ...custom];
+  }, [customCmds]);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return SLASH_COMMANDS.filter(c =>
+    return allCommands.filter(c =>
       c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
     );
-  }, [query]);
+  }, [query, allCommands]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -139,6 +158,12 @@ export function useSlashCommands() {
     return name + ' ';
   }, []);
 
+  // 自定义命令内容查找（按名称匹配）
+  const getCustomContent = useCallback((name: string): string | null => {
+    const cmd = customCmds.find(c => c.name === name);
+    return cmd?.content ?? null;
+  }, [customCmds]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (open && filtered.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(i => (i + 1) % filtered.length); return true; }
@@ -149,7 +174,7 @@ export function useSlashCommands() {
     return false;
   }, [open, filtered, index]);
 
-  return { open, filtered, index, setIndex, anchorRef, handleInputChange, handleSelect, handleKeyDown };
+  return { open, filtered, index, setIndex, anchorRef, handleInputChange, handleSelect, handleKeyDown, getCustomContent };
 }
 
 // ── Menu component (portal) ──────────────────────────────────────

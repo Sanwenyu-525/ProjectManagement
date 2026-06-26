@@ -359,6 +359,42 @@ body {
   margin: 8px 0 4px;
 }
 
+/* Knowledge base prose */
+.knowledgeProse { line-height: 1.7; color: var(--color-text-primary); }
+.knowledgeProse p { margin: 0 0 12px; font-size: 14px; }
+.knowledgeProse p:last-child { margin-bottom: 0; }
+.knowledgeProse h1 { font-size: 20px; font-weight: 600; margin: 20px 0 8px; font-family: var(--font-display); }
+.knowledgeProse h2 { font-size: 17px; font-weight: 600; margin: 18px 0 6px; font-family: var(--font-display); }
+.knowledgeProse h3 { font-size: 15px; font-weight: 600; margin: 14px 0 4px; }
+.knowledgeProse h1:first-child, .knowledgeProse h2:first-child, .knowledgeProse h3:first-child { margin-top: 0; }
+.knowledgeProse ul, .knowledgeProse ol { margin: 4px 0 12px; padding-left: 22px; }
+.knowledgeProse li { margin: 2px 0; font-size: 14px; }
+.knowledgeProse code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--md-surface-container-high);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.knowledgeProse pre { margin: 8px 0; border-radius: 8px; overflow: hidden; }
+.knowledgeProse pre code { background: transparent; padding: 0; }
+.knowledgeProse blockquote {
+  border-left: 3px solid var(--md-primary);
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: var(--md-surface-container-low);
+  border-radius: 0 8px 8px 0;
+  color: var(--color-text-secondary);
+}
+.knowledgeProse blockquote p { margin: 0; }
+.knowledgeProse table { border-collapse: collapse; margin: 8px 0; width: 100%; font-size: 13px; }
+.knowledgeProse th, .knowledgeProse td { border: 1px solid var(--color-border); padding: 6px 10px; text-align: left; }
+.knowledgeProse th { background: var(--md-surface-container-low); font-weight: 600; }
+.knowledgeProse hr { border: none; border-top: 1px solid var(--color-divider); margin: 16px 0; }
+.knowledgeProse img { max-width: 100%; border-radius: 8px; }
+.knowledgeProse a { color: var(--md-primary); text-decoration: none; }
+.knowledgeProse a:hover { text-decoration: underline; }
+
 /* Agent dropdown menu */
 .ant-dropdown {
   min-width: auto !important;

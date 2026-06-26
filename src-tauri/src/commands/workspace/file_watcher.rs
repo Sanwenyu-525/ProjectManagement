@@ -26,6 +26,8 @@ struct FileWatcherState {
     watched_roots: HashSet<PathBuf>,
     app_handle: Option<AppHandle>,
     debounce_map: HashMap<PathBuf, Instant>,
+    /// 事件风暴防护：记录每个根目录在当前窗口内的事件计数和窗口起始时间
+    flood_counts: HashMap<PathBuf, (Instant, u32)>,
 }
 
 static FILE_WATCHER: std::sync::LazyLock<Mutex<FileWatcherState>> =
@@ -35,6 +37,7 @@ static FILE_WATCHER: std::sync::LazyLock<Mutex<FileWatcherState>> =
             watched_roots: HashSet::new(),
             app_handle: None,
             debounce_map: HashMap::new(),
+            flood_counts: HashMap::new(),
         })
     });
 
@@ -90,28 +93,32 @@ fn handle_notify_event(event: Event) {
         return;
     }
 
-    // Find which watched root this change belongs to
-    let root_path = {
-        let state = recover_lock(&FILE_WATCHER);
-        find_matching_root(&state, &changed_path)
-    };
+    // 查找匹配的根目录 + 防抖检查 + 发送事件 — 单次加锁完成
+    let mut state = recover_lock(&FILE_WATCHER);
 
+    let root_path = find_matching_root(&state, &changed_path);
     let Some(root_path) = root_path else { return };
 
-    // Debounce: skip if last event for this root was < 300ms ago
-    {
-        let mut state = recover_lock(&FILE_WATCHER);
-        let now = Instant::now();
-        if let Some(last) = state.debounce_map.get(&root_path) {
-            if now.duration_since(*last) < Duration::from_millis(300) {
-                return;
-            }
+    // 防抖：300ms 内同一根目录的事件跳过
+    let now = Instant::now();
+    if let Some(last) = state.debounce_map.get(&root_path) {
+        if now.duration_since(*last) < Duration::from_millis(300) {
+            return;
         }
-        state.debounce_map.insert(root_path.clone(), now);
+    }
+    state.debounce_map.insert(root_path.clone(), now);
+
+    // 事件风暴防护：1 秒内超过 50 个事件时暂停该根目录 5 秒
+    let flood_entry = state.flood_counts.entry(root_path.clone()).or_insert((now, 0));
+    if now.duration_since(flood_entry.0) > Duration::from_secs(1) {
+        *flood_entry = (now, 1);
+    } else {
+        flood_entry.1 += 1;
+        if flood_entry.1 > 50 {
+            return; // 暂停转发事件，防止前端卡死
+        }
     }
 
-    // Emit event to frontend
-    let state = recover_lock(&FILE_WATCHER);
     if let Some(app) = &state.app_handle {
         let _ = app.emit(
             "file-changed",

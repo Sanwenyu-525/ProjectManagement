@@ -59,20 +59,7 @@ function formatDetails(action: string, details: string | null | undefined): stri
   }
 }
 
-function formatTime(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return '刚刚';
-  if (diffMins < 60) return `${diffMins} 分钟前`;
-  if (diffHours < 24) return `${diffHours} 小时前`;
-  if (diffDays < 7) return `${diffDays} 天前`;
-  return date.toLocaleDateString('zh-CN');
-}
+import { formatRelativeTime } from '@/lib/format';
 
 export default function TimelinePage() {
   const navigate = useNavigate();
@@ -202,7 +189,7 @@ export default function TimelinePage() {
             items={filteredLogs.map(log => {
               const action = ACTION_MAP[log.action] || { icon: <ClockCircleOutlined />, color: 'gray', label: log.action, category: '系统' };
               const details = formatDetails(log.action, log.details);
-              const timeAgo = formatTime(log.createdAt);
+              const timeAgo = formatRelativeTime(log.createdAt);
               const categoryColor = CATEGORY_COLORS[action.category] || '#6b7280';
 
               return {

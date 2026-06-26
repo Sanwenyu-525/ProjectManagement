@@ -1,23 +1,21 @@
-import { useState, useEffect } from 'react';
-import { Select, Button, Space, Table, Tag, Modal, Form, Input, Spin, message } from 'antd';
-import { PlusOutlined, AppstoreOutlined, TableOutlined } from '@ant-design/icons';
+import { useState, useEffect, useCallback } from 'react';
+import { Select, Button, Space, Table, Tag, Modal, Form, Input, Spin, message, Empty } from 'antd';
+import { PlusOutlined, AppstoreOutlined, TableOutlined, SearchOutlined, DisconnectOutlined } from '@ant-design/icons';
 import { tasksApi } from '../../../api';
 import type { Task, RemoteRepo, CreateTaskInput } from '../../../types';
 import KanbanBoard from '../../../shared/KanbanBoard';
 
-export default function TasksTab({ projectId, repos }: { projectId: string; repos: RemoteRepo[] }) {
+export default function TasksTab({ projectId, repos, localPath }: { projectId: string; repos: RemoteRepo[]; localPath?: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [scopeFilter, setScopeFilter] = useState<string | undefined>();
   const [modalOpen, setModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('kanban');
   const [form] = Form.useForm();
+  const [taskCommits, setTaskCommits] = useState<Record<string, Array<{ commitHash: string; linkedAt: string; linkSource: string }>>>({});
+  const [scanning, setScanning] = useState(false);
 
-  /* eslint-disable react-hooks/exhaustive-deps */
-  useEffect(() => { loadTasks(); }, [scopeFilter]);
-  /* eslint-enable react-hooks/exhaustive-deps */
-
-  async function loadTasks() {
+  const loadTasks = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, string> = {};
@@ -27,7 +25,9 @@ export default function TasksTab({ projectId, repos }: { projectId: string; repo
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId, scopeFilter]);
+
+  useEffect(() => { loadTasks(); }, [loadTasks]);
 
   const handleCreate = async (values: CreateTaskInput) => {
     await tasksApi.create(projectId, { ...values, repoScope: values.repoScope || undefined });
@@ -40,6 +40,42 @@ export default function TasksTab({ projectId, repos }: { projectId: string; repo
   const handleStatusChange = async (taskId: string, status: string) => {
     await tasksApi.updateStatus(taskId, status);
     loadTasks();
+  };
+
+  const loadCommits = useCallback(async (taskId: string) => {
+    try {
+      const commits = await tasksApi.getCommits(taskId);
+      setTaskCommits(prev => ({ ...prev, [taskId]: commits }));
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleUnlink = async (taskId: string, commitHash: string) => {
+    try {
+      await tasksApi.unlinkCommit(taskId, commitHash);
+      await loadCommits(taskId);
+      message.success('已取消关联');
+    } catch {
+      message.error('取消关联失败');
+    }
+  };
+
+  const handleScan = async () => {
+    if (!localPath) {
+      message.warning('项目无本地路径');
+      return;
+    }
+    setScanning(true);
+    try {
+      const result = await tasksApi.scanCommits(projectId, localPath);
+      message.success(`扫描完成，新关联 ${result.linked} 个提交`);
+      for (const taskId of Object.keys(taskCommits)) {
+        await loadCommits(taskId);
+      }
+    } catch {
+      message.error('扫描失败');
+    } finally {
+      setScanning(false);
+    }
   };
 
   const columns = [
@@ -69,7 +105,10 @@ export default function TasksTab({ projectId, repos }: { projectId: string; repo
             <Button icon={<TableOutlined />} type={viewMode === 'table' ? 'primary' : 'default'} onClick={() => setViewMode('table')}>列表</Button>
           </Button.Group>
         </Space>
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => setModalOpen(true)}>新建任务</Button>
+        <Space>
+          <Button icon={<SearchOutlined />} onClick={handleScan} loading={scanning}>扫描提交关联</Button>
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => setModalOpen(true)}>新建任务</Button>
+        </Space>
       </div>
 
       {loading ? (
@@ -77,7 +116,44 @@ export default function TasksTab({ projectId, repos }: { projectId: string; repo
       ) : viewMode === 'kanban' ? (
         <KanbanBoard tasks={tasks} onTaskUpdated={loadTasks} />
       ) : (
-        <Table columns={columns} dataSource={tasks} rowKey="id" pagination={false} />
+        <Table
+          columns={columns}
+          dataSource={tasks}
+          rowKey="id"
+          pagination={false}
+          expandable={{
+            expandedRowRender: (record) => {
+              const commits = taskCommits[record.id] || [];
+              if (commits.length === 0) {
+                return <Empty description="暂无关联提交" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+              }
+              return (
+                <div style={{ padding: '8px 0' }}>
+                  <Table
+                    dataSource={commits}
+                    rowKey="commitHash"
+                    size="small"
+                    pagination={false}
+                    columns={[
+                      { title: '提交', dataIndex: 'commitHash', key: 'hash', render: (v: string) => <code style={{ fontSize: 12 }}>{v.slice(0, 8)}</code> },
+                      { title: '来源', dataIndex: 'linkSource', key: 'source', render: (v: string) => <Tag color={v === 'auto' ? 'blue' : 'green'}>{v === 'auto' ? '自动' : '手动'}</Tag> },
+                      { title: '关联时间', dataIndex: 'linkedAt', key: 'at', render: (v: string) => new Date(v).toLocaleString('zh-CN') },
+                      {
+                        title: '', key: 'action', width: 48,
+                        render: (_: unknown, r: { commitHash: string }) => (
+                          <Button type="text" size="small" danger icon={<DisconnectOutlined />} onClick={() => handleUnlink(record.id, r.commitHash)} />
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              );
+            },
+            onExpand: (expanded, record) => {
+              if (expanded && !taskCommits[record.id]) loadCommits(record.id);
+            },
+          }}
+        />
       )}
 
       <Modal title="新建任务" open={modalOpen} onCancel={() => { setModalOpen(false); form.resetFields(); }} onOk={() => form.submit()} okText="创建">

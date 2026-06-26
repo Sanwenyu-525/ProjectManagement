@@ -2,14 +2,16 @@ import { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy } fro
 import { useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useThemeStore } from '../../stores/themeStore';
-import { useTerminalStore } from '../../stores/terminalStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useAgentTabStore } from '../../stores/agentTabStore';
 import { useAgentPlanStore } from '../../stores/agentPlanStore';
+import { useAgentContextStore } from '../../stores/agentContextStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import { sessionsApi, gitApi, workspacesApi, networkApi } from '../../api';
+import { sessionsApi, gitApi } from '../../api';
 import { queryKeys } from '../../api/queryKeys';
 import { usePreviewStore } from '../../stores/previewStore';
+import { usePortScan } from './hooks/usePortScan';
+import { useWorkspaceData } from './hooks/useWorkspaceData';
 import AgentTabBar from './agent/AgentTabBar';
 import AgentTerminal from './agent/AgentTerminal';
 import { folderName } from './components/terminalFactory';
@@ -34,61 +36,12 @@ export default function WorkspacePage() {
 
   useLaunchQueue();
   useTerminalEvents();
+  usePortScan();
 
-  // Port scan polling — detect external dev servers every 15s
-  useEffect(() => {
-    const scan = async () => {
-      try {
-        const activePorts = await networkApi.scanActivePorts();
-        for (const port of activePorts) {
-          usePreviewStore.getState().addPreview(`http://localhost:${port}`, 'port-scan');
-        }
-      } catch { /* ignore scan errors */ }
-    };
-    scan();
-    const id = setInterval(scan, 15_000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Defer non-critical queries to let first paint complete
-  const [deferredReady, setDeferredReady] = useState(false);
-  useEffect(() => {
-    const id = setTimeout(() => setDeferredReady(true), 500);
-    return () => clearTimeout(id);
-  }, []);
-
-  // Workspace stats (tasks, issues, docs) — deferred
-  const { data: stats } = useQuery({
-    queryKey: ['workspaceStats'] as const,
-    queryFn: workspacesApi.stats,
-    staleTime: 30_000,
-    enabled: deferredReady,
-  });
-
-  const defaultCwd = useTerminalStore(s => s.defaultCwd);
+  const { stats, lastCommitTime, defaultCwd, deferredReady } = useWorkspaceData();
 
   // Derive active tab
   const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId]);
-
-  // Git log for last commit time — deferred
-  const { data: gitLog } = useQuery({
-    queryKey: queryKeys.git.log(defaultCwd),
-    queryFn: () => gitApi.log(defaultCwd, 1),
-    staleTime: 60_000,
-    enabled: deferredReady,
-  });
-
-  const lastCommitTime = (() => {
-    if (!gitLog?.commits?.[0]?.date) return null;
-    const diff = Date.now() - new Date(gitLog.commits[0].date).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.floor(hrs / 24);
-    return `${days}d ago`;
-  })();
 
   // Git branches for current branch display — deferred
   const { data: branches } = useQuery({
@@ -141,15 +94,17 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!staleSessionsCleanedUp) {
       staleSessionsCleanedUp = true;
-      sessionsApi.cleanupStale(60, 30).catch(() => {});
+      sessionsApi.cleanupStale(60, 30).catch((e) => console.error('[Workspace] cleanupStale failed:', e));
     }
   }, []);
 
-  // Close a tab — the AgentTerminal handles its own cleanup via unmount
+  // Close a tab — clean up agent store data and the AgentTerminal handles its own cleanup via unmount
   const handleTabClose = useCallback((tabId: string) => {
     const tab = useAgentTabStore.getState().tabs.find(t => t.id === tabId);
     if (tab?.sessionId) {
       sessionsApi.end(tab.sessionId).catch(() => {});
+      useAgentStore.getState().clearMessages(tab.sessionId);
+      useAgentContextStore.getState().clearContext(tab.sessionId);
     }
     useAgentTabStore.getState().closeTab(tabId);
   }, []);
@@ -205,9 +160,10 @@ export default function WorkspacePage() {
       // Clear immediately to avoid re-sending
       setPendingAgentMsg(null);
       // Dispatch to agent terminal via custom event
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         window.dispatchEvent(new CustomEvent('agentQuickCommand', { detail: pendingAgentMsg + '\n' }));
       }, 500);
+      return () => clearTimeout(timer);
     }
   }, [pendingAgentMsg, setPendingAgentMsg]);
 
@@ -510,7 +466,7 @@ export default function WorkspacePage() {
               color: 'var(--md-on-surface-variant)',
               border: 'none',
               transition: 'color 0.15s',
-              zIndex: 10,
+              zIndex: 20,
             }}
             title="展开终端"
             onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-primary)'; }}

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Input, message } from 'antd';
-import { useAgentPromptStore } from '../../../stores/agentPromptStore';
+import { useAgentUIStore } from '../../../stores/agentUIStore';
 import { useWheelScroll } from '../../../hooks/useWheelScroll';
 import {
   PROMPT_TEMPLATES,
@@ -20,12 +20,12 @@ function dispatchQuickCommand(text: string) {
 // ── Main Panel ──
 
 export default function AgentPromptPanel() {
-  const activePhase = useAgentPromptStore(s => s.activePhase);
-  const setActivePhase = useAgentPromptStore(s => s.setActivePhase);
-  const searchQuery = useAgentPromptStore(s => s.searchQuery);
-  const setSearchQuery = useAgentPromptStore(s => s.setSearchQuery);
-  const showOptimize = useAgentPromptStore(s => s.showOptimize);
-  const setShowOptimize = useAgentPromptStore(s => s.setShowOptimize);
+  const activePhase = useAgentUIStore(s => s.activePhase);
+  const setActivePhase = useAgentUIStore(s => s.setActivePhase);
+  const searchQuery = useAgentUIStore(s => s.searchQuery);
+  const setSearchQuery = useAgentUIStore(s => s.setSearchQuery);
+  const showOptimize = useAgentUIStore(s => s.showOptimize);
+  const setShowOptimize = useAgentUIStore(s => s.setShowOptimize);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
 

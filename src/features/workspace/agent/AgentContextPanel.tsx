@@ -17,24 +17,27 @@ const OP_CONFIG: Record<FileOperation, { icon: string; color: string; label: str
 export default function AgentContextPanel({ sessionId, cwd }: AgentContextPanelProps) {
   // Subscribe to this session's context slice only
   const sessionContext = useAgentContextStore(s => sessionId ? s.contexts[sessionId] : undefined);
+  const sessionFiles = sessionContext?.files;
   const displayFiles = useMemo(
-    () => (sessionContext ? Object.values(sessionContext.files).sort((a, b) => b.lastAccessed - a.lastAccessed) : []),
-    [sessionContext],
+    () => (sessionFiles ? Object.values(sessionFiles).sort((a, b) => b.lastAccessed - a.lastAccessed) : []),
+    [sessionFiles],
   );
+  const sessionGraphQueries = sessionContext?.graphQueries;
   const graphQueries = useMemo(
-    () => sessionContext?.graphQueries ?? [],
-    [sessionContext],
+    () => sessionGraphQueries ?? [],
+    [sessionGraphQueries],
   );
+  const sessionImpactWarnings = sessionContext?.impactWarnings;
   const impactWarnings = useMemo(
-    () => sessionContext?.impactWarnings ?? [],
-    [sessionContext],
+    () => sessionImpactWarnings ?? [],
+    [sessionImpactWarnings],
   );
 
   // Group files by primary operation
   const grouped = useMemo(() => {
     const groups: Record<string, typeof displayFiles> = { read: [], write: [], edit: [], search: [] };
     for (const f of displayFiles) {
-      const primary = f.operations[f.operations.length - 1]; // most recent operation
+      const primary = f.operations.length > 0 ? f.operations[f.operations.length - 1] : 'read';
       (groups[primary] ?? (groups[primary] = [])).push(f);
     }
     return groups;

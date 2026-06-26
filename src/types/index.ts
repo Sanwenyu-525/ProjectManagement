@@ -178,6 +178,8 @@ export interface HealthCheckResult {
   behindCount: number;
   outdatedDeps: string;
   outdatedDepCount: number;
+  vulnerabilityCount: number;
+  vulnerabilities: string;
   hasChanges: boolean;
   createdAt: ISODateTime;
 }
@@ -191,8 +193,17 @@ export interface ProjectHealthResult {
   behindCount: number;
   outdatedDeps: OutdatedDep[];
   outdatedDepCount: number;
+  vulnerabilityCount: number;
+  vulnerabilities: Vulnerability[];
   hasChanges: boolean;
   error?: string;
+}
+
+export interface Vulnerability {
+  name: string;
+  severity: string;
+  via: string;
+  fixAvailable: boolean;
 }
 
 export interface OutdatedDep {
@@ -473,8 +484,8 @@ export interface AgentTask {
   sessionId: string;
   parentId: string | null;
   title: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  priority: 'high' | 'medium' | 'low';
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  priority: 'high' | 'medium' | 'low' | 'urgent';
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

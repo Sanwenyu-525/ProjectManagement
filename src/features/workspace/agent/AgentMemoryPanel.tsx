@@ -4,7 +4,6 @@ import { Modal, Input, Select, message } from 'antd';
 import { useQuery as useRqQuery } from '@tanstack/react-query';
 import { memoryApi, decisionsApi } from '../../../api';
 import { queryKeys } from '../../../api/queryKeys';
-import { useMemoryStore } from '../../../stores/memoryStore';
 import type { ProjectMemory, MemoryType, CreateMemoryInput, CreateDecisionInput } from '../../../types';
 
 interface AgentMemoryPanelProps {
@@ -46,28 +45,13 @@ const DECISION_STATUS_LABELS: Record<string, string> = {
   superseded: '已替代',
 };
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const now = Date.now();
-  const diff = now - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '刚刚';
-  if (mins < 60) return `${mins}分钟前`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}小时前`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}天前`;
-  return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
+import { formatRelativeTime as formatTime } from '@/lib/format';
 
 export default function AgentMemoryPanel({ sessionId }: AgentMemoryPanelProps) {
   const queryClient = useQueryClient();
-  const searchQuery = useMemoryStore(s => s.searchQuery);
-  const setSearchQuery = useMemoryStore(s => s.setSearchQuery);
-  const showCreateModal = useMemoryStore(s => s.showCreateModal);
-  const setShowCreateModal = useMemoryStore(s => s.setShowCreateModal);
-  const showDecisionModal = useMemoryStore(s => s.showDecisionModal);
-  const setShowDecisionModal = useMemoryStore(s => s.setShowDecisionModal);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDecisionModal, setShowDecisionModal] = useState(false);
   const [showBuildContextModal, setShowBuildContextModal] = useState(false);
   const [hoveredMemory, setHoveredMemory] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -625,6 +609,8 @@ function BuildContextModal({ open, onClose }: {
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(packedContext).then(() => {
       message.success('已复制到剪贴板');
+    }).catch(() => {
+      message.error('复制失败');
     });
   }, [packedContext]);
 

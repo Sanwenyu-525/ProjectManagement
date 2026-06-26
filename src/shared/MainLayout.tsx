@@ -6,7 +6,7 @@ import { SettingOutlined } from '@ant-design/icons';
 import SearchBox from './components/SearchBox';
 import ShortcutsModal from './ShortcutsModal';
 import { useThemeStore } from '../stores/themeStore';
-import { useGlobalEditorStore } from '../stores/globalEditorStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import { COMMANDS, matchesShortcut, setCommandNavigate, setToggleFilePanel } from '../lib/commands';
 import type { FileExplorerHandle } from './FileExplorer';
 
@@ -175,8 +175,8 @@ export default function MainLayout() {
   }, [filePanelWidth]);
 
   // ── Global Editor Drawer (right side) ──
-  const editorDrawerOpen = useGlobalEditorStore(s => s.drawerOpen);
-  const setEditorDrawerOpen = useGlobalEditorStore(s => s.setDrawerOpen);
+  const editorDrawerOpen = useWorkspaceStore(s => s.drawerOpen);
+  const setEditorDrawerOpen = useWorkspaceStore(s => s.setDrawerOpen);
   const [editorDrawerWidth, setEditorDrawerWidth] = useState(() => {
     const stored = localStorage.getItem('devhub_globalEditorWidth');
     return stored ? Math.min(800, Math.max(300, Number(stored))) : 500;

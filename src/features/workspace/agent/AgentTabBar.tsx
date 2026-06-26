@@ -48,8 +48,8 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
           const tabStatus: 'running' | 'idle' | 'ended' | 'error' | 'none' =
             tab.sessionId == null ? 'none'
             : isStreaming ? 'running'
-            : tab.sessionId in errorSessionIds ? 'error'
-            : tab.sessionId in endedSessionIds ? 'ended'
+            : errorSessionIds[tab.sessionId] ? 'error'
+            : endedSessionIds[tab.sessionId] ? 'ended'
             : 'idle';
           const tabCwd = effectiveCwd(tab.cwd);
           return (

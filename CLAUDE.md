@@ -87,6 +87,8 @@ src/hooks/             — 自定义 hooks（useProjects.ts, useHealth.ts 等）
 - `ClaudeProvider.ts` — PTY 实现，直接 spawn `claude --dangerously-skip-permissions`
 - `providers.ts` — 注册表：`getProviders()`, `getProvider(id)`
 
+**不实现外部 API 直接接入：** Agent 系统仅通过 CLI（Claude PTY）方式运行，不实现 HTTP API 调用（OpenAI/Gemini/Ollama 等）。`model_providers`/`agent_configs` 表仅用于设置 UI 展示，不驱动实际 provider。自定义 slash 命令支持用户创建 prompt 模板（`custom_commands` 表），从 Agent 输入栏 `/` 触发。
+
 新增 agent 后端：实现 `AgentProvider` 接口，注册到 `providers.ts`。
 
 ### IPC Flow

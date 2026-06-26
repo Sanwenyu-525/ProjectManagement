@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod path_guard;
 
 use db::Database;
 use tauri::Manager;
@@ -78,6 +79,10 @@ pub fn run() {
             commands::project::tasks::tasks_update,
             commands::project::tasks::tasks_delete,
             commands::project::tasks::tasks_update_status,
+            commands::project::tasks::tasks_get_commits,
+            commands::project::tasks::tasks_link_commit,
+            commands::project::tasks::tasks_unlink_commit,
+            commands::project::tasks::tasks_scan_commits,
             commands::project::repos::repos_list,
             commands::project::repos::repos_add,
             commands::project::repos::repos_update,
@@ -177,6 +182,7 @@ pub fn run() {
             commands::workspace::files::files_create,
             commands::workspace::files::files_rename,
             commands::workspace::files::files_delete,
+            commands::workspace::files::files_copy,
             commands::workspace::files::files_search_across_projects,
             commands::workspace::files::files_search_content,
             commands::workspace::files::files_paste_from_system_clipboard,
@@ -273,6 +279,11 @@ pub fn run() {
             commands::workspace::notes::notes_update,
             commands::workspace::notes::notes_delete,
             commands::workspace::notes::notes_pin,
+            // Custom slash commands
+            commands::workspace::custom_commands::custom_commands_list,
+            commands::workspace::custom_commands::custom_commands_create,
+            commands::workspace::custom_commands::custom_commands_update,
+            commands::workspace::custom_commands::custom_commands_delete,
             // Knowledge file operations
             commands::workspace::knowledge::knowledge_import_files,
             commands::workspace::knowledge::knowledge_create_note,

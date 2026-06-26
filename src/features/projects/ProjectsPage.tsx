@@ -18,6 +18,7 @@ import { STATUS_COLORS, PROJECT_STATUSES, PRIORITY_OPTIONS } from '../../lib/con
 import { buildLaunchRequests } from '../../lib/launchUtils';
 import { getProjectPriority, getPriorityLabel, getPriorityColor } from './projectUtils';
 import { useBatchLaunch } from './useBatchLaunch';
+import { formatRelativeTime as formatRelativeTimeShared } from '@/lib/format';
 import { useScanProjects } from './useScanProjects';
 import { ProjectGridView } from './ProjectGridView';
 import { useThemeStore } from '../../stores/themeStore';
@@ -379,14 +380,7 @@ export default function ProjectsPage() {
   // ── Relative time helper ──
   const formatRelativeTime = (iso?: string) => {
     if (!iso) return '';
-    const diff = Date.now() - new Date(iso).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return '刚刚';
-    if (mins < 60) return `${mins}分钟前`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}小时前`;
-    const days = Math.floor(hours / 24);
-    return `${days}天前`;
+    return formatRelativeTimeShared(iso);
   };
 
   // ── Status color CSS variable ──

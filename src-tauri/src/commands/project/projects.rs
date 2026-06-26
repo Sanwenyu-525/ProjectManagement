@@ -3,6 +3,7 @@ use serde_json::Value as JsonValue;
 use tauri::{command, AppHandle, State};
 
 use crate::db::Database;
+use crate::path_guard;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,11 +24,15 @@ pub async fn projects_list(
 ) -> Result<JsonValue, String> {
     let mut sql = String::from(
         "SELECT p.*,
-            (SELECT COUNT(*) FROM tasks WHERE projectId = p.id) as taskCount,
-            (SELECT COUNT(*) FROM tasks WHERE projectId = p.id AND status = 'Done') as completedTaskCount,
-            (SELECT COUNT(*) FROM documents WHERE projectId = p.id) as docCount,
-            (SELECT COUNT(*) FROM remote_repos WHERE projectId = p.id) as repoCount
-         FROM projects p WHERE p.deletedAt IS NULL",
+            COUNT(DISTINCT t.id) as taskCount,
+            COUNT(DISTINCT CASE WHEN t.status = 'Done' THEN t.id END) as completedTaskCount,
+            COUNT(DISTINCT d.id) as docCount,
+            COUNT(DISTINCT r.id) as repoCount
+         FROM projects p
+         LEFT JOIN tasks t ON t.projectId = p.id
+         LEFT JOIN documents d ON d.projectId = p.id
+         LEFT JOIN remote_repos r ON r.projectId = p.id
+         WHERE p.deletedAt IS NULL",
     );
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
     let mut param_idx = 1u32;
@@ -62,6 +67,7 @@ pub async fn projects_list(
             } else {
                 sql.push_str(&format!(" AND p.workspaceId = ?{}", param_idx));
                 param_values.push(Box::new(workspace_id.clone()));
+                param_idx += 1;
             }
         }
     }
@@ -71,6 +77,7 @@ pub async fn projects_list(
     let valid_sorts = ["name", "status", "priority", "createdAt", "updatedAt"];
     let sort_col = if valid_sorts.contains(&sort) { sort } else { "updatedAt" };
     let order_dir = if order.eq_ignore_ascii_case("ASC") { "ASC" } else { "DESC" };
+    sql.push_str(" GROUP BY p.id");
     sql.push_str(&format!(" ORDER BY p.{} {}", sort_col, order_dir));
 
     let refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
@@ -529,6 +536,12 @@ pub async fn projects_open(
     let backend_command = project.get("backendCommand").and_then(|v| v.as_str());
 
     let path = local_path.ok_or("NO_LOCAL_PATH: 请先设置本地路径")?;
+
+    // 校验路径不含 shell 元字符，防止命令注入
+    if path_guard::contains_shell_metachars(path) {
+        return Err("项目路径包含不允许的字符".into());
+    }
+
     let effective = frontend_command.or(backend_command).or(open_command).unwrap_or("explorer {path}");
     let command_str = effective.replace("{path}", path);
 
@@ -649,6 +662,12 @@ pub async fn projects_launch(
         .ok_or("PROJECT_NOT_FOUND")?;
 
     let local_path = project.get("localPath").and_then(|v| v.as_str()).ok_or("NO_LOCAL_PATH")?;
+
+    // 校验路径不含 shell 元字符，防止命令注入
+    if path_guard::contains_shell_metachars(local_path) {
+        return Err("项目路径包含不允许的字符".into());
+    }
+
     let frontend_cmd = project.get("frontendCommand").and_then(|v| v.as_str());
     let backend_cmd = project.get("backendCommand").and_then(|v| v.as_str());
     let open_cmd = project.get("openCommand").and_then(|v| v.as_str());

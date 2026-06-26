@@ -26,6 +26,7 @@ export default defineConfig({
           antd: ['antd', '@ant-design/icons'],
           codemirror: ['@uiw/react-codemirror', '@codemirror/view', '@codemirror/state'],
           xterm: ['@xterm/xterm', '@xterm/addon-fit'],
+          echarts: ['echarts', 'echarts-for-react'],
           markdown: ['react-markdown'],
           syntaxHighlighter: ['react-syntax-highlighter'],
         },

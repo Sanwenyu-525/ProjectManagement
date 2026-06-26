@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use tauri::command;
 use tauri::State;
 
-use crate::db::{new_id, Database};
+use crate::db::{new_id, Database, DbError};
 
 const SKIP_DIRS: &[&str] = &[
     "node_modules", ".git", "target", "dist", "build", "out",
@@ -266,34 +266,34 @@ fn walk_project(root: &Path, dir: &Path, depth: usize, max_depth: usize, out: &m
 
 // Pre-compiled regex patterns (compiled once at first use)
 static RE_TS_IMPORT: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#"(?:(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"])"#).unwrap()
+    regex::Regex::new(r#"(?:(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"])"#).expect("valid regex: RE_TS_IMPORT")
 });
 static RE_TS_REQUIRE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap()
+    regex::Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).expect("valid regex: RE_TS_REQUIRE")
 });
 static RE_TS_DYNAMIC: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap()
+    regex::Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)"#).expect("valid regex: RE_TS_DYNAMIC")
 });
 static RE_RS_USE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?:use\s+(?:crate|super|self)::([^;]+);)").unwrap()
+    regex::Regex::new(r"(?:use\s+(?:crate|super|self)::([^;]+);)").expect("valid regex: RE_RS_USE")
 });
 static RE_RS_MOD: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?:^|\n)\s*mod\s+(\w+)\s*;").unwrap()
+    regex::Regex::new(r"(?:^|\n)\s*mod\s+(\w+)\s*;").expect("valid regex: RE_RS_MOD")
 });
 static RE_PY_FROM: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?m)^\s*from\s+([\w.]+)\s+import").unwrap()
+    regex::Regex::new(r"(?m)^\s*from\s+([\w.]+)\s+import").expect("valid regex: RE_PY_FROM")
 });
 static RE_PY_IMPORT: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?m)^\s*import\s+([\w.]+)").unwrap()
+    regex::Regex::new(r"(?m)^\s*import\s+([\w.]+)").expect("valid regex: RE_PY_IMPORT")
 });
 static RE_GO_IMPORT_BLOCK: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#"import\s*\((?s)(.*?)\)"#).unwrap()
+    regex::Regex::new(r#"import\s*\((?s)(.*?)\)"#).expect("valid regex: RE_GO_IMPORT_BLOCK")
 });
 static RE_GO_IMPORT_LINE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#""([^"]+)""#).unwrap()
+    regex::Regex::new(r#""([^"]+)""#).expect("valid regex: RE_GO_IMPORT_LINE")
 });
 static RE_GO_IMPORT_SINGLE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#"import\s+"([^"]+)""#).unwrap()
+    regex::Regex::new(r#"import\s+"([^"]+)""#).expect("valid regex: RE_GO_IMPORT_SINGLE")
 });
 
 fn extract_imports(content: &str, language: &str) -> Vec<String> {
@@ -683,30 +683,24 @@ pub async fn graph_scan_project(
         *language_counts.entry(n.language.clone()).or_insert(0) += 1;
     }
 
-    // Wrap batch inserts in a transaction for performance
-    db.execute("BEGIN", &[]).map_err(|e| e.to_string())?;
-
-    for n in &nodes {
-        if let Err(e) = db.execute(
-            "INSERT INTO graph_nodes (id, projectId, filePath, fileName, language, directory, lineCount) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![n.id, n.project_id, n.file_path, n.file_name, n.language, n.directory, n.line_count],
-        ) {
-            let _ = db.execute("ROLLBACK", &[]);
-            return Err(e.to_string());
+    // 批量插入使用事务（自动回滚保护）
+    db.with_transaction(|tx| {
+        for n in &nodes {
+            tx.execute(
+                "INSERT INTO graph_nodes (id, projectId, filePath, fileName, language, directory, lineCount) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![n.id, n.project_id, n.file_path, n.file_name, n.language, n.directory, n.line_count],
+            ).map_err(|e| DbError::Sqlite(e))?;
         }
-    }
 
-    for e in &edges {
-        if let Err(e) = db.execute(
-            "INSERT INTO graph_edges (id, projectId, sourceNodeId, targetNodeId, importPath) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![e.id, e.project_id, e.source_node_id, e.target_node_id, e.import_path],
-        ) {
-            let _ = db.execute("ROLLBACK", &[]);
-            return Err(e.to_string());
+        for e in &edges {
+            tx.execute(
+                "INSERT INTO graph_edges (id, projectId, sourceNodeId, targetNodeId, importPath) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![e.id, e.project_id, e.source_node_id, e.target_node_id, e.import_path],
+            ).map_err(|e| DbError::Sqlite(e))?;
         }
-    }
 
-    db.execute("COMMIT", &[]).map_err(|e| e.to_string())?;
+        Ok(())
+    }).map_err(|e| e.to_string())?;
 
     // Re-associate feature groups with new node IDs by matching filePath
     if !saved_group_files.is_empty() {

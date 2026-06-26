@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useAgentWorkspaceStore } from '../../../stores/agentWorkspaceStore';
+import { useAgentUIStore } from '../../../stores/agentUIStore';
 import { useThemeStore } from '../../../stores/themeStore';
 import AgentPlanPanel from './AgentPlanPanel';
 import AgentGitTab from './AgentGitTab';
@@ -31,10 +31,10 @@ interface AgentRightPanelProps {
 }
 
 export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps) {
-  const panelWidth = useAgentWorkspaceStore(s => s.panelWidth);
-  const setPanelWidth = useAgentWorkspaceStore(s => s.setPanelWidth);
-  const panelCollapsed = useAgentWorkspaceStore(s => s.panelCollapsed);
-  const togglePanelCollapsed = useAgentWorkspaceStore(s => s.togglePanelCollapsed);
+  const panelWidth = useAgentUIStore(s => s.panelWidth);
+  const setPanelWidth = useAgentUIStore(s => s.setPanelWidth);
+  const panelCollapsed = useAgentUIStore(s => s.panelCollapsed);
+  const togglePanelCollapsed = useAgentUIStore(s => s.togglePanelCollapsed);
   const [activeTab, setActiveTab] = useState<RightTab>('plan');
   const [hoveredTab, setHoveredTab] = useState<RightTab | null>(null);
   const wheelScroll = useWheelScroll<HTMLDivElement>();

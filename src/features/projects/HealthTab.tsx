@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, Tag, Table, Button, Spin, Empty, Space, message } from 'antd';
 import {
   BranchesOutlined,
@@ -6,6 +6,7 @@ import {
   ReloadOutlined,
   CheckCircleOutlined,
   WarningOutlined,
+  BugOutlined,
 } from '@ant-design/icons';
 import { healthApi } from '../../api';
 import { hasHealthIssues } from '../../lib/healthUtils';
@@ -20,6 +21,8 @@ interface HealthRecord {
   behindCount: number;
   outdatedDeps: string; // JSON string from DB
   outdatedDepCount: number;
+  vulnerabilityCount: number;
+  vulnerabilities: string; // JSON string from DB
   hasChanges: boolean;
   error?: string | null;
 }
@@ -29,7 +32,7 @@ export default function HealthTab({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
   const [rechecking, setRechecking] = useState(false);
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     setLoading(true);
     try {
       const data = await healthApi.getProjectHistory(projectId, 7);
@@ -39,10 +42,9 @@ export default function HealthTab({ projectId }: { projectId: string }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadHistory(); }, [projectId]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   const handleRecheck = async () => {
     setRechecking(true);
@@ -77,6 +79,11 @@ export default function HealthTab({ projectId }: { projectId: string }) {
   let outdatedDeps: Array<{ name: string; current: string; wanted: string; latest: string }> = [];
   try {
     outdatedDeps = JSON.parse(latest.outdatedDeps || '[]');
+  } catch { /* ignore */ }
+
+  let vulns: Array<{ name: string; severity: string; via: string; fixAvailable: boolean }> = [];
+  try {
+    vulns = JSON.parse(latest.vulnerabilities || '[]');
   } catch { /* ignore */ }
 
   const overallHealthy = !hasHealthIssues(latest);
@@ -152,6 +159,45 @@ export default function HealthTab({ projectId }: { projectId: string }) {
                 dataIndex: 'latest',
                 key: 'latest',
                 render: (v: string) => <Tag color="blue">{v}</Tag>,
+              },
+            ]}
+          />
+        </Card>
+      )}
+
+      {/* Vulnerabilities Card */}
+      {latest.vulnerabilityCount > 0 && (
+        <Card size="small" title={<><BugOutlined /> 安全漏洞 ({latest.vulnerabilityCount})</>}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            {['critical', 'high', 'moderate', 'low'].map(sev => {
+              const count = vulns.filter(v => v.severity === sev).length;
+              if (count === 0) return null;
+              const color = sev === 'critical' ? 'red' : sev === 'high' ? 'orange' : sev === 'moderate' ? 'gold' : 'default';
+              return <Tag key={sev} color={color}>{sev}: {count}</Tag>;
+            })}
+          </div>
+          <Table
+            dataSource={vulns}
+            rowKey="name"
+            size="small"
+            pagination={false}
+            columns={[
+              { title: '包名', dataIndex: 'name', key: 'name' },
+              {
+                title: '严重程度',
+                dataIndex: 'severity',
+                key: 'severity',
+                render: (v: string) => {
+                  const color = v === 'critical' ? 'red' : v === 'high' ? 'orange' : v === 'moderate' ? 'gold' : 'default';
+                  return <Tag color={color}>{v}</Tag>;
+                },
+              },
+              { title: '描述', dataIndex: 'via', key: 'via', ellipsis: true },
+              {
+                title: '可修复',
+                dataIndex: 'fixAvailable',
+                key: 'fix',
+                render: (v: boolean) => v ? <Tag color="success">是</Tag> : <Tag>否</Tag>,
               },
             ]}
           />

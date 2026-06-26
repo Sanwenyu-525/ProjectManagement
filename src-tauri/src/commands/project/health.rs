@@ -17,6 +17,15 @@ pub struct OutdatedDep {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct Vulnerability {
+    pub name: String,
+    pub severity: String,
+    pub via: String,
+    pub fix_available: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectHealthResult {
     pub project_id: String,
     pub project_name: String,
@@ -26,6 +35,8 @@ pub struct ProjectHealthResult {
     pub behind_count: i32,
     pub outdated_deps: Vec<OutdatedDep>,
     pub outdated_dep_count: i32,
+    pub vulnerability_count: i32,
+    pub vulnerabilities: Vec<Vulnerability>,
     pub has_changes: bool,
     pub health_score: Option<i32>,
     pub health_status: Option<String>,
@@ -37,7 +48,8 @@ pub struct ProjectHealthResult {
 /// Scoring breakdown:
 /// - Git cleanliness (25): 0 dirty = 25, 1-5 = 20, 6-15 = 12, 16+ = 5
 /// - Branch sync (20): synced = 20, ahead only = 15, behind only = 10, diverged = 5
-/// - Dependencies (20): 0 outdated = 20, 1-3 = 15, 4-10 = 8, 11+ = 3
+/// - Dependencies (10): 0 outdated = 10, 1-3 = 8, 4-10 = 5, 11+ = 2
+/// - Vulnerabilities (10): 0 = 10, 1-2 moderate = 7, any high = 4, any critical = 1
 /// - Structure (20): has README = 7, has src/ = 7, has .gitignore = 6
 /// - Code signals (15): has package.json scripts = 5, has tests = 5, has CI = 5
 fn calculate_health_score(result: &ProjectHealthResult, local_path: &str) -> (i32, String) {
@@ -65,15 +77,30 @@ fn calculate_health_score(result: &ProjectHealthResult, local_path: &str) -> (i3
         (true, true) => 5,    // diverged
     };
 
-    // 3. Dependencies (20 points)
+    // 3. Dependencies (10 points)
     score += match result.outdated_dep_count {
-        0 => 20,
-        1..=3 => 15,
-        4..=10 => 8,
-        _ => 3,
+        0 => 10,
+        1..=3 => 8,
+        4..=10 => 5,
+        _ => 2,
     };
 
-    // 4. Project structure (20 points)
+    // 4. Vulnerabilities (10 points)
+    let has_critical = result.vulnerabilities.iter().any(|v| v.severity == "critical");
+    let has_high = result.vulnerabilities.iter().any(|v| v.severity == "high");
+    score += if result.vulnerability_count == 0 {
+        10
+    } else if has_critical {
+        1
+    } else if has_high {
+        4
+    } else if result.vulnerability_count <= 2 {
+        7
+    } else {
+        5
+    };
+
+    // 5. Project structure (20 points)
     let root = std::path::Path::new(local_path);
     if root.join("README.md").exists() || root.join("README").exists() || root.join("readme.md").exists() {
         score += 7;
@@ -221,6 +248,44 @@ fn check_project_health(project_id: &str, project_name: &str, local_path: &str) 
         }
     }
 
+    // npm audit — check for known vulnerabilities
+    let mut vulnerabilities: Vec<Vulnerability> = Vec::new();
+    if std::path::Path::new(local_path).join("package.json").exists() {
+        match run_cmd("npm", &["audit", "--json"], local_path) {
+            Ok(output) => {
+                if let Ok(audit) = serde_json::from_str::<serde_json::Value>(&output) {
+                    // npm audit v7+ format: { "vulnerabilities": { "pkg": { "severity", "via", "fixAvailable" } } }
+                    if let Some(vulns) = audit.get("vulnerabilities").and_then(|v| v.as_object()) {
+                        for (name, info) in vulns {
+                            if let Some(obj) = info.as_object() {
+                                let severity = obj.get("severity").and_then(|v| v.as_str()).unwrap_or("info").to_string();
+                                let via = obj.get("via")
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| arr.iter().filter_map(|v| {
+                                        if v.is_string() { v.as_str().map(|s| s.to_string()) }
+                                        else { v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()) }
+                                    }).collect::<Vec<_>>().join(", "))
+                                    .unwrap_or_default();
+                                let fix_available = obj.get("fixAvailable").map(|v| !v.is_boolean() || v.as_bool().unwrap_or(false)).unwrap_or(false);
+                                vulnerabilities.push(Vulnerability {
+                                    name: name.clone(),
+                                    severity,
+                                    via,
+                                    fix_available,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // npm audit not available or no lock file — skip silently
+            }
+        }
+    }
+
+    let vulnerability_count = vulnerabilities.len() as i32;
+
     let mut result = ProjectHealthResult {
         project_id: project_id.to_string(),
         project_name: project_name.to_string(),
@@ -230,6 +295,8 @@ fn check_project_health(project_id: &str, project_name: &str, local_path: &str) 
         behind_count,
         outdated_dep_count: outdated_deps.len() as i32,
         outdated_deps,
+        vulnerability_count,
+        vulnerabilities,
         has_changes: false,
         health_score: None,
         health_status: None,
@@ -285,10 +352,11 @@ fn compute_has_changes(result: &ProjectHealthResult, prev_map: &HashMap<String, 
 fn save_result(db: &Database, result: &ProjectHealthResult, today: &str) {
     let id = format!("{}-{}", result.project_id, today);
     let outdated_json = serde_json::to_string(&result.outdated_deps).unwrap_or_default();
+    let vulns_json = serde_json::to_string(&result.vulnerabilities).unwrap_or_default();
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let _ = db.execute(
-        "INSERT OR REPLACE INTO project_health_checks (id, projectId, checkDate, dirtyFileCount, currentBranch, aheadCount, behindCount, outdatedDeps, outdatedDepCount, hasChanges, healthScore, healthStatus, createdAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        "INSERT OR REPLACE INTO project_health_checks (id, projectId, checkDate, dirtyFileCount, currentBranch, aheadCount, behindCount, outdatedDeps, outdatedDepCount, vulnerabilityCount, vulnerabilities, hasChanges, healthScore, healthStatus, createdAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         rusqlite::params![
             id,
             result.project_id,
@@ -299,6 +367,8 @@ fn save_result(db: &Database, result: &ProjectHealthResult, today: &str) {
             result.behind_count,
             outdated_json,
             result.outdated_dep_count,
+            result.vulnerability_count,
+            vulns_json,
             result.has_changes as i32,
             result.health_score,
             result.health_status,

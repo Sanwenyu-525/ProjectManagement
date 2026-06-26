@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAgentTasks, useCreateAgentTask, useUpdateAgentTask, useDeleteAgentTask, groupAgentTasks } from '../../../hooks/useAgentTasks';
 import { message } from 'antd';
 import type { AgentTask } from '../../../types';
@@ -42,7 +42,7 @@ export default function AgentPlanPanel() {
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { groups, childrenOf } = groupAgentTasks(tasks);
+  const { groups, childrenOf } = useMemo(() => groupAgentTasks(tasks), [tasks]);
 
   // Focus input when adding
   useEffect(() => {

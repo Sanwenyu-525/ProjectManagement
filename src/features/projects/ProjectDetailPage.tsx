@@ -222,7 +222,7 @@ export default function ProjectDetailPage() {
             { key: 'overview', label: '概览', children: <OverviewTab project={project} /> },
             { key: 'repos', label: `仓库 (${remoteRepos.length})`, children: <ReposTab projectId={project.id} repos={remoteRepos} onRefresh={() => refreshProject.mutateAsync(project.id)} /> },
             { key: 'git', label: 'Git', children: <GitTab project={project} /> },
-            { key: 'tasks', label: `任务 (${count.tasks || 0})`, children: <TasksTab projectId={project.id} repos={remoteRepos} /> },
+            { key: 'tasks', label: `任务 (${count.tasks || 0})`, children: <TasksTab projectId={project.id} repos={remoteRepos} localPath={project.localPath} /> },
             { key: 'documents', label: `文档 (${count.documents || 0})`, children: <DocumentsTab projectId={project.id} /> },
             { key: 'milestones', label: '里程碑', children: <MilestonesTab projectId={project.id} /> },
             { key: 'config', label: '配置', children: <ConfigTab project={project} onSaved={() => refreshProject.mutateAsync(project.id)} /> },

@@ -469,30 +469,45 @@ export class PlanRuntime {
 
     console.log('[PlanRuntime] executeStep:', step.title, '开始等待完成...');
 
-    // Wait for completion by polling isActive
-    await new Promise<void>((resolve, reject) => {
-      const checkInterval = setInterval(() => {
-        if (this.aborted) {
-          clearInterval(checkInterval);
-          reject(new Error('Aborted'));
-          return;
-        }
-        if (!provider.isActive()) {
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 500);
+    // Wait for stream completion via done/error events (P0 修复：移除轮询 + setTimeout，用 Promise 驱动)
+    let streamUnlisten: (() => void) | undefined;
 
-      // Safety timeout: 10 minutes per step
-      setTimeout(() => {
-        clearInterval(checkInterval);
+    await new Promise<void>((resolve, reject) => {
+      // 安全超时：每步骤最多 10 分钟
+      const safetyTimer = setTimeout(() => {
+        streamUnlisten?.();
+        provider.stop().catch(() => {});
         reject(new Error('Step execution timed out'));
       }, 600_000);
+
+      streamUnlisten = provider.onStream((event: AgentStreamEvent) => {
+        if (event.type === 'done') {
+          clearTimeout(safetyTimer);
+          resolve();
+        } else if (event.type === 'error') {
+          clearTimeout(safetyTimer);
+          reject(new Error(event.error));
+        }
+        // token/thinking/tool 事件通过 agentStore 处理，此处只关心生命周期
+      });
+
+      // 中止检查
+      if (this.aborted) {
+        clearTimeout(safetyTimer);
+        streamUnlisten?.();
+        provider.stop().catch(() => {});
+        reject(new Error('Aborted'));
+      }
+    }).catch(err => {
+      // 确保超时/中止时也清理流监听器
+      streamUnlisten?.();
+      throw err;
     });
 
     // Cleanup provider
     const idx = this.providers.indexOf(provider);
     if (idx !== -1) this.providers.splice(idx, 1);
+    await provider.stop().catch(() => {});
   }
 
   abort(): void {

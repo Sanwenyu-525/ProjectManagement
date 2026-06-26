@@ -205,3 +205,108 @@ pub async fn tasks_update_status(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "TASK_NOT_FOUND".into())
 }
+
+// ── Task-Commit Association ──
+
+#[command]
+pub async fn tasks_get_commits(db: State<'_, Database>, task_id: String) -> Result<JsonValue, String> {
+    db.query_json(
+        "SELECT tc.commitHash, tc.linkedAt, tc.linkSource FROM task_commits tc WHERE tc.taskId = ?1 ORDER BY tc.linkedAt DESC",
+        rusqlite::params![task_id],
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn tasks_link_commit(
+    db: State<'_, Database>,
+    task_id: String,
+    commit_hash: String,
+) -> Result<(), String> {
+    let now = crate::db::now_str();
+    db.execute(
+        "INSERT OR IGNORE INTO task_commits (taskId, commitHash, linkedAt, linkSource) VALUES (?1, ?2, ?3, 'manual')",
+        rusqlite::params![task_id, commit_hash, now],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[command]
+pub async fn tasks_unlink_commit(
+    db: State<'_, Database>,
+    task_id: String,
+    commit_hash: String,
+) -> Result<(), String> {
+    db.execute(
+        "DELETE FROM task_commits WHERE taskId = ?1 AND commitHash = ?2",
+        rusqlite::params![task_id, commit_hash],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[command]
+pub async fn tasks_scan_commits(
+    db: State<'_, Database>,
+    project_id: String,
+    repo_path: String,
+) -> Result<JsonValue, String> {
+    let tasks_json = db.query_json(
+        "SELECT id FROM tasks WHERE projectId = ?1",
+        rusqlite::params![project_id],
+    ).map_err(|e| e.to_string())?;
+
+    let task_ids: Vec<String> = match &tasks_json {
+        JsonValue::Array(arr) => arr.iter()
+            .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
+            .collect(),
+        _ => Vec::new(),
+    };
+
+    if task_ids.is_empty() {
+        return Ok(serde_json::json!({ "linked": 0 }));
+    }
+
+    let output = std::process::Command::new("git")
+        .args(&["log", "--all", "--format=%H %s", "--no-merges", "-500"])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("执行 git log 失败: {}", e))?;
+
+    if !output.status.success() {
+        return Err("git log 执行失败".into());
+    }
+
+    let log_text = String::from_utf8_lossy(&output.stdout);
+    let now = crate::db::now_str();
+    let mut linked_count = 0i32;
+
+    let re = regex::Regex::new(
+        r"(?i)(?:fix(?:es)?|close[sd]?|resolve[sd]?|refs?)\s+#([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    ).map_err(|e| format!("正则编译失败: {}", e))?;
+
+    for line in log_text.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let parts: Vec<&str> = line.splitn(2, ' ').collect();
+        if parts.len() < 2 { continue; }
+        let commit_hash = parts[0];
+        let message = parts[1];
+
+        for cap in re.captures_iter(message) {
+            if let Some(task_id_match) = cap.get(1) {
+                let task_id_str = task_id_match.as_str();
+                if task_ids.iter().any(|tid| tid == task_id_str) {
+                    let _ = db.execute(
+                        "INSERT OR IGNORE INTO task_commits (taskId, commitHash, linkedAt, linkSource) VALUES (?1, ?2, ?3, 'auto')",
+                        rusqlite::params![task_id_str, commit_hash, now],
+                    );
+                    linked_count += 1;
+                }
+            }
+        }
+    }
+
+    Ok(serde_json::json!({ "linked": linked_count }))
+}

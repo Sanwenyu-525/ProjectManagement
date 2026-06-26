@@ -20,6 +20,7 @@ interface DropdownItem {
   group: 'command' | 'project' | 'task' | 'document' | 'file' | 'content';
   action: () => void;
   shortcut?: string;
+  keywords?: string[];
 }
 
 export default function SearchBox() {
@@ -68,6 +69,7 @@ export default function SearchBox() {
         icon: c.icon,
         group: 'command' as const,
         shortcut: c.shortcut,
+        keywords: c.keywords,
         action: () => {
           recordCommandUse(c.id);
           c.action();
@@ -86,10 +88,19 @@ export default function SearchBox() {
   const isContentMode = inPrefix === 0;
   const contentTerm = isContentMode ? q.slice(4) : '';
 
-  // Fuzzy-filter commands by query
+  // Fuzzy-filter commands by query (label → description → keywords)
   const filteredCommands = isContentMode ? [] : (q
     ? commands
-        .map(c => ({ item: c, match: fuzzyMatch(q, c.label) ?? fuzzyMatch(q, c.description ?? '') }))
+        .map(c => {
+          let bestMatch = fuzzyMatch(q, c.label) ?? fuzzyMatch(q, c.description ?? '');
+          if (c.keywords) {
+            for (const kw of c.keywords) {
+              const m = fuzzyMatch(q, kw);
+              if (m && (!bestMatch || m.score > bestMatch.score)) bestMatch = m;
+            }
+          }
+          return { item: c, match: bestMatch };
+        })
         .filter((x): x is { item: DropdownItem; match: { score: number; indices: number[] } } => x.match !== null)
         .sort((a, b) => b.match.score - a.match.score)
         .map(x => x.item)

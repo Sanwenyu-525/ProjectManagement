@@ -44,3 +44,7 @@ export { memoryApi, decisionsApi } from './memory';
 // Notes + Knowledge
 export { notesApi } from './notes';
 export { knowledgeApi } from './knowledge';
+
+// Custom Commands
+export { customCommandsApi } from './customCommands';
+export type { CustomCommand, CreateCustomCommandInput, UpdateCustomCommandInput } from './customCommands';

@@ -5,6 +5,7 @@ use std::path::Path;
 use tauri::{command, State};
 
 use crate::db::Database;
+use crate::path_guard;
 
 // ── Types ──
 
@@ -50,6 +51,7 @@ pub struct FileContent {
 pub struct SystemClipboardPasteResult {
     pub kind: String,
     pub count: usize,
+    pub skipped_count: usize,
     pub image_path: Option<String>,
     pub message: String,
 }
@@ -79,7 +81,8 @@ pub const SKIP_DIRS: &[&str] = &[
 // ── Commands ──
 
 #[command]
-pub async fn files_list_directory(path: String) -> Result<Vec<FileEntry>, String> {
+pub async fn files_list_directory(db: State<'_, Database>, path: String) -> Result<Vec<FileEntry>, String> {
+    path_guard::validate_path(&db, &path)?;
     let dir = Path::new(&path);
     if !dir.is_dir() {
         return Err("Path is not a directory".into());
@@ -133,7 +136,8 @@ pub async fn files_list_directory(path: String) -> Result<Vec<FileEntry>, String
 }
 
 #[command]
-pub async fn files_read(path: String) -> Result<FileContent, String> {
+pub async fn files_read(db: State<'_, Database>, path: String) -> Result<FileContent, String> {
+    path_guard::validate_path(&db, &path)?;
     let file_path = Path::new(&path);
     if !file_path.is_file() {
         return Err("Path is not a file".into());
@@ -211,7 +215,8 @@ pub async fn files_read(path: String) -> Result<FileContent, String> {
 }
 
 #[command]
-pub async fn files_write(path: String, content: String) -> Result<(), String> {
+pub async fn files_write(db: State<'_, Database>, path: String, content: String) -> Result<(), String> {
+    path_guard::validate_path(&db, &path)?;
     let file_path = Path::new(&path);
 
     // Atomic write: write to .tmp then rename
@@ -229,7 +234,8 @@ pub async fn files_write(path: String, content: String) -> Result<(), String> {
 }
 
 #[command]
-pub async fn files_write_base64(path: String, data: String) -> Result<(), String> {
+pub async fn files_write_base64(db: State<'_, Database>, path: String, data: String) -> Result<(), String> {
+    path_guard::validate_path(&db, &path)?;
     use base64::Engine;
     let file_path = Path::new(&path);
 
@@ -263,7 +269,8 @@ pub async fn files_write_base64(path: String, data: String) -> Result<(), String
 }
 
 #[command]
-pub async fn files_get_tree(root: String, depth: Option<i32>) -> Result<Vec<FileTreeNode>, String> {
+pub async fn files_get_tree(db: State<'_, Database>, root: String, depth: Option<i32>) -> Result<Vec<FileTreeNode>, String> {
+    path_guard::validate_path(&db, &root)?;
     let dir = Path::new(&root);
     if !dir.is_dir() {
         return Err("Path is not a directory".into());
@@ -274,14 +281,9 @@ pub async fn files_get_tree(root: String, depth: Option<i32>) -> Result<Vec<File
 }
 
 #[command]
-pub async fn files_open_in_ide(path: String, ide: Option<String>) -> Result<(), String> {
-    let target = if Path::new(&path).is_file() {
-        // Open file in IDE
-        path.clone()
-    } else {
-        // Open folder
-        path.clone()
-    };
+pub async fn files_open_in_ide(db: State<'_, Database>, path: String, ide: Option<String>) -> Result<(), String> {
+    let validated = path_guard::validate_path(&db, &path)?;
+    let target = validated.to_string_lossy().to_string();
 
     let cmd_name = match ide.as_deref() {
         Some("cursor") => "cursor",
@@ -289,10 +291,11 @@ pub async fn files_open_in_ide(path: String, ide: Option<String>) -> Result<(), 
         _ => "code",
     };
 
+    // 不通过 cmd /C 拼接路径，直接 spawn 避免命令注入
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", cmd_name, &target])
+        std::process::Command::new(cmd_name)
+            .arg(&target)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -309,7 +312,8 @@ pub async fn files_open_in_ide(path: String, ide: Option<String>) -> Result<(), 
 }
 
 #[command]
-pub async fn files_create(path: String, is_dir: Option<bool>) -> Result<(), String> {
+pub async fn files_create(db: State<'_, Database>, path: String, is_dir: Option<bool>) -> Result<(), String> {
+    path_guard::validate_path(&db, &path)?;
     let target = Path::new(&path);
     if target.exists() {
         return Err("File or directory already exists".into());
@@ -329,7 +333,9 @@ pub async fn files_create(path: String, is_dir: Option<bool>) -> Result<(), Stri
 }
 
 #[command]
-pub async fn files_rename(old_path: String, new_path: String) -> Result<(), String> {
+pub async fn files_rename(db: State<'_, Database>, old_path: String, new_path: String) -> Result<(), String> {
+    path_guard::validate_path(&db, &old_path)?;
+    path_guard::validate_path(&db, &new_path)?;
     let src = Path::new(&old_path);
     let dst = Path::new(&new_path);
 
@@ -340,11 +346,56 @@ pub async fn files_rename(old_path: String, new_path: String) -> Result<(), Stri
         return Err("Destination already exists".into());
     }
 
-    fs::rename(src, dst).map_err(|e| e.to_string())
+    // 跨文件系统时 fs::rename 会失败（Windows 上跨盘），fallback 到复制+删除
+    match fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // 跨设备错误码：Windows ERROR_NOT_SAME_DEVICE (17) / Unix EXDEV
+            let is_cross_device = cfg!(target_os = "windows") && e.raw_os_error() == Some(17)
+                || e.kind() == std::io::ErrorKind::Other;
+            if is_cross_device {
+                if src.is_dir() {
+                    copy_dir_recursive(src, dst).map_err(|e| e.to_string())?;
+                    fs::remove_dir_all(src).map_err(|e| e.to_string())?;
+                } else {
+                    fs::copy(src, dst).map_err(|e| e.to_string())?;
+                    fs::remove_file(src).map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            } else {
+                Err(e.to_string())
+            }
+        }
+    }
 }
 
 #[command]
-pub async fn files_delete(path: String) -> Result<(), String> {
+pub async fn files_copy(db: State<'_, Database>, source: String, destination: String) -> Result<(), String> {
+    path_guard::validate_path(&db, &source)?;
+    path_guard::validate_path(&db, &destination)?;
+    let src = Path::new(&source);
+    let dst = Path::new(&destination);
+
+    if !src.exists() {
+        return Err("Source path does not exist".into());
+    }
+
+    // 原生文件复制，避免二进制文件经过字符串转换导致数据损坏
+    if src.is_dir() {
+        copy_dir_recursive(src, dst).map_err(|e| e.to_string())?;
+    } else {
+        // 确保父目录存在
+        if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::copy(src, dst).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[command]
+pub async fn files_delete(db: State<'_, Database>, path: String) -> Result<(), String> {
+    path_guard::validate_path(&db, &path)?;
     let target = Path::new(&path);
     if !target.exists() {
         return Err("Path does not exist".into());
@@ -374,7 +425,7 @@ pub async fn files_search_across_projects(
     // Extract project paths from DB (async context) before moving to blocking
     let value = db
         .query_json(
-            "SELECT localPath FROM projects WHERE localPath IS NOT NULL AND localPath != ''",
+            "SELECT localPath FROM projects WHERE localPath IS NOT NULL AND localPath != '' AND deletedAt IS NULL",
             rusqlite::params![],
         )
         .unwrap_or(serde_json::json!([]));
@@ -482,7 +533,7 @@ pub async fn files_search_content(
 
     let value = db
         .query_json(
-            "SELECT localPath FROM projects WHERE localPath IS NOT NULL AND localPath != ''",
+            "SELECT localPath FROM projects WHERE localPath IS NOT NULL AND localPath != '' AND deletedAt IS NULL",
             rusqlite::params![],
         )
         .unwrap_or(serde_json::json!([]));
@@ -584,8 +635,10 @@ fn grep_recursive(dir: &Path, query: &str, results: &mut Vec<ContentSearchMatch>
 
 #[command]
 pub async fn files_paste_from_system_clipboard(
+    db: State<'_, Database>,
     target_dir: String,
 ) -> Result<SystemClipboardPasteResult, String> {
+    path_guard::validate_path(&db, &target_dir)?;
     let target = Path::new(&target_dir);
     if !target.is_dir() {
         return Err("目标路径不是目录".into());
@@ -624,6 +677,7 @@ pub async fn files_paste_from_system_clipboard(
         return Ok(SystemClipboardPasteResult {
             kind: "image".into(),
             count: 1,
+            skipped_count: 0,
             image_path: Some(filename),
             message: "已粘贴剪贴板图片".into(),
         });
@@ -633,6 +687,7 @@ pub async fn files_paste_from_system_clipboard(
     if let Ok(file_list) = clipboard.get().file_list() {
         if !file_list.is_empty() {
             let mut count = 0;
+            let mut skipped = 0;
             for src_path in &file_list {
                 let name = match src_path.file_name() {
                     Some(n) => n.to_string_lossy().to_string(),
@@ -640,6 +695,7 @@ pub async fn files_paste_from_system_clipboard(
                 };
                 let dest = target.join(&name);
                 if dest.exists() {
+                    skipped += 1;
                     continue;
                 }
                 if src_path.is_dir() {
@@ -649,11 +705,17 @@ pub async fn files_paste_from_system_clipboard(
                 }
                 count += 1;
             }
+            let msg = if skipped > 0 {
+                format!("已粘贴 {} 个文件，跳过 {} 个同名文件", count, skipped)
+            } else {
+                format!("已粘贴 {} 个文件", count)
+            };
             return Ok(SystemClipboardPasteResult {
                 kind: "files".into(),
                 count,
+                skipped_count: skipped,
                 image_path: None,
-                message: format!("已粘贴 {} 个文件", count),
+                message: msg,
             });
         }
     }
@@ -671,6 +733,7 @@ pub async fn files_paste_from_system_clipboard(
             return Ok(SystemClipboardPasteResult {
                 kind: "text".into(),
                 count: 1,
+                skipped_count: 0,
                 image_path: None,
                 message: "已粘贴剪贴板文本".into(),
             });
@@ -680,6 +743,7 @@ pub async fn files_paste_from_system_clipboard(
     Ok(SystemClipboardPasteResult {
         kind: "empty".into(),
         count: 0,
+        skipped_count: 0,
         image_path: None,
         message: "系统剪贴板中没有可粘贴的内容".into(),
     })

@@ -9,3 +9,4 @@ pub mod memory;
 pub mod notes;
 pub mod knowledge;
 pub mod mcp_servers;
+pub mod custom_commands;

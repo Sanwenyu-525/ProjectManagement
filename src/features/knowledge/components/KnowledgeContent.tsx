@@ -1,6 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Input, message, Popconfirm } from 'antd';
+import { Input, Checkbox, message, Popconfirm } from 'antd';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import CodeMirror from '@uiw/react-codemirror';
+import { markdown as markdownLang } from '@codemirror/lang-markdown';
+import { EditorView } from '@codemirror/view';
+import { makeDevhubTheme, devhubHighlight } from '@/features/workspace/components/cmTheme';
 import { knowledgeApi, notesApi, memoryApi, decisionsApi } from '../../../api';
 import { queryKeys } from '../../../api/queryKeys';
 import { useKnowledgeStore } from '../../../stores/knowledgeStore';
@@ -9,19 +16,9 @@ import type { KnowledgeItem } from '../../../types';
 
 // ── Helpers ──
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const now = Date.now();
-  const diff = now - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '刚刚';
-  if (mins < 60) return `${mins}分钟前`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}小时前`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}天前`;
-  return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
+import { formatRelativeTime } from '@/lib/format';
+
+const formatTime = formatRelativeTime;
 
 const DECISION_STATUS_LABELS: Record<string, string> = {
   proposed: '提议中',
@@ -37,150 +34,64 @@ const DECISION_STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   superseded: { bg: 'var(--color-amber-light)', color: 'var(--color-amber)' },
 };
 
-// ── Rich content parsing ──
+// ── Markdown rendering ──
 
-type DocSection =
-  | { type: 'paragraph'; text: string }
-  | { type: 'heading'; text: string }
-  | { type: 'code'; code: string }
-  | { type: 'callout'; title: string; text: string };
-
-function parseContent(content: string): DocSection[] {
-  const sections: DocSection[] = [];
-  const lines = content.split('\n');
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (/^```/.test(line)) {
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !/^```/.test(lines[i])) {
-        codeLines.push(lines[i]);
-        i++;
-      }
-      sections.push({ type: 'code', code: codeLines.join('\n') });
-      i++;
-    } else if (/^> /.test(line)) {
-      const quoteLines: string[] = [];
-      while (i < lines.length && /^> /.test(lines[i])) {
-        quoteLines.push(lines[i].replace(/^> /, ''));
-        i++;
-      }
-      sections.push({ type: 'callout', title: '提示', text: quoteLines.join('\n') });
-    } else if (/^#{1,3} /.test(line)) {
-      sections.push({ type: 'heading', text: line.replace(/^#{1,3} /, '') });
-      i++;
-    } else if (line.trim()) {
-      sections.push({ type: 'paragraph', text: line });
-      i++;
-    } else {
-      i++;
-    }
-  }
-  return sections;
-}
-
-function CodeBlock({ code }: { code: string }) {
+function MarkdownContent({ content }: { content: string }) {
   const isDark = useThemeStore(s => s.mode === 'dark');
   return (
-    <div style={{
-      position: 'relative',
-      background: isDark ? '#1a2332' : '#0d1b2a',
-      borderRadius: 8,
-      padding: 16,
-      border: '1px solid var(--color-border)',
-      overflow: 'hidden',
-    }}>
-      <button
-        style={{
-          position: 'absolute', top: 8, right: 8,
-          padding: 4, background: 'rgba(255,255,255,0.08)',
-          border: 'none', borderRadius: 4, cursor: 'pointer',
-          color: 'rgba(255,255,255,0.6)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}
-        onClick={() => navigator.clipboard.writeText(code)}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.16)'; }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-      >
-        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_copy</span>
-      </button>
-      <pre style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: 12,
-        lineHeight: '18px',
-        color: '#e2e8f0',
-        margin: 0,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-all',
-      }}>
-        <code>{code}</code>
-      </pre>
-    </div>
-  );
-}
-
-function RenderSections({ content }: { content: string }) {
-  const isDark = useThemeStore(s => s.mode === 'dark');
-  const sections = useMemo(() => parseContent(content), [content]);
-  if (sections.length === 0) {
-    return <span style={{ color: 'var(--color-text-tertiary)' }}>暂无内容</span>;
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {sections.map((section, i) => {
-        if (section.type === 'paragraph') {
-          return (
-            <p key={i} style={{
-              fontSize: 14, lineHeight: '22px', color: 'var(--color-text-primary)', margin: 0,
-            }}>
-              {section.text}
-            </p>
-          );
-        }
-        if (section.type === 'heading') {
-          return (
-            <h3 key={i} style={{
-              fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)',
-              lineHeight: '22px', margin: '8px 0 0',
-              paddingBottom: 8,
-              borderBottom: '1px solid var(--color-divider)',
-            }}>
-              {section.text}
-            </h3>
-          );
-        }
-        if (section.type === 'code') {
-          return <CodeBlock key={i} code={section.code} />;
-        }
-        if (section.type === 'callout') {
-          return (
-            <div key={i} style={{
-              background: isDark ? 'rgba(20,184,166,0.06)' : 'var(--md-surface-container-low)',
-              borderLeft: '3px solid var(--md-primary)',
-              borderRadius: '0 8px 8px 0',
-              padding: '12px 14px',
-              display: 'flex', gap: 10, alignItems: 'flex-start',
-            }}>
-              <span className="material-symbols-outlined" style={{
-                fontSize: 18, color: 'var(--md-primary)', flexShrink: 0, marginTop: 1,
-              }}>info</span>
-              <div>
-                <div style={{
-                  fontSize: 11, fontFamily: 'var(--font-label)', fontWeight: 500,
-                  color: 'var(--color-text-primary)', marginBottom: 4, letterSpacing: '0.02em',
-                }}>
-                  {section.title}
+    <div className="knowledgeProse">
+      <ReactMarkdown
+        components={{
+          code(props) {
+            const { children, className, ...rest } = props;
+            const match = /language-(\w+)/.exec(className || '');
+            const codeStr = String(children).replace(/\n$/, '');
+            if (match) {
+              return (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    style={{
+                      position: 'absolute', top: 8, right: 8,
+                      padding: 4, background: 'rgba(255,255,255,0.08)',
+                      border: 'none', borderRadius: 4, cursor: 'pointer',
+                      color: 'rgba(255,255,255,0.6)', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', zIndex: 1,
+                    }}
+                    onClick={() => navigator.clipboard.writeText(codeStr)}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.16)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_copy</span>
+                  </button>
+                  <SyntaxHighlighter
+                    style={oneDark}
+                    language={match[1]}
+                    PreTag="div"
+                    customStyle={{ margin: 0, borderRadius: 8, fontSize: 13 }}
+                  >
+                    {codeStr}
+                  </SyntaxHighlighter>
                 </div>
-                <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--color-text-secondary)', margin: 0 }}>
-                  {section.text}
-                </p>
+              );
+            }
+            return <code className={className} {...rest}>{children}</code>;
+          },
+          blockquote({ children }) {
+            return (
+              <div style={{
+                background: isDark ? 'rgba(20,184,166,0.06)' : 'var(--md-surface-container-low)',
+                borderLeft: '3px solid var(--md-primary)',
+                borderRadius: '0 8px 8px 0',
+                padding: '12px 14px',
+              }}>
+                {children}
               </div>
-            </div>
-          );
-        }
-        return null;
-      })}
+            );
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
@@ -213,6 +124,17 @@ export default function KnowledgeContent() {
   const searchQuery = useKnowledgeStore(s => s.searchQuery);
   const editingNoteId = useKnowledgeStore(s => s.editingNoteId);
   const setEditingNoteId = useKnowledgeStore(s => s.setEditingNoteId);
+
+  // Batch selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const toggleSelected = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   // Determine API category param
   const pinnedOnly = selectedCategory === '_pinned';
@@ -273,6 +195,34 @@ export default function KnowledgeContent() {
     onError: () => message.error('删除失败'),
   });
 
+  const selectAll = useCallback(() => {
+    setSelectedIds(prev => prev.size === items.length ? new Set() : new Set(items.map(i => i.id)));
+  }, [items]);
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: async () => {
+      const targets = items.filter(i => selectedIds.has(i.id));
+      await Promise.all(targets.map(kItem => {
+        if (kItem.source === 'memory') return memoryApi.delete(kItem.id);
+        if (kItem.source === 'decision') return decisionsApi.delete(kItem.id);
+        if (kItem.source === 'note') return notesApi.delete(kItem.id);
+        return Promise.resolve();
+      }));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge'] });
+      setSelectedIds(new Set());
+      message.success('批量删除成功');
+    },
+    onError: () => message.error('批量删除失败'),
+  });
+
+  const handleBatchCopy = useCallback(() => {
+    const targets = items.filter(i => selectedIds.has(i.id));
+    const text = targets.map(i => `# ${i.title}\n${i.content}`).join('\n\n---\n\n');
+    navigator.clipboard.writeText(text).then(() => message.success(`已复制 ${targets.length} 项`));
+  }, [items, selectedIds]);
+
   if (!item) {
     if (isLoading) {
       return (
@@ -292,42 +242,110 @@ export default function KnowledgeContent() {
         </div>
       );
     }
+    const anySelected = selectedIds.size > 0;
     return (
       <div style={styles.container}>
+        {anySelected && (
+          <div style={styles.batchBar}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Checkbox
+                indeterminate={selectedIds.size > 0 && selectedIds.size < items.length}
+                checked={selectedIds.size === items.length && items.length > 0}
+                onChange={selectAll}
+              />
+              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+                已选 {selectedIds.size} 项
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Popconfirm
+                title={`确定删除选中的 ${selectedIds.size} 项？`}
+                onConfirm={() => batchDeleteMutation.mutate()}
+                okText="删除"
+                cancelText="取消"
+              >
+                <button
+                  style={styles.batchActionBtnDanger}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-error-light)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>delete_outline</span>
+                  删除
+                </button>
+              </Popconfirm>
+              <button
+                style={styles.batchActionBtn}
+                onClick={handleBatchCopy}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_copy</span>
+                复制
+              </button>
+            </div>
+          </div>
+        )}
         <div style={styles.scrollArea}>
           <div style={styles.listContainer}>
             {items.map(kItem => (
               <button
                 key={kItem.id}
-                style={styles.listItem}
+                style={{
+                  ...styles.listItem,
+                  paddingLeft: 42,
+                  ...(selectedIds.has(kItem.id) ? { background: 'var(--color-primary-light)' } : {}),
+                }}
                 onClick={() => setSelectedId(kItem.id)}
-                onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-primary-light)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                onMouseEnter={e => {
+                  setHoveredId(kItem.id);
+                  if (!selectedIds.has(kItem.id)) e.currentTarget.style.background = 'var(--color-primary-light)';
+                }}
+                onMouseLeave={e => {
+                  setHoveredId(null);
+                  if (!selectedIds.has(kItem.id)) e.currentTarget.style.background = 'transparent';
+                }}
               >
+                <div
+                  style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', display: 'flex' }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <Checkbox
+                    checked={selectedIds.has(kItem.id)}
+                    onClick={e => e.stopPropagation()}
+                    onChange={() => toggleSelected(kItem.id)}
+                  />
+                </div>
                 <div style={styles.listItemHeader}>
                   <SourceIcon source={kItem.source} />
                   <span style={styles.listItemTitle}>{kItem.title}</span>
                 </div>
-                {(kItem.source === 'memory' || kItem.source === 'note') && (
-                  <button
-                    style={styles.listPinBtn}
-                    onClick={e => handleListPin(e, kItem)}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                    title={kItem.isPinned ? '取消收藏' : '收藏'}
-                  >
-                    <span
-                      className="material-symbols-outlined"
-                      style={{
-                        fontSize: 16,
-                        color: kItem.isPinned ? 'var(--md-primary)' : undefined,
-                        fontVariationSettings: kItem.isPinned ? "'FILL' 1" : undefined,
-                      }}
-                    >
-                      {kItem.isPinned ? 'star' : 'star_border'}
-                    </span>
-                  </button>
+                {hoveredId === kItem.id && (
+                  <>
+                    {(kItem.source === 'memory' || kItem.source === 'note') && (
+                      <button
+                        style={styles.listPinBtn}
+                        onClick={e => handleListPin(e, kItem)}
+                        title={kItem.isPinned ? '取消收藏' : '收藏'}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 16, color: kItem.isPinned ? 'var(--md-primary)' : undefined, fontVariationSettings: kItem.isPinned ? "'FILL' 1" : undefined }}>
+                          {kItem.isPinned ? 'star' : 'star_border'}
+                        </span>
+                      </button>
+                    )}
+                    <button style={styles.listEditBtn} onClick={e => { e.stopPropagation(); setSelectedId(kItem.id); if (kItem.source === 'note') setEditingNoteId(kItem.id); }} title="编辑">
+                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>edit</span>
+                    </button>
+                    <Popconfirm title="确定删除？" onConfirm={() => deleteMutation.mutate(kItem)} okText="删除" cancelText="取消">
+                      <button style={styles.listDeleteBtn} onClick={e => e.stopPropagation()} title="删除">
+                        <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--md-error)' }}>delete_outline</span>
+                      </button>
+                    </Popconfirm>
+                    <button style={styles.listCopyBtn} onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(kItem.content).then(() => message.success('已复制')); }} title="复制内容">
+                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>content_copy</span>
+                    </button>
+                  </>
                 )}
+                
                 <p style={styles.listItemPreview}>
                   {kItem.content.length > 120 ? kItem.content.slice(0, 120) + '...' : kItem.content}
                 </p>
@@ -358,25 +376,23 @@ export default function KnowledgeContent() {
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_back</span>
         </button>
         <div style={styles.headerActions}>
-          {item.source === 'note' && (
-            <button
-              style={styles.iconBtn}
-              onClick={() => {
-                if (editingNoteId === item.id) {
-                  setEditingNoteId(null);
-                } else {
-                  setEditingNoteId(item.id);
-                }
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-              title={editingNoteId === item.id ? '取消编辑' : '编辑'}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                {editingNoteId === item.id ? 'close' : 'edit'}
-              </span>
-            </button>
-          )}
+          <button
+            style={styles.iconBtn}
+            onClick={() => {
+              if (item.source === 'note') {
+                setEditingNoteId(editingNoteId === item.id ? null : item.id);
+              } else {
+                message.info('仅笔记支持编辑');
+              }
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            title={editingNoteId === item.id ? '取消编辑' : '编辑'}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+              {editingNoteId === item.id ? 'close' : 'edit'}
+            </span>
+          </button>
           {(item.source === 'memory' || item.source === 'note') && (
             <button
               style={styles.iconBtn}
@@ -407,6 +423,15 @@ export default function KnowledgeContent() {
               </button>
             </span>
           </Popconfirm>
+          <button
+            style={styles.iconBtn}
+            onClick={() => navigator.clipboard.writeText(item.content).then(() => message.success('已复制'))}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            title="复制内容"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>content_copy</span>
+          </button>
         </div>
       </div>
       <div style={styles.scrollArea}>
@@ -440,7 +465,7 @@ function MemoryView({ item }: { item: KnowledgeItem }) {
           ))}
         </div>
       )}
-      <RenderSections content={item.content} />
+      <MarkdownContent content={item.content} />
       <div style={styles.metaRow}>
         <span style={styles.metaTime}>{formatTime(item.createdAt)}</span>
         <span style={styles.sourceBadge}>agent 记忆</span>
@@ -480,7 +505,7 @@ function DocumentView({ item }: { item: KnowledgeItem }) {
         <h2 style={styles.title}>{item.title}</h2>
         <span style={styles.docTypeBadge}>文档</span>
       </div>
-      <RenderSections content={item.content} />
+      <MarkdownContent content={item.content} />
       <div style={styles.metaRow}>
         <span style={styles.metaTime}>{formatTime(item.createdAt)}</span>
         {item.isPinned && (
@@ -505,6 +530,7 @@ function NoteView({ item, isEditing, onCancelEdit }: {
     setEditContent(item.content);
   }, [item.title, item.content, item.id]);
 
+  const isDark = useThemeStore(s => s.mode === 'dark');
   const saveMutation = useMutation({
     mutationFn: () => notesApi.update({ id: item.id, title: editTitle, content: editContent }),
     onSuccess: () => {
@@ -524,13 +550,14 @@ function NoteView({ item, isEditing, onCancelEdit }: {
           style={{ fontSize: 18, fontWeight: 600, fontFamily: 'var(--font-display)' }}
           placeholder="标题"
         />
-        <Input.TextArea
-          value={editContent}
-          onChange={e => setEditContent(e.target.value)}
-          rows={12}
-          style={{ marginTop: 12, fontFamily: 'var(--font-sans)', fontSize: 14 }}
-          placeholder="内容..."
-        />
+        <div style={{ marginTop: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <CodeMirror
+            value={editContent}
+            onChange={v => setEditContent(v)}
+            height="400px"
+            extensions={[markdownLang(), EditorView.lineWrapping, makeDevhubTheme(isDark), devhubHighlight]}
+          />
+        </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <button
             style={styles.actionBtnPrimary}
@@ -567,7 +594,7 @@ function NoteView({ item, isEditing, onCancelEdit }: {
           ))}
         </div>
       )}
-      <RenderSections content={item.content} />
+      <MarkdownContent content={item.content} />
       <div style={styles.metaRow}>
         <span style={styles.metaTime}>{formatTime(item.createdAt)}</span>
         {item.isPinned && (
@@ -808,7 +835,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
     width: '100%',
     padding: '14px 16px',
-    paddingRight: 44,
+    paddingRight: 132,
     border: 'none',
     borderRadius: 'var(--radius-sm)',
     background: 'transparent',
@@ -849,6 +876,60 @@ const styles: Record<string, React.CSSProperties> = {
   },
   listPinBtn: {
     position: 'absolute',
+    right: 96,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    border: 'none',
+    borderRadius: 'var(--radius-xs)',
+    background: 'transparent',
+    cursor: 'pointer',
+    flexShrink: 0,
+    padding: 0,
+    transition: 'background 0.15s',
+  },
+  listDeleteBtn: {
+    position: 'absolute',
+    right: 40,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    border: 'none',
+    borderRadius: 'var(--radius-xs)',
+    background: 'transparent',
+    cursor: 'pointer',
+    flexShrink: 0,
+    padding: 0,
+    transition: 'background 0.15s',
+  },
+  listEditBtn: {
+    position: 'absolute',
+    right: 68,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    border: 'none',
+    borderRadius: 'var(--radius-xs)',
+    background: 'transparent',
+    cursor: 'pointer',
+    flexShrink: 0,
+    padding: 0,
+    transition: 'background 0.15s',
+  },
+  listCopyBtn: {
+    position: 'absolute',
     right: 12,
     top: '50%',
     transform: 'translateY(-50%)',
@@ -863,6 +944,43 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     flexShrink: 0,
     padding: 0,
+    transition: 'background 0.15s',
+  },
+  batchBar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 16px',
+    borderBottom: '1px solid var(--color-divider)',
+    background: 'var(--md-surface-container)',
+    flexShrink: 0,
+  },
+  batchActionBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 10px',
+    border: 'none',
+    borderRadius: 'var(--radius-xs)',
+    background: 'transparent',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontFamily: 'var(--font-sans)',
+    color: 'var(--color-text-primary)',
+    transition: 'background 0.15s',
+  },
+  batchActionBtnDanger: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 10px',
+    border: 'none',
+    borderRadius: 'var(--radius-xs)',
+    background: 'transparent',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontFamily: 'var(--font-sans)',
+    color: 'var(--color-error)',
     transition: 'background 0.15s',
   },
 };

@@ -42,6 +42,7 @@ export interface ContentSearchMatch {
 export interface SystemClipboardPasteResult {
   kind: 'files' | 'image' | 'text' | 'empty';
   count: number;
+  skippedCount: number;
   imagePath?: string;
   message: string;
 }
@@ -68,5 +69,5 @@ export interface TerminalApi {
   stop: (terminalId: string) => Promise<void>;
   input: (terminalId: string, data: string) => Promise<void>;
   resize: (terminalId: string, cols: number, rows: number) => Promise<void>;
-  openExternal: (cwd: string, skipPermissions: boolean) => Promise<void>;
+  openExternal: (cwd: string) => Promise<void>;
 }
