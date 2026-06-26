@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Input, message } from 'antd';
 import { useAgentPromptStore } from '../../../stores/agentPromptStore';
+import { useWheelScroll } from '../../../hooks/useWheelScroll';
 import {
   PROMPT_TEMPLATES,
   PHASE_META,
@@ -143,7 +144,10 @@ ${rawInput.trim()}`;
 
   return (
     <div style={styles.optimizeSection}>
-      <button style={styles.optimizeToggle} onClick={onToggle}>
+      <button style={styles.optimizeToggle} onClick={onToggle}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+      >
         <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-primary)' }}>
           auto_awesome
         </span>
@@ -167,12 +171,15 @@ ${rawInput.trim()}`;
             onChange={e => setRawInput(e.target.value)}
             placeholder="输入你的原始需求，AI 将帮你优化为结构化提示词..."
             rows={3}
-            style={styles.optimizeInput}
+            style={{ ...styles.optimizeInput, background: 'var(--color-bg-input)', color: 'var(--color-text-primary)' }}
             onPressEnter={e => {
               if (e.ctrlKey || e.metaKey) handleOptimize();
             }}
           />
-          <button style={styles.optimizeBtn} onClick={handleOptimize}>
+          <button style={styles.optimizeBtn} onClick={handleOptimize}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+          >
             <span className="material-symbols-outlined" style={{ fontSize: 14 }}>auto_awesome</span>
             优化并发送
           </button>
@@ -189,9 +196,10 @@ function PhaseTabs({ active, onChange }: { active: PromptPhase | 'all'; onChange
     { key: 'all', label: '全部', icon: 'apps' },
     ...ACTIVE_PHASES.map(p => ({ key: p, label: PHASE_META[p].label, icon: PHASE_META[p].icon })),
   ];
+  const wheelScroll = useWheelScroll<HTMLDivElement>();
 
   return (
-    <div style={styles.phaseBar}>
+    <div style={styles.phaseBar} ref={wheelScroll.ref} onWheel={wheelScroll.onWheel}>
       {allPhases.map(p => (
         <button
           key={p.key}
@@ -327,7 +335,7 @@ function PromptCard({ template, expanded, onClick, onSubmit }: {
                 onChange={e => setValues(prev => ({ ...prev, [v.name]: e.target.value }))}
                 placeholder={v.placeholder ?? `输入 ${v.label}...`}
                 rows={2}
-                style={styles.varInput}
+                style={{ ...styles.varInput, background: 'var(--color-bg-input)', color: 'var(--color-text-primary)' }}
                 autoFocus
               />
             </div>

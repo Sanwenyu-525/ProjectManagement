@@ -11,7 +11,7 @@ import { StatusBadge } from '../../../shared/components/StatusBadge';
 
 export default function OverviewTab({ project }: { project: ProjectDetail }) {
   const navigate = useNavigate();
-  const { requestLaunch } = useTerminalStore();
+  const requestLaunch = useTerminalStore(s => s.requestLaunch);
 
   const { data: brain } = useProjectBrain(project.id);
   const { data: activityLogs = [] } = useProjectTimeline(project.id);

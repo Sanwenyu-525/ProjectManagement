@@ -1,9 +1,10 @@
 interface StatusDotProps {
-  status: 'running' | 'ended' | 'error' | 'none';
+  status: 'running' | 'idle' | 'ended' | 'error' | 'none';
 }
 
 const TOOLTIPS: Record<StatusDotProps['status'], string> = {
   running: '运行中',
+  idle: '空闲',
   ended: '已完成',
   error: '出错',
   none: '无会话',
@@ -11,6 +12,7 @@ const TOOLTIPS: Record<StatusDotProps['status'], string> = {
 
 const COLORS: Record<StatusDotProps['status'], string> = {
   running: 'var(--md-tertiary-container)',
+  idle: 'var(--md-primary)',
   ended: 'var(--md-outline)',
   error: 'var(--color-error, #ef4444)',
   none: 'var(--md-outline-variant)',

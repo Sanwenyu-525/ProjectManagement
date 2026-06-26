@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Button, Skeleton, Empty, message } from 'antd';
 import { ArrowLeftOutlined, PlayCircleOutlined, ReloadOutlined, CodeOutlined } from '@ant-design/icons';
@@ -16,6 +16,7 @@ import { buildLaunchRequests } from '../../lib/launchUtils';
 import GitTab from './git/GitTab';
 import HealthTab from './HealthTab';
 import GraphTab from './tabs/GraphTab';
+import AuditReport from './AuditReport';
 import { StatusBadge } from '../../shared/components/StatusBadge';
 import './ProjectDetailPage.css';
 
@@ -24,8 +25,19 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate();
   const { data: project, isLoading: loading } = useProject(id);
   const refreshProject = useRefreshProject();
-  const { requestLaunch } = useTerminalStore();
+  const requestLaunch = useTerminalStore(s => s.requestLaunch);
   const [activeTab, setActiveTab] = useState('overview');
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  const handleTabsWheel = useCallback((e: React.WheelEvent) => {
+    const el = tabsRef.current?.querySelector('.ant-tabs-nav-wrap') as HTMLElement | null;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    if (e.shiftKey) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }
+  }, []);
 
   async function handleLaunch() {
     if (!project?.localPath) return;
@@ -201,11 +213,12 @@ export default function ProjectDetailPage() {
 
       {/* Tabs content */}
       <div className="glass-panel animate-in" style={{ padding: 'var(--space-1) var(--layout-container-padding) var(--layout-container-padding)', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', animationDelay: '0.2s', opacity: 0 }}>
-        <Tabs
-          className="project-detail-tabs"
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={[
+        <div ref={tabsRef} onWheel={handleTabsWheel} style={{ flex: 1, minHeight: 0 }}>
+          <Tabs
+            className="project-detail-tabs"
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            items={[
             { key: 'overview', label: '概览', children: <OverviewTab project={project} /> },
             { key: 'repos', label: `仓库 (${remoteRepos.length})`, children: <ReposTab projectId={project.id} repos={remoteRepos} onRefresh={() => refreshProject.mutateAsync(project.id)} /> },
             { key: 'git', label: 'Git', children: <GitTab project={project} /> },
@@ -215,9 +228,11 @@ export default function ProjectDetailPage() {
             { key: 'config', label: '配置', children: <ConfigTab project={project} onSaved={() => refreshProject.mutateAsync(project.id)} /> },
             { key: 'timeline', label: '活动', children: <ProjectTimelineTab projectId={project.id} /> },
             { key: 'health', label: '健康检查', children: <HealthTab projectId={project.id} /> },
+            { key: 'audit', label: '巡检报告', children: <AuditReport projectId={project.id} /> },
             { key: 'graph', label: '图谱', children: <GraphTab projectId={project.id} /> },
           ]}
         />
+        </div>
       </div>
     </div>
   );

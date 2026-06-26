@@ -81,6 +81,15 @@
   height: 100% !important;
 }
 
+/* Allow wheel-scroll on the internal nav wrap */
+.project-detail-tabs .ant-tabs-nav-wrap {
+  overflow: auto !important;
+  scrollbar-width: none;
+}
+.project-detail-tabs .ant-tabs-nav-wrap::-webkit-scrollbar {
+  display: none;
+}
+
 .project-detail-tabs .ant-tabs-content {
   display: flex;
   flex-direction: column;

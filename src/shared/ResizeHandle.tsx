@@ -10,6 +10,12 @@ interface ResizeHandleProps {
   /** Optional: render prop to expose drag state to children. */
   children?: (isDragging: boolean) => ReactNode;
   style?: React.CSSProperties;
+  /** Accessibility: forwarded to the container div. */
+  role?: string;
+  'aria-orientation'?: 'horizontal' | 'vertical';
+  'aria-label'?: string;
+  tabIndex?: number;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
 }
 
 /**
@@ -24,6 +30,11 @@ export default function ResizeHandle({
   indicator,
   children,
   style,
+  role,
+  'aria-orientation': ariaOrientation,
+  'aria-label': ariaLabel,
+  tabIndex,
+  onKeyDown,
 }: ResizeHandleProps) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -59,6 +70,12 @@ export default function ResizeHandle({
           : 'transparent',
         transition: isDragging ? 'none' : 'background 0.15s',
       }}
+      onMouseEnter={e => {
+        if (!isDragging) e.currentTarget.style.background = 'rgba(128,128,128,0.18)';
+      }}
+      onMouseLeave={e => {
+        if (!isDragging) e.currentTarget.style.background = 'transparent';
+      }}
     />
   );
 
@@ -73,7 +90,15 @@ export default function ResizeHandle({
   };
 
   return (
-    <div style={containerStyle} onMouseDown={handleMouseDown}>
+    <div
+      style={containerStyle}
+      role={role}
+      aria-orientation={ariaOrientation}
+      aria-label={ariaLabel}
+      tabIndex={tabIndex}
+      onKeyDown={onKeyDown}
+      onMouseDown={handleMouseDown}
+    >
       {indicator ?? defaultIndicator}
       {children?.(isDragging)}
     </div>

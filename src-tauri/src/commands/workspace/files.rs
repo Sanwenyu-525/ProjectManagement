@@ -718,8 +718,15 @@ fn build_tree(dir: &Path, remaining: i32) -> Vec<FileTreeNode> {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
 
+        // entry.file_type() reuses cached data from FindNextFileW — no extra syscall
+        let ft = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        let is_dir = ft.is_dir();
+
         // Skip hidden and ignored directories
-        if path.is_dir() && SKIP_DIRS.contains(&name.as_str()) {
+        if is_dir && SKIP_DIRS.contains(&name.as_str()) {
             continue;
         }
         // Skip hidden files/dirs (starting with .)
@@ -727,7 +734,6 @@ fn build_tree(dir: &Path, remaining: i32) -> Vec<FileTreeNode> {
             continue;
         }
 
-        let is_dir = path.is_dir();
         let extension = if is_dir {
             None
         } else {
@@ -737,7 +743,7 @@ fn build_tree(dir: &Path, remaining: i32) -> Vec<FileTreeNode> {
         let (size, modified) = if is_dir {
             (None, None)
         } else {
-            let meta = fs::metadata(&path).ok();
+            let meta = entry.metadata().ok();
             let size = meta.as_ref().map(|m| m.len());
             let modified = meta.and_then(|m| {
                 m.modified().ok().and_then(|t| {

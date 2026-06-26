@@ -34,6 +34,14 @@ interface WorkspaceStore {
   // Pending message for Agent (consumed by WorkspacePage to auto-send)
   pendingAgentMessage: string | null;
   setPendingAgentMessage: (msg: string | null) => void;
+
+  // Agent impact warning threshold (files affected before showing warning)
+  impactWarningThreshold: number;
+  setImpactWarningThreshold: (n: number) => void;
+
+  // Max parallel agents for PlanRuntime
+  maxParallelAgents: number;
+  setMaxParallelAgents: (n: number) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
@@ -93,4 +101,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
 
   pendingAgentMessage: null,
   setPendingAgentMessage: (msg) => set({ pendingAgentMessage: msg }),
+
+  impactWarningThreshold: 10,
+  setImpactWarningThreshold: (n) => set({ impactWarningThreshold: n }),
+
+  maxParallelAgents: 3,
+  setMaxParallelAgents: (n) => set({ maxParallelAgents: n }),
 }));

@@ -17,6 +17,7 @@ export {
   brainApi,
   graphApi,
   gitApi,
+  auditApi,
 } from './project';
 
 // Workspace

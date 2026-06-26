@@ -214,6 +214,11 @@ pub fn run() {
             commands::project::health::run_health_check_for_project,
             commands::project::health::get_project_health_history,
             commands::project::health::get_all_latest_health,
+            // Project audit
+            commands::project::audit::audit_run_for_project,
+            commands::project::audit::audit_get_project_history,
+            commands::project::audit::audit_get_latest_all,
+            commands::project::audit::audit_get_items,
             // Workspaces
             commands::workspace::workspaces::workspaces_list,
             commands::workspace::workspaces::workspaces_create,

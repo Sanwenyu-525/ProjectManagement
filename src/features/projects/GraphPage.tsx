@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Select, Empty, Spin } from 'antd';
 import { ApartmentOutlined } from '@ant-design/icons';
 import GraphTab from './tabs/GraphTab';
@@ -8,7 +8,21 @@ import { getThemeColors } from '../../lib/themeColors';
 export default function GraphPage() {
   const tc = getThemeColors();
   const { data: projects, isLoading } = useProjects();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    localStorage.getItem('graph.selectedProjectId')
+  );
+
+  const handleSelect = (id: string) => {
+    setSelectedId(id);
+    localStorage.setItem('graph.selectedProjectId', id);
+  };
+
+  useEffect(() => {
+    if (projects && selectedId && !projects.some(p => p.id === selectedId)) {
+      setSelectedId(null);
+      localStorage.removeItem('graph.selectedProjectId');
+    }
+  }, [projects, selectedId]);
 
   return (
     <div style={{
@@ -35,7 +49,7 @@ export default function GraphPage() {
           style={{ width: 280, marginLeft: 'auto' }}
           loading={isLoading}
           value={selectedId}
-          onChange={setSelectedId}
+          onChange={handleSelect}
           options={projects?.map(p => ({ label: p.name, value: p.id }))}
           showSearch
           filterOption={(input, option) =>

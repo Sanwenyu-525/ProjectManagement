@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SearchOutlined } from '@ant-design/icons';
 import { searchApi } from '../../api';
@@ -8,7 +8,8 @@ import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { COMMANDS, getCommandsByCategory, CATEGORY_LABELS } from '../../lib/commands';
 import { fuzzyMatch } from '../../lib/fuzzyMatch';
 import { getRecentCommandIds, recordCommandUse } from '../../lib/recentCommands';
-import type { FileEntry, ContentSearchMatch } from '../../api/types';
+import { fileIcon, sortByRelevance } from './searchUtils';
+import type { ContentSearchMatch } from '../../api/types';
 import type { TaskWithProject, DocumentWithProject } from '../../types';
 
 interface DropdownItem {
@@ -19,28 +20,6 @@ interface DropdownItem {
   group: 'command' | 'project' | 'task' | 'document' | 'file' | 'content';
   action: () => void;
   shortcut?: string;
-}
-
-/** 代码文件扩展名 — 搜索结果中优先排序 */
-const CODE_EXTS = new Set(['ts','tsx','js','jsx','rs','py','go','java','c','cpp','h','cs','rb','swift','kt','dart','lua']);
-
-function fileIcon(ext?: string): string {
-  if (!ext) return 'draft';
-  if (ext === 'ts' || ext === 'tsx' || ext === 'js' || ext === 'jsx') return 'code';
-  if (ext === 'json' || ext === 'md' || ext === 'mdx') return 'description';
-  if (ext === 'css' || ext === 'scss' || ext === 'less') return 'palette';
-  if (ext === 'svg' || ext === 'png' || ext === 'jpg') return 'image';
-  return 'draft';
-}
-
-/** 文件相关性排序：代码文件 > 配置/文档 > 其他 */
-function sortByRelevance(files: FileEntry[]): FileEntry[] {
-  return [...files].sort((a, b) => {
-    const aCode = a.extension ? CODE_EXTS.has(a.extension) : false;
-    const bCode = b.extension ? CODE_EXTS.has(b.extension) : false;
-    if (aCode !== bCode) return aCode ? -1 : 1;
-    return a.name.length - b.name.length;
-  });
 }
 
 export default function SearchBox() {
@@ -79,21 +58,24 @@ export default function SearchBox() {
   }, []);
 
   // Build commands from registry, wrapping actions with record + close
-  const commands: DropdownItem[] = COMMANDS
-    .filter(c => c.id !== 'palette') // palette entry is for display/shortcut only
-    .map(c => ({
-      id: c.id,
-      label: c.label,
-      description: c.description,
-      icon: c.icon,
-      group: 'command' as const,
-      shortcut: c.shortcut,
-      action: () => {
-        recordCommandUse(c.id);
-        c.action();
-        close();
-      },
-    }));
+  const commands: DropdownItem[] = useMemo(() =>
+    COMMANDS
+      .filter(c => c.id !== 'palette')
+      .map(c => ({
+        id: c.id,
+        label: c.label,
+        description: c.description,
+        icon: c.icon,
+        group: 'command' as const,
+        shortcut: c.shortcut,
+        action: () => {
+          recordCommandUse(c.id);
+          c.action();
+          close();
+        },
+      })),
+    [close],
+  );
 
   const q = query.trim();
   const qLower = q.toLowerCase();
@@ -272,7 +254,14 @@ export default function SearchBox() {
       allItems[selectedIndex]?.action();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      close();
+      if (query) {
+        // First Esc: clear query, keep dropdown open
+        setQuery('');
+        setSelectedIndex(0);
+      } else {
+        // Second Esc: close dropdown
+        close();
+      }
     }
   };
 
@@ -371,7 +360,28 @@ export default function SearchBox() {
           }}
         />
         {loading && (
-          <span style={{ fontSize: 11, color: isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.5)', flexShrink: 0 }}>...</span>
+          <span style={{
+            width: 14, height: 14, borderRadius: '50%',
+            border: `2px solid ${isDark ? 'rgba(148,163,184,0.3)' : 'rgba(100,116,139,0.3)'}`,
+            borderTopColor: 'var(--md-primary)',
+            animation: 'spin 0.8s linear infinite',
+            flexShrink: 0,
+          }} />
+        )}
+        {query && !loading && (
+          <span
+            onClick={(e) => { e.stopPropagation(); setQuery(''); setSelectedIndex(0); inputRef.current?.focus(); }}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 18, height: 18, borderRadius: '50%', flexShrink: 0, cursor: 'pointer',
+              color: 'var(--md-on-surface-variant)', fontSize: 14,
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>close</span>
+          </span>
         )}
         {!open && (
           <kbd style={{
@@ -391,7 +401,7 @@ export default function SearchBox() {
         <div style={dropdown}>
           <div ref={listRef} style={{ padding: '6px 0' }}>
             {allItems.length === 0 && !loading && (
-              <div style={{ textAlign: 'center', padding: 24, fontSize: 13, color: isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.5)' }}>
+              <div style={{ textAlign: 'center', padding: 24, fontSize: 13, color: 'var(--color-text-tertiary)' }}>
                 未找到结果
               </div>
             )}
@@ -427,7 +437,7 @@ export default function SearchBox() {
                       >
                         <span className="material-symbols-outlined" style={{
                           fontSize: 18,
-                          color: selected ? 'var(--md-primary)' : (isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.5)'),
+                          color: selected ? 'var(--md-primary)' : 'var(--color-text-tertiary)',
                           flexShrink: 0,
                         }}>
                           {item.icon}
@@ -443,7 +453,7 @@ export default function SearchBox() {
                           {item.description && (
                             <div style={{
                               fontSize: 11,
-                              color: isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.5)',
+                              color: 'var(--color-text-tertiary)',
                               marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             }}>
                               {item.description}
@@ -473,7 +483,7 @@ export default function SearchBox() {
           <div style={{
             display: 'flex', alignItems: 'center', gap: 16, padding: '8px 14px',
             borderTop: '1px solid var(--divider)',
-            fontSize: 11, color: isDark ? 'rgba(148,163,184,0.4)' : 'rgba(100,116,139,0.4)',
+            fontSize: 11, color: 'var(--color-text-tertiary)',
             fontFamily: "'Fira Code', monospace",
           }}>
             <span>↑↓ 导航</span>

@@ -40,21 +40,83 @@ body {
 /* ==================== Scrollbar ==================== */
 
 ::-webkit-scrollbar {
-  width: 3px !important;
-  height: 3px !important;
+  width: 6px;
+  height: 6px;
+  background: transparent;
+  pointer-events: none;      /* 容器不拦截鼠标事件 */
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
+  pointer-events: none;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-scrollbar);
   border-radius: 4px;
+  border: 1px solid transparent;
+  pointer-events: auto;      /* 仅 thumb 可交互 */
+  opacity: 0;
+  transition: opacity 0.2s, background 0.15s;
+}
+
+*:hover > ::-webkit-scrollbar-thumb {
+  opacity: 1;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-scrollbar-hover);
+  border-color: rgba(0,0,0,0.06);
+}
+
+/* ==================== Resize handle ==================== */
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* Narrow 3px hit zone at the edge — leaves scrollbar area interactive */
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  pointer-events: auto;
+}
+
+.resize-handle--right { right: 0; }
+.resize-handle--right::after { right: 0; }
+.resize-handle--left  { left: 0; }
+.resize-handle--left::after { left: 0; }
+
+.resize-handle__line {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 100%;
+  transition: width 0.15s ease, background 0.15s ease;
+  background: var(--color-drag-highlight);
+}
+
+.resize-handle--right > .resize-handle__line { right: 0; }
+.resize-handle--left  > .resize-handle__line { left: 0; }
+
+.resize-handle:hover > .resize-handle__line {
+  width: 1px;
+}
+
+.resize-handle.is-active > .resize-handle__line {
+  width: 1px;
+  background: var(--color-primary);
+  transition: none;
 }
 
 /* ==================== Skeleton loading ==================== */
@@ -193,6 +255,11 @@ body {
   background: var(--color-scrollbar-hover);
 }
 
+/* Hide xterm's custom DOM scrollbar widget — let the native thin scrollbar show */
+.xterm .xterm-scrollable-element > .scrollbar {
+  display: none !important;
+}
+
 .ant-layout-sider-trigger {
   background: transparent !important;
   border-top: 1px solid var(--ws-glass-border) !important;
@@ -292,15 +359,6 @@ body {
   margin: 8px 0 4px;
 }
 
-/* Workspace resize divider */
-.resize-divider {
-  background: transparent;
-  transition: background 0.15s ease;
-}
-.resize-divider:hover {
-  background: var(--md-primary-container);
-}
-
 /* Agent dropdown menu */
 .ant-dropdown {
   min-width: auto !important;
@@ -364,6 +422,7 @@ body {
 
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   background: var(--color-scrollbar-hover);
+  border-color: rgba(255,255,255,0.06);
 }
 
 [data-theme="dark"] .ant-layout-sider-trigger {
@@ -475,19 +534,35 @@ body {
   background: var(--md-surface-container-high);
 }
 
-/* Resize divider — zero layout width, invisible hit area via pseudo-element */
-.resize-divider {
-  position: relative;
-  width: 0;
-  flex-shrink: 0;
-  cursor: col-resize;
-  align-self: stretch;
+/* ==================== Reduced Motion ==================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skeleton { animation: none !important; }
+  .thinking-dots .dot { animation: none !important; }
 }
-.resize-divider::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -3px;
-  right: -3px;
+
+/* ==================== Active / Pressed Feedback ==================== */
+
+.u-btn-interactive {
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
+}
+.u-btn-interactive:hover {
+  filter: brightness(0.92);
+}
+.u-btn-interactive:active {
+  transform: scale(0.97);
+  filter: brightness(0.88);
+}
+
+/* File tree item click feedback */
+.file-tree-item:active {
+  background: var(--md-surface-container) !important;
+  transition: background 0s !important;
 }

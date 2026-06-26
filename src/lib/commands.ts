@@ -2,6 +2,7 @@ import { formatShortcut } from './keyboard';
 import { useThemeStore } from '../stores/themeStore';
 import { useAgentWorkspaceStore } from '../stores/agentWorkspaceStore';
 import { useAgentTabStore } from '../stores/agentTabStore';
+import { useGlobalEditorStore } from '../stores/globalEditorStore';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,17 @@ export const COMMANDS: CommandDef[] = [
     keys: { ctrl: true, key: '\\' },
     action: () => {
       useAgentWorkspaceStore.getState().togglePanelCollapsed();
+    },
+  },
+  {
+    id: 'toggle-editor-drawer',
+    label: '切换全局编辑器',
+    icon: 'code',
+    category: 'workspace',
+    shortcut: formatShortcut({ ctrl: true, key: 'e' }),
+    keys: { ctrl: true, key: 'e' },
+    action: () => {
+      useGlobalEditorStore.getState().toggleDrawer();
     },
   },
 

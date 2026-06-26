@@ -5,6 +5,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useTerminalStore } from '../../../stores/terminalStore';
 import { folderName } from '../components/terminalFactory';
 import StatusDot from '../components/StatusDot';
+import { useWheelScroll } from '../../../hooks/useWheelScroll';
 
 interface AgentTabBarProps {
   onCloseTab?: (tabId: string) => void;
@@ -20,6 +21,7 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
   const errorSessionIds = useAgentStore(s => s.errorSessionIds);
   const defaultCwd = useTerminalStore(s => s.defaultCwd);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const wheelScroll = useWheelScroll<HTMLDivElement>();
 
   // New conversation default path
   const newCwd = localStorage.getItem('agent_lastCwd') || defaultCwd;
@@ -39,16 +41,16 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
   return (
     <div style={styles.tabBar}>
       {/* Row 1: Tabs */}
-      <div style={styles.tabsRow}>
+      <div style={styles.tabsRow} ref={wheelScroll.ref} onWheel={wheelScroll.onWheel}>
         {tabs.map(tab => {
           const isActive = tab.id === activeTabId;
           const isStreaming = tab.sessionId != null && streamingSessionId === tab.sessionId;
-          const tabStatus: 'running' | 'ended' | 'error' | 'none' =
+          const tabStatus: 'running' | 'idle' | 'ended' | 'error' | 'none' =
             tab.sessionId == null ? 'none'
             : isStreaming ? 'running'
             : tab.sessionId in errorSessionIds ? 'error'
             : tab.sessionId in endedSessionIds ? 'ended'
-            : 'none';
+            : 'idle';
           const tabCwd = effectiveCwd(tab.cwd);
           return (
             <div
@@ -61,6 +63,11 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
                 ...styles.tab,
                 ...(isActive ? styles.tabActive : {}),
                 opacity: isActive ? 1 : 0.7,
+                background: isActive
+                  ? 'var(--md-surface-container)'
+                  : hoveredId === tab.id
+                    ? 'var(--md-surface-container-low)'
+                    : 'transparent',
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? 'var(--md-primary)' : 'var(--md-tertiary-container)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -101,11 +108,12 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBrowse(); } }}
           style={styles.folderBtn}
           title={`新对话目录：${newCwd}`}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 18, color: 'var(--md-on-surface-variant)' }}>
             folder
           </span>
-          <span style={styles.folderLabel}>{newCwdName}</span>
         </div>
         <div
           role="button"
@@ -115,6 +123,8 @@ export default function AgentTabBar({ onCloseTab }: AgentTabBarProps) {
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); addTab(); } }}
           style={styles.addTabBtn}
           title="新对话"
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 18, color: 'var(--md-on-surface-variant)' }}>
             add
@@ -132,16 +142,19 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid var(--border)',
     background: 'var(--md-surface-container-lowest)',
     flexShrink: 0,
+    minWidth: 0,
     position: 'relative',
+    overflow: 'hidden',
   },
   tabsRow: {
     display: 'flex',
     alignItems: 'stretch',
     overflowX: 'auto',
     flex: 1,
+    minWidth: 0,
     gap: 0,
     minHeight: 36,
-    paddingRight: 120,
+    paddingRight: 100,
   },
   rightActions: {
     position: 'absolute',
@@ -152,6 +165,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 2,
     height: 36,
     paddingRight: 4,
+    paddingLeft: 12,
     background: 'linear-gradient(to left, var(--md-surface-container-lowest) 70%, transparent)',
     zIndex: 3,
   },
@@ -220,21 +234,12 @@ const styles: Record<string, React.CSSProperties> = {
   folderBtn: {
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '0 10px',
+    justifyContent: 'center',
+    width: 32,
     height: 32,
     borderRadius: 'var(--radius-sm)',
     cursor: 'pointer',
     flexShrink: 0,
     transition: 'background 0.15s',
-  },
-  folderLabel: {
-    fontSize: 'var(--text-xs)',
-    fontFamily: 'var(--font-mono, monospace)',
-    color: 'var(--md-on-surface-variant)',
-    maxWidth: 120,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
   },
 };

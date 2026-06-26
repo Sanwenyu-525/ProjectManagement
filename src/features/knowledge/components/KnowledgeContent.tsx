@@ -312,6 +312,8 @@ export default function KnowledgeContent() {
                   <button
                     style={styles.listPinBtn}
                     onClick={e => handleListPin(e, kItem)}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                     title={kItem.isPinned ? '取消收藏' : '收藏'}
                   >
                     <span
@@ -350,6 +352,8 @@ export default function KnowledgeContent() {
         <button
           style={styles.backBtn}
           onClick={() => setSelectedId(null)}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_back</span>
         </button>
@@ -364,6 +368,8 @@ export default function KnowledgeContent() {
                   setEditingNoteId(item.id);
                 }
               }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
               title={editingNoteId === item.id ? '取消编辑' : '编辑'}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
@@ -375,6 +381,8 @@ export default function KnowledgeContent() {
             <button
               style={styles.iconBtn}
               onClick={() => pinMutation.mutate(item)}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
               title={item.isPinned ? '取消收藏' : '收藏'}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 18, color: item.isPinned ? 'var(--md-primary)' : undefined, fontVariationSettings: item.isPinned ? "'FILL' 1" : undefined }}>
@@ -389,7 +397,12 @@ export default function KnowledgeContent() {
             cancelText="取消"
           >
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32 }}>
-              <button style={styles.iconBtnDanger} title="删除">
+              <button
+                style={styles.iconBtnDanger}
+                title="删除"
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              >
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>delete_outline</span>
               </button>
             </span>
@@ -522,12 +535,19 @@ function NoteView({ item, isEditing, onCancelEdit }: {
           <button
             style={styles.actionBtnPrimary}
             onClick={() => saveMutation.mutate()}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
             disabled={saveMutation.isPending}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 15 }}>save</span>
             {saveMutation.isPending ? '保存中...' : '保存'}
           </button>
-          <button style={styles.actionBtnSecondary} onClick={onCancelEdit}>
+          <button
+            style={styles.actionBtnSecondary}
+            onClick={onCancelEdit}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--md-surface-container-high)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
+          >
             取消
           </button>
         </div>

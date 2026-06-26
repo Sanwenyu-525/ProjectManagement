@@ -5,6 +5,7 @@ import { filesApi } from '../../../api';
 import type { FileEntry } from '../../../api';
 import { useTerminalStore } from '../../../stores/terminalStore';
 import { useWorkspaceStore } from '../../../stores/workspaceStore';
+import { useGlobalEditorStore } from '../../../stores/globalEditorStore';
 import { useThemeStore } from '../../../stores/themeStore';
 import FileViewer, { getFileIcon } from './FileViewer';
 import { useWheelScroll } from '../../../hooks/useWheelScroll';
@@ -22,10 +23,12 @@ interface EditorFile {
 }
 
 interface CodeEditorPaneProps {
+  /** 'workspace' = 工作区内联编辑器（自动加载项目文件）; 'global' = 全局抽屉编辑器 */
+  variant?: 'workspace' | 'global';
   onEmpty?: () => void;
 }
 
-export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
+export default function CodeEditorPane({ variant = 'workspace', onEmpty }: CodeEditorPaneProps) {
   const projectRoot = useTerminalStore(s => s.defaultCwd);
   const isDark = useThemeStore(s => s.mode === 'dark');
   const [files, setFiles] = useState<EditorFile[]>([]);
@@ -42,6 +45,9 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
   );
 
   const [autoCopyEnabled, setAutoCopyEnabled] = useState(false);
+
+  // Store selection based on variant
+  const isWorkspace = variant === 'workspace';
 
   // Helper: read a file from disk and add it to the editor
   const openFile = useCallback(async (path: string, inferredLang?: string) => {
@@ -91,11 +97,12 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
-  // Reverse sync: tell explorer which file is active in the editor
+  // Reverse sync: tell explorer which file is active in the editor (workspace only)
   useEffect(() => {
+    if (!isWorkspace) return;
     const activeFile = activeId ? filesRef.current.find(f => f.id === activeId) : null;
     useWorkspaceStore.getState().setActiveEditorFile(activeFile?.path ?? null);
-  }, [activeId]);
+  }, [activeId, isWorkspace]);
 
   // Index-based update on every keystroke — only clones 1 file, not all
   const handleChange = useCallback((value: string) => {
@@ -169,9 +176,9 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
-  // Load project files from backend
+  // Load project files from backend (workspace variant only)
   useEffect(() => {
-    if (!projectRoot) return;
+    if (!isWorkspace || !projectRoot) return;
     const sep = projectRoot.includes('\\') ? '\\' : '/';
     const srcDir = projectRoot + sep + 'src';
 
@@ -190,11 +197,15 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
       });
     }).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectRoot]);
+  }, [isWorkspace, projectRoot]);
 
   // Open file requested from FileExplorer sidebar
-  const fileToOpen = useWorkspaceStore(s => s.fileToOpen);
-  const renamedFile = useWorkspaceStore(s => s.renamedFile);
+  const fileToOpen = isWorkspace
+    ? useWorkspaceStore(s => s.fileToOpen)
+    : useGlobalEditorStore(s => s.fileToOpen);
+  const renamedFile = isWorkspace
+    ? useWorkspaceStore(s => s.renamedFile)
+    : useGlobalEditorStore(s => s.renamedFile);
   useEffect(() => {
     if (!fileToOpen) return;
     // Already open? just activate it
@@ -207,8 +218,12 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
       });
     }
     // Clear the open request only — selection is managed separately
-    useWorkspaceStore.getState().requestOpenFile(null);
-  }, [fileToOpen, openFile]);
+    if (isWorkspace) {
+      useWorkspaceStore.getState().requestOpenFile(null);
+    } else {
+      useGlobalEditorStore.getState().requestOpenFile(null);
+    }
+  }, [fileToOpen, openFile, isWorkspace]);
 
   // Sync file path when FileExplorer renames a file — consume-and-clear
   useEffect(() => {
@@ -221,11 +236,17 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
     if (activeIdRef.current === renamedFile.oldPath) {
       setActiveId(renamedFile.newPath);
     }
-    useWorkspaceStore.getState().setRenamedFile(null);
-  }, [renamedFile]);
+    if (isWorkspace) {
+      useWorkspaceStore.getState().setRenamedFile(null);
+    } else {
+      useGlobalEditorStore.getState().setRenamedFile(null);
+    }
+  }, [renamedFile, isWorkspace]);
 
   // Close tabs when files are deleted from FileExplorer
-  const deletedFiles = useWorkspaceStore(s => s.deletedFiles);
+  const deletedFiles = isWorkspace
+    ? useWorkspaceStore(s => s.deletedFiles)
+    : useGlobalEditorStore(s => s.deletedFiles);
   useEffect(() => {
     if (deletedFiles.length === 0) return;
     const deletedSet = new Set(deletedFiles);
@@ -240,11 +261,15 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
         return remaining[0]?.id ?? null;
       });
     }
-    useWorkspaceStore.getState().setDeletedFiles([]);
-  }, [deletedFiles]);
+    if (isWorkspace) {
+      useWorkspaceStore.getState().setDeletedFiles([]);
+    } else {
+      useGlobalEditorStore.getState().setDeletedFiles([]);
+    }
+  }, [deletedFiles, isWorkspace]);
 
-  // Empty state — no project loaded
-  if (!projectRoot) {
+  // Empty state — no project loaded (workspace only)
+  if (isWorkspace && !projectRoot) {
     return (
       <div style={{ ...styles.container, alignItems: 'center', justifyContent: 'center' }}>
         <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--md-outline-variant)', marginBottom: 8 }}>
@@ -258,7 +283,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
   }
 
   return (
-    <div style={styles.container}>
+    <div style={isWorkspace ? styles.container : styles.containerGlobal}>
       {/* Editor Tabs */}
       <div style={styles.tabBar}>
         <div style={styles.tabsRow} ref={wheelScroll.ref} onWheel={wheelScroll.onWheel}>
@@ -293,7 +318,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
         </div>
         {files.length === 0 && (
           <span style={{ fontSize: 12, color: 'var(--md-outline-variant)', padding: '0 16px' }}>
-            No files open
+            {isWorkspace ? 'No files open' : '双击文件浏览器中的文件开始编辑'}
           </span>
         )}
         <button
@@ -348,7 +373,7 @@ export default function CodeEditorPane({ onEmpty }: CodeEditorPaneProps) {
               </span>
             ) : (
               <span style={{ fontSize: 12, color: 'var(--md-outline-variant)' }}>
-                选择文件开始编辑
+                {isWorkspace ? '选择文件开始编辑' : '双击文件浏览器中的文件开始编辑'}
               </span>
             )}
           </div>
@@ -368,6 +393,14 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 12,
     border: '1px solid var(--border)',
     boxShadow: '0 2px 8px rgba(11, 28, 48, 0.04)',
+    overflow: 'hidden',
+  },
+  containerGlobal: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    minHeight: 0,
+    background: 'var(--md-surface-container-lowest)',
     overflow: 'hidden',
   },
   tabBar: {

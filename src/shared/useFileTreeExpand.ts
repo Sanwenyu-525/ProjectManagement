@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { filesApi } from '../api';
 import type { FileTreeNode } from '../api';
 
 export interface DirState {
@@ -16,6 +17,7 @@ export interface FileTreeExpandState {
 
 export interface FileTreeExpandActions {
   toggleDir: (path: string) => void;
+  collapseAll: () => void;
   loadChildren: (path: string) => void;
   refreshDir: (path: string, fetchRootTree: (path: string) => void) => void;
   initRootTrees: (roots: { path: string }[], initialExpanded: Set<string>, fetchRootTree: (path: string) => void) => void;
@@ -27,6 +29,12 @@ export type FileTreeExpand = FileTreeExpandState & FileTreeExpandActions;
 /** Normalize path separators to '/' and strip trailing separator */
 export function normPath(p: string): string {
   return p.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/** Tracks paths currently being fetched by loadChildren — allows callers to skip redundant refreshes */
+const loadChildrenInFlight = new Set<string>();
+export function isLoadChildrenBusy(path?: string): boolean {
+  return path ? loadChildrenInFlight.has(normPath(path)) : loadChildrenInFlight.size > 0;
 }
 
 /** Merge new tree with existing tree, preserving loaded children of expanded nodes */
@@ -117,6 +125,7 @@ export function useFileTreeExpand(
     const np = normPath(path);
     if (fetchingRef.current.has(np)) return;
     fetchingRef.current.add(np);
+    loadChildrenInFlight.add(np);
 
     const gen = (fetchGenerationRef.current.get(np) ?? 0) + 1;
     fetchGenerationRef.current.set(np, gen);
@@ -128,52 +137,64 @@ export function useFileTreeExpand(
       return next;
     });
 
-    import('../api').then(({ filesApi }) => {
-      filesApi.getTree(np, 1).then(children => {
-        if (fetchGenerationRef.current.get(np) !== gen) return;
-        fetchingRef.current.delete(np);
+    filesApi.getTree(np, 1).then(children => {
+      if (fetchGenerationRef.current.get(np) !== gen) return;
+      fetchingRef.current.delete(np);
+      loadChildrenInFlight.delete(np);
 
-        // Clear loading
-        setLoadingDirPaths(prev => {
-          const next = new Set(prev);
-          next.delete(np);
-          return next;
-        });
-
-        setDirs(prev => {
-          const updated = prev.map(d =>
-            findDir([d], np)
-              ? { ...d, tree: findAndUpdateNode(d.tree, np, children) }
-              : d
-          );
-          // Check newly loaded children for further auto-expand
-          const dir = findDir(updated, np);
-          if (dir) autoExpandSubtree(children, dir.expanded);
-          return updated;
-        });
-      }).catch((err) => {
-        if (fetchGenerationRef.current.get(np) !== gen) return;
-        fetchingRef.current.delete(np);
-
-        // Clear loading
-        setLoadingDirPaths(prev => {
-          const next = new Set(prev);
-          next.delete(np);
-          return next;
-        });
-
-        console.error('Failed to load directory children:', np, err);
-
-        // Revert expand state on failure
-        setDirs(prev => prev.map(d => {
-          if (!findDir([d], np)) return d;
-          const reverted = new Set(d.expanded);
-          reverted.delete(np);
-          return { ...d, expanded: reverted };
-        }));
+      // Clear loading
+      setLoadingDirPaths(prev => {
+        const next = new Set(prev);
+        next.delete(np);
+        return next;
       });
+
+      // Use functional updater to always read the latest state — avoids stale dirsRef.current
+      let childrenToExpand: FileTreeNode[] | null = null;
+      let expandedForCheck: Set<string> | null = null;
+      setDirs(prev => {
+        const updated = prev.map(d =>
+          findDir([d], np)
+            ? { ...d, tree: findAndUpdateNode(d.tree, np, children) }
+            : d
+        );
+        // Capture data for auto-expand check (side-effect-free: only reads state)
+        const dir = findDir(updated, np);
+        if (dir) {
+          childrenToExpand = children;
+          expandedForCheck = dir.expanded;
+        }
+        return updated;
+      });
+
+      // Check if any newly loaded children have expanded sub-nodes that need lazy loading.
+      // Deferred to after setDirs to avoid mutating pendingAutoExpandRef inside a state updater.
+      if (childrenToExpand && expandedForCheck) {
+        autoExpandSubtree(childrenToExpand, expandedForCheck);
+      }
+    }).catch((err) => {
+      if (fetchGenerationRef.current.get(np) !== gen) return;
+      fetchingRef.current.delete(np);
+      loadChildrenInFlight.delete(np);
+
+      // Clear loading
+      setLoadingDirPaths(prev => {
+        const next = new Set(prev);
+        next.delete(np);
+        return next;
+      });
+
+      console.error('Failed to load directory children:', np, err);
+
+      // Revert expand state on failure
+      setDirs(prev => prev.map(d => {
+        if (!findDir([d], np)) return d;
+        const reverted = new Set(d.expanded);
+        reverted.delete(np);
+        return { ...d, expanded: reverted };
+      }));
     });
-  }, [autoExpandSubtree]);
+  }, [autoExpandSubtree, setDirs]);
 
   // Process pending auto-expand paths
   useEffect(() => {
@@ -226,9 +247,20 @@ export function useFileTreeExpand(
     });
 
     if (fetchPathRef.current) {
+      // Mark as loading synchronously so the render before loadChildren's async setLoadingDirPaths shows "加载中..."
+      setLoadingDirPaths(prev => {
+        const next = new Set(prev);
+        next.add(fetchPathRef.current!);
+        return next;
+      });
       loadChildren(fetchPathRef.current);
     }
   }, [loadChildren]);
+
+  // Collapse all directories
+  const collapseAll = useCallback(() => {
+    setDirs(prev => prev.map(d => ({ ...d, expanded: new Set<string>() })));
+  }, []);
 
   // Refresh a directory tree from its root
   const refreshDir = useCallback((path: string, fetchRootTree: (path: string) => void) => {
@@ -297,5 +329,5 @@ export function useFileTreeExpand(
     });
   }, []);
 
-  return { dirs, loadingDirPaths, expanded, toggleDir, loadChildren, refreshDir, initRootTrees, updateDirs: setDirs };
+  return { dirs, loadingDirPaths, expanded, toggleDir, collapseAll, loadChildren, refreshDir, initRootTrees, updateDirs: setDirs };
 }

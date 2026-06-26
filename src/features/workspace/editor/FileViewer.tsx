@@ -87,14 +87,11 @@ const imageStyles: Record<string, React.CSSProperties> = {
     height: '100%',
     background: 'var(--md-surface-container-lowest, #fafafa)',
     overflow: 'auto',
-    padding: 16,
   },
   img: {
-    maxWidth: '100%',
-    maxHeight: '100%',
+    width: '100%',
+    height: '100%',
     objectFit: 'contain',
-    borderRadius: 4,
-    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
   },
 };
 

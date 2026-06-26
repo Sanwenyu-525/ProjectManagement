@@ -1,12 +1,76 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command as StdCommand;
+use std::process::{Command as StdCommand, Stdio};
 
 use serde::Deserialize;
 use serde_json::{from_str as json_from_str, json, Value as JsonValue};
 use tauri::{command, AppHandle, Manager, State};
 
 use crate::db::Database;
+
+/// Run `claude -p` with the prompt passed via stdin.
+/// This avoids cmd.exe argument mangling with special characters.
+fn run_claude(prompt: &str) -> Result<std::process::Output, String> {
+    let mut cmd = StdCommand::new("cmd");
+    cmd.args(["/C", "claude", "-p"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb");
+
+    let mut child = cmd.spawn().map_err(|e| format!("claude 启动失败: {e}"))?;
+
+    // Write prompt to stdin and close to signal EOF
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|e| format!("写入 claude stdin 失败: {e}"))?;
+    }
+
+    child
+        .wait_with_output()
+        .map_err(|e| format!("claude 执行失败: {e}"))
+}
+
+/// Find the first complete JSON object `{...}` in text, correctly handling nested braces and strings.
+fn find_json_object(text: &str) -> Option<&str> {
+    let start = text.find('{')?;
+    let bytes = text.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for i in start..bytes.len() {
+        let b = bytes[i];
+        if escape {
+            escape = false;
+            continue;
+        }
+        if b == b'\\' && in_string {
+            escape = true;
+            continue;
+        }
+        if b == b'"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        match b {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&text[start..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
 
 fn vault_dir(app: &AppHandle) -> PathBuf {
     app.path()
@@ -189,14 +253,9 @@ pub async fn knowledge_extract(
 只输出 JSON 数组，无其他文本。如果内容不值得沉淀，返回空数组 []。"#
     );
 
-    let output = tokio::task::spawn_blocking(move || {
-        StdCommand::new("claude")
-            .args(["-p", &prompt])
-            .output()
-    })
-    .await
-    .map_err(|e| format!("claude 调用失败: {e}"))?
-    .map_err(|e| format!("claude 调用失败: {e}"))?;
+    let output = tokio::task::spawn_blocking(move || run_claude(&prompt))
+        .await
+        .map_err(|e| format!("claude 调用失败: {e}"))??;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -250,74 +309,219 @@ pub async fn knowledge_extract(
     Ok(JsonValue::Array(results))
 }
 
-// ── Seed mock data ──
+// ── Knowledge Search Context ──
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeSearchContextInput {
+    pub query: String,
+    pub project_id: Option<String>,
+    pub limit: Option<i32>,
+}
+
+fn search_knowledge_items(
+    db: &Database,
+    query: &str,
+    project_id: &Option<String>,
+    limit: i32,
+) -> Result<Vec<JsonValue>, String> {
+    let terms: Vec<String> = query
+        .split_whitespace()
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("%{}%", t.to_lowercase()))
+        .collect();
+
+    if terms.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut sql = String::from(
+        "SELECT id, title, category, substr(content, 1, 300) as contentSnippet \
+         FROM knowledge_items WHERE ",
+    );
+
+    let mut conditions = Vec::new();
+    for i in 0..terms.len() {
+        conditions.push(format!(
+            "(LOWER(title) LIKE ?{idx} OR LOWER(content) LIKE ?{idx})",
+            idx = i + 1
+        ));
+    }
+    sql.push_str(&conditions.join(" OR "));
+
+    if project_id.is_some() {
+        let idx = terms.len() + 1;
+        sql.push_str(&format!(" AND projectId = ?{idx}"));
+    }
+    sql.push_str(&format!(" ORDER BY isPinned DESC, createdAt DESC LIMIT {limit}"));
+
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    for term in &terms {
+        params.push(Box::new(term.clone()));
+    }
+    if let Some(ref pid) = project_id {
+        params.push(Box::new(pid.clone()));
+    }
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let rows = db
+        .query_json(&sql, param_refs.as_slice())
+        .map_err(|e| e.to_string())?;
+
+    match rows {
+        JsonValue::Array(items) => Ok(items),
+        _ => Ok(vec![]),
+    }
+}
 
 #[command]
-pub async fn knowledge_seed(db: State<'_, Database>) -> Result<JsonValue, String> {
-    let now = crate::db::now_str();
-    let mut count: u32 = 0;
-
-    // ── project_memories ──
-    let memories: Vec<(&str, &str, &str, &str, &str)> = vec![
-        ("architecture", "Tauri IPC 命令注册模式", "每个新后端命令需要三步：\n1. 在 `src-tauri/src/commands/<domain>/<module>.rs` 添加 `#[command]` 函数\n2. 在 `src-tauri/src/lib.rs` 的 `generate_handler![]` 注册\n3. 在 `src/api/<module>.ts` 添加前端封装\n\n输入 struct 用 `#[serde(rename_all = \"camelCase\")]` 做 JS-Rust 名称转换。", "tauri,ipc,backend", "manual"),
-        ("architecture", "前端状态管理约定", "Zustand store 按领域拆分：terminalStore, workspaceStore, agentStore, themeStore。\n\n核心规则：\n- `useStore(s => s.field)` selector 模式\n- 不在 store 中派生状态，用组件内 `useMemo`\n- localStorage 存临时 UI 状态，后端表存持久数据", "zustand,state,frontend", "manual"),
-        ("code", "Rust 动态 SQL 构建模式", "部分更新用 `macro_rules! add_field!` 构建动态 SET 子句：\n\n```rust\nmacro_rules! add_field {\n    ($parts:expr, $field:expr, $name:expr) => {\n        if let Some(ref v) = $field {\n            $parts.push((format!(\"{} = ?\", $name), v.clone()));\n        }\n    };\n}\n```\n\n避免手动拼接 SQL 注入风险。", "rust,sql,dynamic-query", "manual"),
-        ("bugfix", "xterm 终端中文输入乱码", "问题：PowerShell 环境下中文字符显示为乱码。\n\n根因：`terminal_start_shell` 用逐字节输出，UTF-8 多字节字符被截断。\n\n修复：改用 `String::from_utf8_lossy` 做缓冲，遇到不完整字节序列时等待下一次读取。", "terminal,utf8,powershell", "agent"),
-        ("rule", "Ant Design 组件优先原则", "禁止手写 HTML 表单/表格/弹窗。所有交互组件必须用 Ant Design 的 Form、Table、Modal。\n\n例外：纯展示型的简单布局可以用原生 HTML + inline styles。", "ui,antd,convention", "manual"),
-        ("session", "V3 架构重构完成", "完成工作区 V3 架构重构：\n- PaneTree 替代旧的固定三栏布局\n- 终端通过 PTY 直连 Agent CLI\n- 新增 Navigator + Toolbar 组件\n- Agent Provider 可插拔模式", "workspace,v3,refactor", "agent"),
-        ("solution", "SQLite 并发写入冲突", "多窗口同时写入 SQLite 时报 `database is locked`。\n\n方案：启用 WAL 模式 + busy_timeout：\n```sql\nPRAGMA journal_mode=WAL;\nPRAGMA busy_timeout=5000;\n```\n\nWAL 允许并发读 + 单写，busy_timeout 让写操作自动重试。", "sqlite,wal,concurrency", "manual"),
-        ("pattern", "React Query 缓存失效策略", "按领域组织 queryKey：\n```ts\nknowledge: {\n  list: (cat) => ['knowledge', 'list', cat],\n  counts: () => ['knowledge', 'counts'],\n}\n```\n\n写操作后用前缀匹配失效：`queryClient.invalidateQueries({ queryKey: ['knowledge'] })`。", "react-query,cache,frontend", "manual"),
-        ("workflow", "功能开发标准流程", "1. 理解需求 → 确认范围\n2. 探索代码 → 找到相关文件\n3. 给出方案（2-3 选项）→ 等用户选\n4. 实现 → 每步验证 tsc + eslint\n5. 本地测试 → 确认行为正确\n6. 提交 → 规范 commit message", "workflow,process,development", "manual"),
-        ("prompt", "代码审查提示词模板", "审查以下代码变更，关注：\n1. 类型安全 — 是否有 any/不安全断言\n2. 错误处理 — 边界情况是否覆盖\n3. 一致性 — 是否遵循项目既有模式\n4. 性能 — 是否有不必要的重渲染或查询\n\n给出具体行号和修复建议。", "prompt,review,code-quality", "manual"),
-        ("experience", "glassmorphism 样式调试经验", "Ant Design + glassmorphism 的坑：\n- `backdrop-filter` 在 `overflow: hidden` 的父元素上不生效\n- `!important` 覆盖 antd 默认样式是常态，不要抗拒\n- 暗色模式下 `rgba` 透明度需要单独调，不能和亮色用同一值\n- CSS 变量定义在 `index.css`，Ant Design 主题在 `main.tsx` 的 ConfigProvider", "css,glassmorphism,antd", "ai-extract"),
-        ("experience", "Tauri 插件对话框使用", "使用 `@tauri-apps/plugin-dialog` 的 `open()` 时：\n- 返回值可能是 `string | string[] | null`，必须处理三种情况\n- `filters` 的 `extensions` 不带点号：`['md', 'txt']` 不是 `['.md', '.txt']`\n- Windows 路径用反斜杠，传给 Rust 前最好统一成正斜杠", "tauri,dialog,windows", "ai-extract"),
-        ("prompt", "架构方案评估框架", "评估方案时用这个框架：\n- **可行性**：技术上能实现吗？需要什么前置条件？\n- **复杂度**：改动范围多大？涉及几个模块？\n- **风险**：最坏情况是什么？如何回滚？\n- **收益**：解决什么问题？值得投入吗？", "prompt,architecture,evaluation", "manual"),
-    ];
-
-    for (mem_type, title, content, tags, source) in &memories {
-        let id = crate::db::new_id();
-        db.execute(
-            "INSERT INTO project_memories (id, projectId, type, title, content, tags, source, sessionId, createdAt, updatedAt) \
-             VALUES (?1, NULL, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?7)",
-            rusqlite::params![id, mem_type, title, content, tags, source, now],
-        ).map_err(|e| e.to_string())?;
-        count += 1;
-    }
-
-    // ── decisions ──
-    let decisions: Vec<(&str, &str, &str)> = vec![
-        ("采用 Tauri 2.x 而非 Electron", "选择 Tauri 的理由：\n1. 包体积小（~5MB vs Electron ~150MB）\n2. Rust 后端性能好，SQLite 直连无中间层\n3. 安全性更高，无 Node.js 运行时暴露\n4. 前端完全自由，不限框架", "accepted"),
-        ("Zustand 替代 Redux", "Redux 的 boilerplate 太多，Zustand 更轻量：\n- 无需 Provider 包裹\n- store 即 hook\n- 中间件（persist/devtools）按需引入\n- 对小团队来说学习成本更低", "accepted"),
-        ("单用户无认证设计", "开发者工具不需要多用户：\n- 硬编码 `default-user`\n- 省去登录/权限/会话管理的复杂度\n- 数据全在本地 SQLite，物理隔离\n- 未来如需多人协作，再引入认证层", "accepted"),
-        ("放弃 Web Worker 终端方案", "最初考虑在 Web Worker 里跑终端模拟，但：\n- 无法直接访问系统 PTY\n- xterm.js 需要真实 tty 才能正确渲染\n- 最终改为 Rust 直接 spawn shell 进程", "superseded"),
-    ];
-
-    for (title, reason, status) in &decisions {
-        let id = crate::db::new_id();
-        db.execute(
-            "INSERT INTO decisions (id, projectId, title, reason, status, isPinned, createdAt, updatedAt) \
-             VALUES (?1, NULL, ?2, ?3, ?4, 0, ?5, ?5)",
-            rusqlite::params![id, title, reason, status, now],
-        ).map_err(|e| e.to_string())?;
-        count += 1;
-    }
-
-    // ── personal_notes ──
-    let notes: Vec<(&str, &str, Option<&str>)> = vec![
-        ("项目技术栈总览", "前端：React 18 + TypeScript + Vite 6\nUI：Ant Design 5 + 自定义 glassmorphism\n状态：Zustand\n后端：Rust + SQLite (rusqlite)\n桌面：Tauri 2.x\n图表：ECharts\n终端：xterm.js + PTY", Some("tech,overview")),
-        ("开发环境快速启动", "```bash\nnpm run tauri dev    # 完整开发（前端 + 原生窗口）\nnpm run dev          # 仅前端（端口 1420）\ncd src-tauri && cargo check  # Rust 编译检查（快）\n```\n\n注意：`cargo check` 不生成二进制，适合快速验证语法。", Some("dev,setup")),
-        ("UI 设计原则备忘", "Glassmorphism 浅色主题：\n- CSS 变量定义在 `index.css`\n- 组件用 inline styles（项目约定，不是临时方案）\n- 禁止硬编码颜色值，必须引用 CSS 变量\n- 字体：Fira Sans（正文）+ Fira Code（等宽）\n- 暗色模式通过 `data-theme` 属性切换", Some("design,ui")),
-    ];
-
-    for (title, content, tags) in &notes {
-        let id = crate::db::new_id();
-        db.execute(
-            "INSERT INTO personal_notes (id, projectId, title, content, tags, filePath, createdAt, updatedAt) \
-             VALUES (?1, NULL, ?2, ?3, ?4, NULL, ?5, ?5)",
-            rusqlite::params![id, title, content, tags, now],
-        ).map_err(|e| e.to_string())?;
-        count += 1;
-    }
-
-    Ok(json!({ "inserted": count }))
+pub async fn knowledge_search_context(
+    db: State<'_, Database>,
+    data: KnowledgeSearchContextInput,
+) -> Result<JsonValue, String> {
+    let limit = data.limit.unwrap_or(10).max(1).min(20);
+    let results = search_knowledge_items(&db, &data.query, &data.project_id, limit)?;
+    Ok(JsonValue::Array(results))
 }
+
+// ── Knowledge Query (AI-powered Q&A) ──
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeQueryInput {
+    pub question: String,
+    pub project_id: Option<String>,
+}
+
+#[command]
+pub async fn knowledge_query(
+    db: State<'_, Database>,
+    data: KnowledgeQueryInput,
+) -> Result<JsonValue, String> {
+    let question = data.question.trim();
+    if question.is_empty() {
+        return Err("问题不能为空".into());
+    }
+
+    // Step 1: Retrieve relevant knowledge items
+    let sources = search_knowledge_items(&db, question, &data.project_id, 5)?;
+
+    // Step 2: Build prompt
+    let context = if sources.is_empty() {
+        "（知识库中没有找到相关内容）".to_string()
+    } else {
+        sources
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("未命名");
+                let cat = item.get("category").and_then(|v| v.as_str()).unwrap_or("");
+                let snippet = item.get("contentSnippet").and_then(|v| v.as_str()).unwrap_or("");
+                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                format!(
+                    "[{}] {} ({}): {} — ID: {}",
+                    i + 1,
+                    title,
+                    cat,
+                    snippet,
+                    id
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    };
+
+    let prompt = format!(
+        r#"你是一个项目知识库助手。基于以下知识库条目回答用户问题。
+要求：
+- 回答要准确、简洁
+- 在回答中引用来源，格式为 [来源N]（N 对应下方条目编号）
+- 如果知识库中没有相关内容，诚实说明并尝试给出通用建议
+
+知识库条目:
+{context}
+
+用户问题: {question}
+
+以 JSON 格式返回:
+{{"answer": "你的回答（支持引用 [来源N]）", "sourceIds": ["用到的条目ID列表"]}}
+
+只输出 JSON，无其他文本。"#
+    );
+
+    // Step 3: Call claude -p
+    let output = tokio::task::spawn_blocking(move || run_claude(&prompt))
+        .await
+        .map_err(|e| format!("claude 调用失败: {e}"))??;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("claude 执行失败: {stderr}"));
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let text = raw.trim();
+
+    // Step 4: Parse JSON response — use brace matching to handle nested content
+    let json_str = find_json_object(text)
+        .ok_or("AI 返回格式无效")?;
+
+    let parsed: JsonValue =
+        json_from_str(json_str).map_err(|e| format!("解析 AI 输出失败: {e}"))?;
+
+    let answer = parsed
+        .get("answer")
+        .and_then(|v| v.as_str())
+        .unwrap_or(text)
+        .to_string();
+    let source_ids: Vec<String> = parsed
+        .get("sourceIds")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Step 5: Build response with full source metadata
+    let matched_sources: Vec<&JsonValue> = sources
+        .iter()
+        .filter(|item| {
+            item.get("id")
+                .and_then(|v| v.as_str())
+                .map(|id| source_ids.contains(&id.to_string()))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    let output_sources: Vec<JsonValue> = if matched_sources.is_empty() && !sources.is_empty() {
+        sources
+            .iter()
+            .map(|item| {
+                let mut s = item.clone();
+                if let JsonValue::Object(ref mut map) = s {
+                    map.insert("relevance".into(), JsonValue::from("matched"));
+                }
+                s
+            })
+            .collect()
+    } else {
+        matched_sources
+            .into_iter()
+            .map(|item| {
+                let mut s = item.clone();
+                if let JsonValue::Object(ref mut map) = s {
+                    map.insert("relevance".into(), JsonValue::from("cited"));
+                }
+                s
+            })
+            .collect()
+    };
+
+    Ok(json!({
+        "answer": answer,
+        "sources": output_sources,
+    }))
+}
+

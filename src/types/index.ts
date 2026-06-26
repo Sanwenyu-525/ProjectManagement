@@ -886,3 +886,65 @@ export interface BusinessClassification {
   modules: BusinessModule[];
   uncategorized: string[];
 }
+
+// ── Project Audit ──
+
+export interface AuditRiskItem {
+  dimension: string;
+  label: string;
+  severity: string; // 'warning' | 'critical'
+  detail: string;
+}
+
+export interface AuditRecommendation {
+  dimension: string;
+  label: string;
+  priority: string; // 'low' | 'medium' | 'high'
+  detail: string;
+}
+
+export interface AuditItem {
+  id: string;
+  auditId: string;
+  dimension: string;
+  itemKey: string;
+  label: string;
+  score: number;
+  maxScore: number;
+  status: string; // 'good' | 'warning' | 'critical'
+  details: string | null;
+}
+
+export interface ProjectAuditResult {
+  id: string;
+  projectId: string;
+  auditDate: string;
+  scoreArchitecture: number;
+  scoreCodeQuality: number;
+  scoreDependencies: number;
+  scoreChangeImpact: number;
+  scoreKnowledgeGap: number;
+  totalScore: number;
+  riskItems: AuditRiskItem[];
+  recommendations: AuditRecommendation[];
+  triggerSource: string;
+  durationMs: number | null;
+  items: AuditItem[];
+}
+
+export interface AuditRecord {
+  id: string;
+  projectId: string;
+  auditDate: string;
+  scoreArchitecture: number;
+  scoreCodeQuality: number;
+  scoreDependencies: number;
+  scoreChangeImpact: number;
+  scoreKnowledgeGap: number;
+  totalScore: number;
+  riskItems: string; // JSON
+  recommendations: string; // JSON
+  triggerSource: string;
+  durationMs: number | null;
+  createdAt: string;
+}

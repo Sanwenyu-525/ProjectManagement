@@ -217,6 +217,8 @@ impl Database {
         self.run_migration(&conn, "022_project_soft_delete", include_str!("../migrations/022_project_soft_delete.sql"))?;
         self.run_migration(&conn, "023_global_plan_session", include_str!("../migrations/023_global_plan_session.sql"))?;
         self.run_migration(&conn, "024_explorer_state", include_str!("../migrations/024_explorer_state.sql"))?;
+        self.run_migration(&conn, "025_mcp_servers", include_str!("../migrations/025_mcp_servers.sql"))?;
+        self.run_migration(&conn, "026_project_audits", include_str!("../migrations/026_project_audits.sql"))?;
 
         Ok(())
     }

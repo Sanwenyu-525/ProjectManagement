@@ -7,13 +7,14 @@ interface TerminalInstanceProps {
   terminal: TerminalType;
   theme: TerminalTheme;
   isActive: boolean;
+  visible?: boolean;
   onInput: (terminalId: string, data: string) => void;
   onExit?: (terminalId: string, code: number | null) => void;
   onCwdChange?: (terminalId: string, cwd: string) => void;
   onTitleChange?: (terminalId: string, title: string) => void;
 }
 
-export default function TerminalInstance({ terminal, theme, isActive, onInput, onExit, onCwdChange, onTitleChange }: TerminalInstanceProps) {
+export default function TerminalInstance({ terminal, theme, isActive, visible = true, onInput, onExit, onCwdChange, onTitleChange }: TerminalInstanceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
@@ -53,6 +54,14 @@ export default function TerminalInstance({ terminal, theme, isActive, onInput, o
       return () => clearTimeout(timer);
     }
   }, [isActive, refit]);
+
+  // Re-fit when becoming visible (handles panel expand after collapse)
+  useEffect(() => {
+    if (visible && isActive) {
+      const timer = setTimeout(refit, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [visible, isActive, refit]);
 
   return (
     <div

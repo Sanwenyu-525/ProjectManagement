@@ -3,6 +3,8 @@ import type { MessageBlock } from '../features/workspace/agent/AgentProvider';
 
 /** Max messages kept per session. Oldest are trimmed when exceeded. */
 const MAX_MESSAGES_PER_SESSION = 200;
+/** Max chars per shared result to prevent memory pressure */
+const MAX_SHARED_RESULT_CHARS = 2000;
 
 interface SessionResult {
   costUsd?: number;
@@ -14,6 +16,21 @@ export interface AgentMessage {
   role: 'user' | 'assistant' | 'error';
   blocks: MessageBlock[];
   timestamp: number;
+}
+
+export interface SharedResult {
+  stepId: string;
+  title: string;
+  output: string;
+  timestamp: number;
+  sessionId: string;
+}
+
+export interface RunningAgentInfo {
+  tabId: string | null;
+  sessionId: string;
+  stepTitle: string;
+  startedAt: number;
 }
 
 function parseMessageContent(content: string, role: string): MessageBlock[] {
@@ -28,7 +45,9 @@ function parseMessageContent(content: string, role: string): MessageBlock[] {
 interface AgentStore {
   /** Structured streaming blocks per session */
   streamingBlocks: Record<string, MessageBlock[]>;
-  /** Currently streaming session ID */
+  /** Currently streaming session IDs (supports parallel agents) */
+  streamingSessionIds: Record<string, boolean>;
+  /** Legacy: first streaming session ID for backward compat */
   streamingSessionId: string | null;
   /** Append a text token to the last text block (or create one) */
   appendToken: (sessionId: string, token: string) => void;
@@ -78,10 +97,24 @@ interface AgentStore {
   /** Plan mode: when true, agent area shows plan execution UI instead of chat */
   planMode: boolean;
   setPlanMode: (mode: boolean) => void;
+
+  /** Shared results from completed plan steps, keyed by taskId */
+  sharedResults: Record<string, SharedResult>;
+  setSharedResult: (stepId: string, result: SharedResult) => void;
+  /** Get merged context text from specified step IDs' results */
+  getSharedContext: (stepIds: string[]) => string;
+  /** Clear all shared results (e.g. before a new plan execution) */
+  clearSharedResults: () => void;
+
+  /** Running agent statuses across all tabs (for cross-tab view) */
+  runningAgents: Record<string, RunningAgentInfo>;
+  setRunningAgent: (agentId: string, info: RunningAgentInfo) => void;
+  removeRunningAgent: (agentId: string) => void;
 }
 
-export const useAgentStore = create<AgentStore>((set) => ({
+export const useAgentStore = create<AgentStore>((set, get) => ({
   streamingBlocks: {},
+  streamingSessionIds: {},
   streamingSessionId: null,
   streamingStartTime: {},
 
@@ -128,11 +161,17 @@ export const useAgentStore = create<AgentStore>((set) => ({
     }),
 
   startStreaming: (sessionId) =>
-    set((state) => ({
-      streamingSessionId: sessionId,
-      streamingBlocks: { ...state.streamingBlocks, [sessionId]: [] },
-      streamingStartTime: { ...state.streamingStartTime, [sessionId]: Date.now() },
-    })),
+    set((state) => {
+      const ids = { ...state.streamingSessionIds, [sessionId]: true };
+      // Legacy: first streaming session becomes streamingSessionId
+      const firstId = state.streamingSessionId || sessionId;
+      return {
+        streamingSessionIds: ids,
+        streamingSessionId: firstId,
+        streamingBlocks: { ...state.streamingBlocks, [sessionId]: [] },
+        streamingStartTime: { ...state.streamingStartTime, [sessionId]: Date.now() },
+      };
+    }),
 
   finishStreaming: (sessionId) =>
     set((state) => {
@@ -145,16 +184,23 @@ export const useAgentStore = create<AgentStore>((set) => ({
         ? updated.slice(updated.length - MAX_MESSAGES_PER_SESSION)
         : updated;
       const { [sessionId]: _, ...restBlocks } = state.streamingBlocks;
+      const { [sessionId]: _2, ...restIds } = state.streamingSessionIds;
+      const { [sessionId]: _3, ...restStart } = state.streamingStartTime;
+      // Update legacy streamingSessionId
+      const remainingIds = Object.keys(restIds);
+      const newLegacyId = remainingIds.length > 0 ? remainingIds[0] : null;
       return {
         messages: { ...state.messages, [sessionId]: trimmed },
         streamingBlocks: restBlocks,
-        streamingSessionId: state.streamingSessionId === sessionId ? null : state.streamingSessionId,
+        streamingSessionIds: restIds,
+        streamingSessionId: newLegacyId,
+        streamingStartTime: restStart,
         endedSessionIds: { ...state.endedSessionIds, [sessionId]: true },
       };
     }),
 
   clearStreaming: () =>
-    set({ streamingBlocks: {}, streamingSessionId: null, streamingStartTime: {} }),
+    set({ streamingBlocks: {}, streamingSessionIds: {}, streamingSessionId: null, streamingStartTime: {} }),
 
   messages: {},
 
@@ -222,4 +268,45 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   planMode: false,
   setPlanMode: (mode) => set({ planMode: mode }),
+
+  // Shared results (P4.2)
+  sharedResults: {},
+
+  setSharedResult: (stepId, result) =>
+    set((state) => ({
+      sharedResults: {
+        ...state.sharedResults,
+        [stepId]: {
+          ...result,
+          output: result.output.slice(0, MAX_SHARED_RESULT_CHARS),
+        },
+      },
+    })),
+
+  getSharedContext: (stepIds) => {
+    const { sharedResults } = get();
+    return stepIds
+      .filter(id => sharedResults[id])
+      .map(id => {
+        const r = sharedResults[id];
+        return `### ${r.title}\n${r.output}`;
+      })
+      .join('\n\n');
+  },
+
+  clearSharedResults: () => set({ sharedResults: {} }),
+
+  // Running agents across tabs (P4.2)
+  runningAgents: {},
+
+  setRunningAgent: (agentId, info) =>
+    set((state) => ({
+      runningAgents: { ...state.runningAgents, [agentId]: info },
+    })),
+
+  removeRunningAgent: (agentId) =>
+    set((state) => {
+      const { [agentId]: _, ...rest } = state.runningAgents;
+      return { runningAgents: rest };
+    }),
 }));

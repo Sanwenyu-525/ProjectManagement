@@ -10,13 +10,18 @@ interface PlanStep {
   status: StepStatus;
   sessionId: string | null;
   error: string | null;
+  /** taskIds this step depends on (empty = no dependencies) */
+  dependsOn: string[];
+  /** Brief result text from execution */
+  outputSummary: string | null;
 }
 
 interface AgentPlanStore {
   mode: PlanMode;
   planTaskId: string | null;
   steps: PlanStep[];
-  currentStepIndex: number;
+  /** Currently executing step IDs (supports parallel execution) */
+  runningTaskIds: string[];
   goal: string;
   cwd: string | null;
   error: string | null;
@@ -27,7 +32,10 @@ interface AgentPlanStore {
   setSteps: (steps: PlanStep[]) => void;
   updateStepStatus: (taskId: string, status: StepStatus) => void;
   setStepSessionId: (taskId: string, sessionId: string) => void;
-  setCurrentStepIndex: (index: number) => void;
+  addRunningTaskId: (taskId: string) => void;
+  removeRunningTaskId: (taskId: string) => void;
+  setStepOutput: (taskId: string, summary: string) => void;
+  setStepError: (taskId: string, error: string) => void;
   setGoal: (goal: string) => void;
   setCwd: (cwd: string) => void;
   setError: (error: string | null) => void;
@@ -39,7 +47,7 @@ const INITIAL_STATE = {
   mode: 'idle' as PlanMode,
   planTaskId: null,
   steps: [],
-  currentStepIndex: -1,
+  runningTaskIds: [],
   goal: '',
   cwd: null as string | null,
   error: null,
@@ -69,7 +77,31 @@ export const useAgentPlanStore = create<AgentPlanStore>((set) => ({
       ),
     })),
 
-  setCurrentStepIndex: (index) => set({ currentStepIndex: index }),
+  addRunningTaskId: (taskId) =>
+    set((state) => ({
+      runningTaskIds: state.runningTaskIds.includes(taskId)
+        ? state.runningTaskIds
+        : [...state.runningTaskIds, taskId],
+    })),
+
+  removeRunningTaskId: (taskId) =>
+    set((state) => ({
+      runningTaskIds: state.runningTaskIds.filter(id => id !== taskId),
+    })),
+
+  setStepOutput: (taskId, summary) =>
+    set((state) => ({
+      steps: state.steps.map(s =>
+        s.taskId === taskId ? { ...s, outputSummary: summary } : s,
+      ),
+    })),
+
+  setStepError: (taskId, error) =>
+    set((state) => ({
+      steps: state.steps.map(s =>
+        s.taskId === taskId ? { ...s, error } : s,
+      ),
+    })),
 
   setGoal: (goal) => set({ goal }),
 

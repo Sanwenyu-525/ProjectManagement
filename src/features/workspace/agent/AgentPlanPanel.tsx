@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAgentTasks, useCreateAgentTask, useUpdateAgentTask, useDeleteAgentTask, groupAgentTasks } from '../../../hooks/useAgentTasks';
-import { useAgentPlanStore } from '../../../stores/agentPlanStore';
 import { message } from 'antd';
 import type { AgentTask } from '../../../types';
 
@@ -15,6 +14,7 @@ const PRIORITY_BADGES: Record<string, { label: string; color: string; bg: string
 
 const STATUS_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
   pending: { icon: 'radio_button_unchecked', color: 'var(--md-outline)', label: 'Pending' },
+  running: { icon: 'progress_activity', color: 'var(--md-primary)', label: 'Running' },
   in_progress: { icon: 'progress_activity', color: 'var(--md-primary)', label: 'In Progress' },
   completed: { icon: 'check_circle', color: 'var(--md-tertiary)', label: 'Completed' },
 };
@@ -30,12 +30,6 @@ export default function AgentPlanPanel() {
   const createTask = useCreateAgentTask();
   const updateTask = useUpdateAgentTask();
   const deleteTask = useDeleteAgentTask();
-
-  // Plan execution state
-  const planMode = useAgentPlanStore(s => s.mode);
-  const planSteps = useAgentPlanStore(s => s.steps);
-  const currentStepIndex = useAgentPlanStore(s => s.currentStepIndex);
-  const planError = useAgentPlanStore(s => s.error);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
@@ -441,36 +435,6 @@ export default function AgentPlanPanel() {
         )}
       </div>
 
-      {/* Plan execution status bar */}
-      {(planMode === 'executing' || planMode === 'parsing' || planMode === 'completed' || planMode === 'error') && (
-        <div style={styles.executionBar}>
-          <div style={styles.executionHeader}>
-            <span className="material-symbols-outlined" style={{
-              fontSize: 16,
-              color: planMode === 'executing' ? 'var(--md-primary)' : planMode === 'completed' ? 'var(--md-tertiary)' : planMode === 'error' ? 'var(--md-error)' : 'var(--md-outline)',
-            }}>
-              {planMode === 'executing' ? 'sync' : planMode === 'completed' ? 'check_circle' : planMode === 'error' ? 'error' : 'hourglass_top'}
-            </span>
-            <span style={styles.executionLabel}>
-              {planMode === 'parsing' && '正在解析目标...'}
-              {planMode === 'executing' && `步骤 ${currentStepIndex + 1}/${planSteps.length}`}
-              {planMode === 'completed' && '计划完成'}
-              {planMode === 'error' && (planError || '执行出错')}
-            </span>
-          </div>
-          {/* Progress bar */}
-          {planSteps.length > 0 && (
-            <div style={styles.executionProgress}>
-              <div style={styles.execProgressTrack}>
-                <div style={{
-                  ...styles.execProgressFill,
-                  width: `${planSteps.filter(s => s.status === 'done').length / planSteps.length * 100}%`,
-                }} />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -747,42 +711,5 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     borderTop: '1px solid var(--border)',
     marginTop: 4,
-  },
-  executionBar: {
-    padding: '8px 12px',
-    borderTop: '1px solid var(--border)',
-    background: 'var(--md-surface-container-low)',
-    flexShrink: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-  },
-  executionHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  },
-  executionLabel: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: 'var(--md-on-surface)',
-    fontFamily: 'var(--font-sans)',
-  },
-  executionProgress: {
-    display: 'flex',
-    alignItems: 'center',
-  },
-  execProgressTrack: {
-    flex: 1,
-    height: 3,
-    background: 'var(--md-outline-variant)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  execProgressFill: {
-    height: '100%',
-    background: 'var(--md-primary)',
-    borderRadius: 2,
-    transition: 'width 0.3s ease',
   },
 };

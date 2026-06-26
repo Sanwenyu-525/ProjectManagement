@@ -1,11 +1,15 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::{command, AppHandle, Emitter};
+use std::time::Duration;
+use tauri::{command, AppHandle, Emitter, State};
 
+use crate::db::Database;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use regex::Regex;
 
 // Recover from mutex poisoning (other threads panicked while holding the lock)
 fn recover_lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -1017,4 +1021,73 @@ pub async fn claude_commands_list(project_dir: Option<String>) -> Vec<SlashComma
     }
 
     cmds
+}
+
+/// Scan for active dev server ports by checking project-configured ports + common dev ports.
+/// Returns only the ports that are currently in use.
+#[command]
+pub async fn network_scan_active_ports(db: State<'_, Database>) -> Result<Vec<u16>, String> {
+    let mut ports: HashSet<u16> = HashSet::new();
+
+    // Common dev server ports
+    for &p in &[3000u16, 3001, 4000, 4200, 5000, 5173, 5174, 6006, 7000, 8000, 8080, 8081, 8888, 9000] {
+        ports.insert(p);
+    }
+
+    // Extract ports from project commands
+    if let Ok(rows) = db.query_json(
+        "SELECT frontendCommand, backendCommand FROM projects WHERE deletedAt IS NULL",
+        rusqlite::params![],
+    ) {
+        if let Some(arr) = rows.as_array() {
+            let port_re = Regex::new(r"(?:--port|-p|--listen|PORT=)[:\s]*(\d{2,5})").ok();
+            let colon_re = Regex::new(r":(\d{2,5})(?:/|\s|$)").ok();
+            for row in arr {
+                for key in &["frontendCommand", "backendCommand"] {
+                    if let Some(cmd) = row.get(*key).and_then(|v| v.as_str()) {
+                        if let Some(re) = &port_re {
+                            for cap in re.captures_iter(cmd) {
+                                if let Ok(p) = cap[1].parse::<u16>() {
+                                    if p > 0 { ports.insert(p); }
+                                }
+                            }
+                        }
+                        if let Some(re) = &colon_re {
+                            for cap in re.captures_iter(cmd) {
+                                if let Ok(p) = cap[1].parse::<u16>() {
+                                    if p > 0 { ports.insert(p); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Probe ports in parallel
+    let port_list: Vec<u16> = ports.into_iter().collect();
+    let handles: Vec<_> = port_list
+        .into_iter()
+        .map(|port| {
+            std::thread::spawn(move || {
+                let addr = format!("127.0.0.1:{}", port);
+                let in_use = TcpStream::connect_timeout(
+                    &addr.parse().unwrap(),
+                    Duration::from_millis(200),
+                ).is_ok();
+                if in_use { Some(port) } else { None }
+            })
+        })
+        .collect();
+
+    let mut active: Vec<u16> = Vec::new();
+    for h in handles {
+        if let Ok(Some(port)) = h.join() {
+            active.push(port);
+        }
+    }
+
+    active.sort();
+    Ok(active)
 }

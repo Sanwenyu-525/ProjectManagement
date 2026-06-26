@@ -96,4 +96,8 @@ export const queryKeys = {
   notes: {
     all: (projectId?: string) => ['notes', projectId] as const,
   },
+  audit: {
+    history: (projectId: string) => ['audit', projectId, 'history'] as const,
+    latestAll: ['audit', 'latest'] as const,
+  },
 } as const;

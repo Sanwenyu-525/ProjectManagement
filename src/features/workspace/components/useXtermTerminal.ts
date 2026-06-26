@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -85,10 +85,22 @@ export function useXtermTerminal(
     // - compositionend → _finalizeComposition → triggerDataEvent (single send)
     // - keydown(229): blocks during composition, defers to compositionend
     // No custom composition handling needed — adding one causes double-input.
+    // Intercept Ctrl+C: when text is selected, copy to clipboard only (no SIGINT).
+    // Without this, Ctrl+C always sends \x03 to the PTY even with a selection.
     // Intercept Ctrl+V to prevent xterm's internal paste handling — we handle
     // paste ourselves via the document keydown handler below.
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key === 'v') return false;
+      if (e.type === 'keydown' && (e.ctrlKey || e.metaKey)) {
+        if (e.key === 'c') {
+          const selection = term.getSelection();
+          if (selection) {
+            navigator.clipboard.writeText(selection).catch(() => {});
+            return false; // block SIGINT — copy only
+          }
+          return true; // no selection: let Ctrl+C pass through (SIGINT)
+        }
+        if (e.key === 'v') return false;
+      }
       return true;
     });
 
@@ -273,13 +285,13 @@ export function useXtermTerminal(
   }, [enabled, terminalId, theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fit when needed (e.g. tab becoming active, status change)
-  const refit = () => {
+  const refit = useCallback(() => {
     if (fitAddonRef.current && termRef.current) {
       fitAddonRef.current.fit();
       const dims = fitAddonRef.current?.proposeDimensions();
       if (dims) terminalApi.resize(terminalId, dims.cols, dims.rows).catch(() => {});
     }
-  };
+  }, [terminalId]);
 
   return { termRef, fitAddonRef, refit };
 }

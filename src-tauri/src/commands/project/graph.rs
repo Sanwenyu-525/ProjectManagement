@@ -346,7 +346,119 @@ fn extract_imports(content: &str, language: &str) -> Vec<String> {
     imports
 }
 
+// ── tsconfig.json path alias resolution ──
+
+#[derive(Deserialize)]
+struct TsConfig {
+    compiler_options: Option<TsCompilerOptions>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TsCompilerOptions {
+    paths: Option<HashMap<String, serde_json::Value>>,
+    base_url: Option<String>,
+}
+
+/// Load path aliases from tsconfig.json.
+/// Returns Vec of (alias_prefix, target_prefix) pairs.
+/// e.g. [("@/*", "src/"), ("~utils", "src/utils/")]
+fn load_tsconfig_paths(root: &Path) -> Vec<(String, String)> {
+    let tsconfig_path = root.join("tsconfig.json");
+    let content = match fs::read_to_string(&tsconfig_path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let config: TsConfig = match serde_json::from_str(&content) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let compiler = match config.compiler_options {
+        Some(c) => c,
+        None => return Vec::new(),
+    };
+
+    let paths = match compiler.paths {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+
+    let base_url = compiler.base_url.unwrap_or_else(|| ".".to_string());
+    let mut aliases = Vec::new();
+
+    for (alias, targets) in &paths {
+        // targets can be string or array — take first entry
+        let target = match targets {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(arr) => {
+                arr.first().and_then(|v| v.as_str()).unwrap_or("").to_string()
+            }
+            _ => continue,
+        };
+
+        if target.is_empty() {
+            continue;
+        }
+
+        // Normalize: alias "@/*" → prefix "@", target "src/*" → "src/"
+        let prefix = alias.trim_end_matches('*').to_string();
+        let target_prefix = target.trim_end_matches('*').to_string();
+
+        // Resolve base_url relative to project root
+        let resolved_base = if base_url == "." || base_url.is_empty() {
+            String::new()
+        } else {
+            format!("{}/", base_url.trim_end_matches('/'))
+        };
+
+        aliases.push((prefix, format!("{}{}", resolved_base, target_prefix)));
+    }
+
+    aliases
+}
+
 // ── Path resolution ──
+
+/// Resolve a TypeScript/JavaScript import path to a project-relative file path.
+/// Tries exact match, common extensions, and index files.
+fn resolve_ts_import(
+    import_path: &str,
+    source_dir: &str,
+    project_root: &Path,
+    path_to_id: &HashMap<String, String>,
+) -> Option<String> {
+    let base = if source_dir.is_empty() {
+        project_root.join(import_path)
+    } else {
+        project_root.join(source_dir).join(import_path)
+    };
+
+    let normalized = normalize_path(&base)?;
+    let relative = normalized.strip_prefix(project_root).ok()?;
+    let rel_str = relative.to_string_lossy().replace('\\', "/");
+
+    if path_to_id.contains_key(&rel_str) {
+        return Some(rel_str);
+    }
+
+    for ext in &[".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs"] {
+        let with_ext = format!("{}{}", rel_str, ext);
+        if path_to_id.contains_key(&with_ext) {
+            return Some(with_ext);
+        }
+    }
+
+    for ext in &[".ts", ".tsx", ".js", ".jsx"] {
+        let idx = format!("{}/index{}", rel_str, ext);
+        if path_to_id.contains_key(&idx) {
+            return Some(idx);
+        }
+    }
+
+    None
+}
 
 fn resolve_import(
     import_path: &str,
@@ -354,39 +466,24 @@ fn resolve_import(
     language: &str,
     project_root: &Path,
     path_to_id: &HashMap<String, String>,
+    path_aliases: &[(String, String)],
 ) -> Option<String> {
     match language {
         "TypeScript" | "JavaScript" | "Vue" | "Svelte" => {
-            if !import_path.starts_with('.') { return None; }
-
-            let base = if source_dir.is_empty() {
-                project_root.join(import_path)
-            } else {
-                project_root.join(source_dir).join(import_path)
-            };
-
-            if let Some(normalized) = normalize_path(&base) {
-                let relative = normalized.strip_prefix(project_root).ok()?;
-                let rel_str = relative.to_string_lossy().replace('\\', "/");
-
-                if path_to_id.contains_key(&rel_str) {
-                    return Some(rel_str);
-                }
-
-                for ext in &[".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs"] {
-                    let with_ext = format!("{}{}", rel_str, ext);
-                    if path_to_id.contains_key(&with_ext) {
-                        return Some(with_ext);
+            // Try alias resolution first for non-relative imports
+            if !import_path.starts_with('.') {
+                for (alias_prefix, target_prefix) in path_aliases {
+                    if let Some(rest) = import_path.strip_prefix(alias_prefix) {
+                        let resolved = format!("{}{}", target_prefix, rest);
+                        if let Some(found) = resolve_ts_import(&resolved, source_dir, project_root, path_to_id) {
+                            return Some(found);
+                        }
                     }
                 }
-
-                for ext in &[".ts", ".tsx", ".js", ".jsx"] {
-                    let idx = format!("{}/index{}", rel_str, ext);
-                    if path_to_id.contains_key(&idx) {
-                        return Some(idx);
-                    }
-                }
+                return None;
             }
+
+            return resolve_ts_import(import_path, source_dir, project_root, path_to_id)
         }
         "Rust" => {
             if let Some(mod_name) = import_path.strip_prefix("mod:") {
@@ -499,6 +596,7 @@ fn scan_project_graph(root: &Path, project_id: &str) -> (Vec<GraphNode>, Vec<Gra
     }
 
     let mut edges = Vec::new();
+    let path_aliases = load_tsconfig_paths(root);
     for f in &files {
         let source_id = match path_to_node_id.get(&f.relative_path) {
             Some(id) => id.clone(),
@@ -514,7 +612,7 @@ fn scan_project_graph(root: &Path, project_id: &str) -> (Vec<GraphNode>, Vec<Gra
         let mut seen_targets = HashSet::new();
 
         for import_path in imports {
-            if let Some(target_rel) = resolve_import(&import_path, &f.directory, &f.language, root, &path_to_node_id) {
+            if let Some(target_rel) = resolve_import(&import_path, &f.directory, &f.language, root, &path_to_node_id, &path_aliases) {
                 if let Some(target_id) = path_to_node_id.get(&target_rel) {
                     let edge_key = format!("{}->{}", source_id, target_id);
                     if seen_targets.insert(edge_key) {
@@ -1395,4 +1493,61 @@ pub async fn graph_set_ai_cache(
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Resolve a file path to a graph node ID.
+/// filePath in graph_nodes is project-relative with forward slashes.
+/// Supports both absolute and relative paths — strips project root if needed.
+fn resolve_file_node_id(db: &Database, project_id: &str, file_path: &str) -> Result<String, String> {
+    let mut normalized = file_path.replace('\\', "/").trim_start_matches("./").to_string();
+
+    // If path is absolute, strip the project root prefix to make it relative
+    if let Ok(project_root) = get_project_path(db, project_id) {
+        let root_normalized = project_root.replace('\\', "/");
+        if normalized.starts_with(&root_normalized) {
+            normalized = normalized[root_normalized.len()..].trim_start_matches('/').to_string();
+        }
+    }
+
+    let rows = db.query_json(
+        "SELECT id FROM graph_nodes WHERE projectId = ?1 AND filePath = ?2",
+        rusqlite::params![project_id, normalized],
+    ).map_err(|e| e.to_string())?;
+    rows.as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("id").and_then(|x| x.as_str()))
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("NODE_NOT_FOUND: No graph node for file '{}' (resolved to '{}')", file_path, normalized))
+}
+
+/// Unified graph query for Agent integration.
+/// Supports impact, deps (chain), and layers analysis.
+#[command]
+pub async fn graph_query(
+    db: State<'_, Database>,
+    project_id: String,
+    query_type: String,
+    params: HashMap<String, String>,
+) -> Result<serde_json::Value, String> {
+    match query_type.as_str() {
+        "impact" => {
+            let file = params.get("file").ok_or("MISSING_PARAM: 'file' required")?;
+            let node_id = resolve_file_node_id(&db, &project_id, file)?;
+            let result = graph_compute_impact(db, project_id, vec![node_id]).await?;
+            Ok(serde_json::to_value(result).map_err(|e| e.to_string())?)
+        }
+        "deps" => {
+            let file = params.get("file").ok_or("MISSING_PARAM: 'file' required")?;
+            let node_id = resolve_file_node_id(&db, &project_id, file)?;
+            let direction = params.get("direction").cloned().unwrap_or_else(|| "backward".to_string());
+            let max_depth = params.get("maxDepth").and_then(|s| s.parse::<usize>().ok());
+            let result = graph_trace_chain(db, project_id, node_id, direction, max_depth).await?;
+            Ok(serde_json::to_value(result).map_err(|e| e.to_string())?)
+        }
+        "layers" => {
+            let result = graph_compute_layers(db, project_id).await?;
+            Ok(serde_json::to_value(result).map_err(|e| e.to_string())?)
+        }
+        _ => Err(format!("UNKNOWN_QUERY_TYPE: '{}'. Use 'impact', 'deps', or 'layers'", query_type)),
+    }
 }

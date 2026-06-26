@@ -40,6 +40,9 @@ import type {
   ChainResult,
   LayerResult,
   GitLogResult,
+  ProjectAuditResult,
+  AuditRecord,
+  AuditItem,
 } from '../types';
 
 // ==================== Projects ====================
@@ -85,6 +88,9 @@ export const projectsApi = {
     cmd('projects_check_environment', { id }),
   batchImport: (projects: Record<string, unknown>[]): Promise<{ imported: number; skipped: number; errors: string[] }> =>
     cmd('projects_batch_import', { projects }),
+  // Resolve cwd to project ID (for Agent graph queries)
+  resolveId: (cwd: string): Promise<string | null> =>
+    cmd('projects_resolve_id', { cwd }),
 };
 
 // ==================== Tasks ====================
@@ -293,4 +299,20 @@ export const graphApi = {
     cmd<ChainResult>('graph_trace_chain', { projectId, nodeId, direction, maxDepth }),
   computeLayers: (projectId: string) =>
     cmd<LayerResult>('graph_compute_layers', { projectId }),
+  // Unified query (Agent integration)
+  query: (projectId: string, queryType: string, params: Record<string, string>) =>
+    cmd<Record<string, unknown>>('graph_query', { projectId, queryType, params }),
+};
+
+// ==================== Audit ====================
+
+export const auditApi = {
+  runForProject: (projectId: string): Promise<ProjectAuditResult> =>
+    cmd('audit_run_for_project', { projectId }),
+  getProjectHistory: (projectId: string, limit?: number): Promise<AuditRecord[]> =>
+    cmd('audit_get_project_history', { projectId, limit: limit ?? 10 }),
+  getLatestAll: (): Promise<AuditRecord[]> =>
+    cmd('audit_get_latest_all', {}),
+  getItems: (auditId: string): Promise<AuditItem[]> =>
+    cmd('audit_get_items', { auditId }),
 };

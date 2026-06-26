@@ -9,13 +9,33 @@ interface FileAccess {
   lastAccessed: number;
 }
 
+export interface GraphQueryRecord {
+  queryType: 'impact' | 'deps' | 'layers';
+  target: string;
+  timestamp: number;
+  resultSummary: string;
+}
+
+export interface ImpactWarningRecord {
+  file: string;
+  impactCount: number;
+  directCount: number;
+  indirectCount: number;
+  summary: string;
+  timestamp: number;
+}
+
 interface SessionContext {
   files: Record<string, FileAccess>;
+  graphQueries: GraphQueryRecord[];
+  impactWarnings: ImpactWarningRecord[];
 }
 
 interface AgentContextStore {
   contexts: Record<string, SessionContext>;
   trackFileAccess: (sessionId: string, path: string, operation: FileOperation) => void;
+  trackGraphQuery: (sessionId: string, query: GraphQueryRecord) => void;
+  trackImpactWarning: (sessionId: string, warning: ImpactWarningRecord) => void;
   clearContext: (sessionId: string) => void;
 }
 
@@ -24,7 +44,7 @@ export const useAgentContextStore = create<AgentContextStore>((set) => ({
 
   trackFileAccess: (sessionId, path, operation) =>
     set((state) => {
-      const ctx = state.contexts[sessionId] ?? { files: {} };
+      const ctx = state.contexts[sessionId] ?? { files: {}, graphQueries: [], impactWarnings: [] };
       const existing = ctx.files[path];
       const updated: FileAccess = existing
         ? {
@@ -39,7 +59,29 @@ export const useAgentContextStore = create<AgentContextStore>((set) => ({
       return {
         contexts: {
           ...state.contexts,
-          [sessionId]: { files: { ...ctx.files, [path]: updated } },
+          [sessionId]: { ...ctx, files: { ...ctx.files, [path]: updated } },
+        },
+      };
+    }),
+
+  trackGraphQuery: (sessionId, query) =>
+    set((state) => {
+      const ctx = state.contexts[sessionId] ?? { files: {}, graphQueries: [], impactWarnings: [] };
+      return {
+        contexts: {
+          ...state.contexts,
+          [sessionId]: { ...ctx, graphQueries: [...ctx.graphQueries, query] },
+        },
+      };
+    }),
+
+  trackImpactWarning: (sessionId, warning) =>
+    set((state) => {
+      const ctx = state.contexts[sessionId] ?? { files: {}, graphQueries: [], impactWarnings: [] };
+      return {
+        contexts: {
+          ...state.contexts,
+          [sessionId]: { ...ctx, impactWarnings: [...ctx.impactWarnings, warning] },
         },
       };
     }),

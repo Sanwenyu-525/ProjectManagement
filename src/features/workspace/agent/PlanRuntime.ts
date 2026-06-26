@@ -4,100 +4,18 @@ import { queryKeys } from '../../../api/queryKeys';
 import queryClient from '../../../lib/queryClient';
 import { useAgentPlanStore } from '../../../stores/agentPlanStore';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useWorkspaceStore } from '../../../stores/workspaceStore';
 import { createProvider } from './providers';
 import { stripAnsi } from '../../../lib/stripAnsi';
+import { validateDependencyGraph, getReadySteps } from './planDependencyGraph';
 import type { AgentProvider, AgentStreamEvent } from './AgentProvider';
 import type { TerminalOutputEvent, TerminalExitEvent } from '../../../shared/terminalTypes';
-
-// ── Templates ──────────────────────────────────────────────
-
-interface PlanTemplate {
-  id: string;
-  label: string;
-  keywords: string[];
-  goalPrefix: string;
-  steps: Array<{ title: string; description: string }>;
-}
-
-export const PLAN_TEMPLATES: PlanTemplate[] = [
-  {
-    id: 'feature',
-    label: '新功能',
-    keywords: ['实现', '添加', '新增', '创建', '开发', '功能', 'feature', 'add', 'create'],
-    goalPrefix: '实现新功能：',
-    steps: [
-      { title: '分析需求和现有代码', description: '阅读需求描述，分析现有代码结构，确定需要修改的文件和模块' },
-      { title: '设计实现方案', description: '确定技术方案、数据模型、接口设计' },
-      { title: '实现核心逻辑', description: '编写主要业务逻辑代码' },
-      { title: '编写测试', description: '为新功能编写单元测试和集成测试' },
-      { title: '验证和清理', description: '运行测试，确保通过，清理临时代码' },
-    ],
-  },
-  {
-    id: 'bugfix',
-    label: 'Bug 修复',
-    keywords: ['修复', 'fix', 'bug', '问题', '错误', '报错', '异常', '崩溃'],
-    goalPrefix: '修复 Bug：',
-    steps: [
-      { title: '复现和定位问题', description: '理解 bug 描述，找到相关的代码位置' },
-      { title: '分析根因', description: '分析导致 bug 的根本原因' },
-      { title: '实施修复', description: '编写最小化修复代码' },
-      { title: '验证修复', description: '运行相关测试，确认 bug 已修复且无回归' },
-    ],
-  },
-  {
-    id: 'refactor',
-    label: '代码重构',
-    keywords: ['重构', 'refactor', '优化', '改善', '清理', '简化'],
-    goalPrefix: '重构：',
-    steps: [
-      { title: '分析现有代码', description: '阅读需要重构的代码，理解当前实现和依赖关系' },
-      { title: '制定重构计划', description: '确定重构策略、目标结构、风险点' },
-      { title: '执行重构', description: '逐步进行代码重构，保持功能不变' },
-      { title: '验证完整性', description: '运行测试确保重构没有破坏现有功能' },
-    ],
-  },
-  {
-    id: 'review',
-    label: '代码审查',
-    keywords: ['审查', 'review', '代码审查', 'code review', '检查代码'],
-    goalPrefix: '审查代码：',
-    steps: [
-      { title: '阅读变更代码', description: '逐文件阅读需要审查的代码变更' },
-      { title: '检查正确性', description: '检查逻辑错误、边界情况、错误处理' },
-      { title: '检查质量和规范', description: '检查代码风格、命名、可维护性、性能' },
-      { title: '输出审查报告', description: '汇总发现的问题和改进建议' },
-    ],
-  },
-  {
-    id: 'test',
-    label: '编写测试',
-    keywords: ['测试', 'test', '写测试', '单测', '单元测试', '集成测试'],
-    goalPrefix: '编写测试：',
-    steps: [
-      { title: '分析待测代码', description: '阅读需要测试的代码，确定测试范围和策略' },
-      { title: '设计测试用例', description: '设计覆盖正常路径、边界情况、错误情况的测试用例' },
-      { title: '编写测试代码', description: '实现测试用例' },
-      { title: '运行并验证', description: '运行测试，确保全部通过' },
-    ],
-  },
-];
 
 // ── Goal Parsing ───────────────────────────────────────────
 
 interface ParsedGoal {
   goal: string;
   steps: Array<{ title: string; description: string }>;
-}
-
-function matchTemplate(goal: string): PlanTemplate | null {
-  const lower = goal.toLowerCase();
-  for (const tpl of PLAN_TEMPLATES) {
-    if (tpl.keywords.some(kw => lower.includes(kw))) {
-      return tpl;
-    }
-  }
-  return null;
 }
 
 async function parseGoalWithClaude(goal: string, cwd: string): Promise<ParsedGoal> {
@@ -210,14 +128,15 @@ interface StepContext {
   goal: string;
   cwd: string;
   branch: string;
-  completedSteps: Array<{ title: string; status: 'done' | 'error' | 'skipped' }>;
-  currentIndex: number;
+  /** Results from completed dependency steps */
+  dependencyResults: Array<{ title: string; output: string }>;
+  /** Total number of steps in the plan */
   totalSteps: number;
 }
 
-function buildStepPrompt(step: { title: string; description: string }, ctx: StepContext): string {
+function buildStepPrompt(step: { taskId: string; title: string; description: string }, ctx: StepContext, stepIndex: number): string {
   const lines: string[] = [
-    '你是一个执行器。按照以下指令完成任务，只返回执行结果。',
+    '你是一个开发执行器。按照以下指令在项目中完成具体的开发任务。',
     '',
     '## 项目信息',
     `工作目录: ${ctx.cwd}`,
@@ -226,25 +145,28 @@ function buildStepPrompt(step: { title: string; description: string }, ctx: Step
     '## 总目标',
     ctx.goal,
     '',
-    `## 当前步骤 (${ctx.currentIndex + 1}/${ctx.totalSteps})`,
-    `${step.title}: ${step.description}`,
+    '## 当前任务',
+    `任务 ${stepIndex + 1}/${ctx.totalSteps}: ${step.title}`,
+    '',
+    '## 任务说明',
+    step.description,
   ];
 
-  if (ctx.completedSteps.length > 0) {
-    lines.push('', '## 已完成的步骤');
-    for (const s of ctx.completedSteps) {
-      const icon = s.status === 'done' ? '✅' : s.status === 'error' ? '❌' : '⏭️';
-      lines.push(`${icon} ${s.title} — ${s.status}`);
+  if (ctx.dependencyResults.length > 0) {
+    lines.push('', '## 前置任务结果');
+    for (const dep of ctx.dependencyResults) {
+      lines.push('', `### ${dep.title}`);
+      lines.push(dep.output);
     }
   }
 
   lines.push(
     '',
-    '## 要求',
-    '- 只执行当前步骤的内容',
-    '- 完成后输出简要总结（改了哪些文件，做了什么）',
-    '- 不要执行其他步骤',
-    '- 如果遇到问题，输出错误信息',
+    '## 执行要求',
+    '1. 仔细分析任务需求，在工作目录中执行具体的代码修改',
+    '2. 创建或修改实际的代码文件，完成任务描述中的开发工作',
+    '3. 完成后输出简要总结（改了哪些文件，做了什么改动）',
+    '4. 如果遇到无法解决的问题，输出错误信息',
   );
 
   return lines.join('\n');
@@ -255,27 +177,22 @@ function buildStepPrompt(step: { title: string; description: string }, ctx: Step
 export class PlanRuntime {
   private aborted = false;
   private providers: AgentProvider[] = [];
+  private maxParallel: number;
+
+  constructor(maxParallel?: number) {
+    this.maxParallel = maxParallel ?? useWorkspaceStore.getState().maxParallelAgents ?? 3;
+  }
 
   async parseGoal(goal: string, cwd: string): Promise<ParsedGoal> {
     const store = useAgentPlanStore.getState();
     store.setMode('parsing');
     store.setGoal(goal);
 
-    // Try template matching first
-    const template = matchTemplate(goal);
-    if (template) {
-      const parsed: ParsedGoal = {
-        goal: template.goalPrefix + goal,
-        steps: template.steps.map(s => ({ ...s })),
-      };
-      return parsed;
-    }
-
-    // Fall back to Claude CLI parsing
+    // Always use Claude CLI for goal parsing — dynamic step generation
     try {
       return await parseGoalWithClaude(goal, cwd);
     } catch {
-      // Final fallback: treat the entire goal as a single step
+      // Fallback: treat the entire goal as a single step
       return {
         goal,
         steps: [{ title: goal.slice(0, 40), description: goal }],
@@ -288,8 +205,20 @@ export class PlanRuntime {
     const steps = planStore.steps;
     if (steps.length === 0) return;
 
+    console.log('[PlanRuntime] execute() 开始, 步骤数:', steps.length);
+
+    // Validate dependency graph — detect cycles
+    const cycleError = validateDependencyGraph(steps);
+    if (cycleError) {
+      planStore.setError(cycleError);
+      planStore.setMode('error');
+      return;
+    }
+
     planStore.setMode('executing');
-    planStore.setCurrentStepIndex(0);
+
+    // Clear stale shared results from previous runs
+    useAgentStore.getState().clearSharedResults();
 
     // Get git branch for context
     let branch = 'main';
@@ -299,48 +228,48 @@ export class PlanRuntime {
       if (current) branch = current.name;
     } catch { /* not a git repo */ }
 
-    const completedSteps: StepContext['completedSteps'] = [];
+    const goal = planStore.goal;
+    const maxParallel = this.maxParallel;
 
-    for (let i = 0; i < steps.length; i++) {
-      if (this.aborted) break;
+    // Parallel scheduler
+    const running = new Map<string, Promise<void>>();
+    let stepIndexCounter = 0;
 
-      const step = steps[i];
-      planStore.setCurrentStepIndex(i);
-      planStore.updateStepStatus(step.taskId, 'running');
+    const checkAndStartNext = () => {
+      if (this.aborted) return;
 
-      // Update task status in DB + invalidate cache
-      const sessionId = planStore.sessionId;
-      agentTasksApi.update(step.taskId, { status: 'in_progress' }).then(() => {
-        if (sessionId) queryClient.invalidateQueries({ queryKey: queryKeys.agentTasks.all(sessionId) });
-      }).catch(() => {});
+      const ready = getReadySteps(useAgentPlanStore.getState().steps);
+      const available = ready.filter(id => !running.has(id));
+      console.log('[PlanRuntime] checkAndStartNext:', { ready: ready.length, available: available.length, running: running.size });
 
-      const ctx: StepContext = {
-        goal: planStore.goal,
-        cwd,
-        branch,
-        completedSteps,
-        currentIndex: i,
-        totalSteps: steps.length,
-      };
+      for (const taskId of available) {
+        if (running.size >= maxParallel) break;
 
-      try {
-        await this.executeStep(step, ctx);
-        planStore.updateStepStatus(step.taskId, 'done');
-        completedSteps.push({ title: step.title, status: 'done' });
-        // Mark completed in DB
-        agentTasksApi.update(step.taskId, { status: 'completed' }).then(() => {
-          if (sessionId) queryClient.invalidateQueries({ queryKey: queryKeys.agentTasks.all(sessionId) });
-        }).catch(() => {});
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        planStore.updateStepStatus(step.taskId, 'error');
-        completedSteps.push({ title: step.title, status: 'error' });
-        step.error = msg;
-        // Continue to next step (skip on error)
+        const step = useAgentPlanStore.getState().steps.find(s => s.taskId === taskId);
+        if (!step) continue;
+
+        console.log('[PlanRuntime] 启动步骤:', step.title, 'taskId:', taskId);
+        const promise = this.startStep(step, { goal, cwd, branch, totalSteps: steps.length }, stepIndexCounter++)
+          .finally(() => {
+            running.delete(taskId);
+            checkAndStartNext();
+          });
+        running.set(taskId, promise);
       }
+    };
+
+    // Start initial batch
+    checkAndStartNext();
+
+    // Wait for all running steps to complete
+    if (running.size > 0) {
+      await Promise.all(running.values());
     }
 
-    // Update root task status
+    // Check if aborted
+    if (this.aborted) return;
+
+    // All steps done — update root task status
     const planTaskId = planStore.planTaskId;
     const planSessionId = planStore.sessionId;
     if (planTaskId) {
@@ -349,15 +278,110 @@ export class PlanRuntime {
       }).catch(() => {});
     }
 
-    if (!this.aborted) {
-      planStore.setMode('completed');
+    planStore.setMode('completed');
+  }
+
+  private async startStep(
+    step: { taskId: string; title: string; description: string },
+    ctx: { goal: string; cwd: string; branch: string; totalSteps: number },
+    stepIndex: number,
+  ): Promise<void> {
+    const planStore = useAgentPlanStore.getState();
+    const agentStore = useAgentStore.getState();
+
+    console.log('[PlanRuntime] startStep:', step.title, '开始');
+    planStore.updateStepStatus(step.taskId, 'running');
+    planStore.addRunningTaskId(step.taskId);
+
+    // Update task status in DB + invalidate cache
+    const sessionId = planStore.sessionId;
+    agentTasksApi.update(step.taskId, { status: 'in_progress' }).then(() => {
+      if (sessionId) queryClient.invalidateQueries({ queryKey: queryKeys.agentTasks.all(sessionId) });
+    }).catch(() => {});
+
+    // Register as running agent for cross-tab visibility
+    const tabId = null; // plan steps don't have a specific tab
+    const agentId = `plan-${step.taskId}`;
+    agentStore.setRunningAgent(agentId, {
+      tabId,
+      sessionId: '',
+      stepTitle: step.title,
+      startedAt: Date.now(),
+    });
+
+    try {
+      await this.executeStep(step, {
+        ...ctx,
+        dependencyResults: this.getDependencyResults(step.taskId),
+      }, stepIndex);
+
+      // Collect output from the session's messages
+      const stepSessionId = planStore.steps.find(s => s.taskId === step.taskId)?.sessionId;
+      let outputSummary = 'completed';
+      if (stepSessionId) {
+        const msgs = useAgentStore.getState().messages[stepSessionId];
+        const lastAssistant = msgs?.filter(m => m.role === 'assistant').pop();
+        if (lastAssistant) {
+          outputSummary = lastAssistant.blocks
+            .filter(b => b.type === 'text')
+            .map(b => b.text)
+            .join('\n')
+            .slice(0, 2000);
+        }
+      }
+
+      planStore.updateStepStatus(step.taskId, 'done');
+      planStore.setStepOutput(step.taskId, outputSummary);
+      console.log('[PlanRuntime] startStep:', step.title, '完成');
+
+      // Write to shared results for downstream steps
+      agentStore.setSharedResult(step.taskId, {
+        stepId: step.taskId,
+        title: step.title,
+        output: outputSummary,
+        timestamp: Date.now(),
+        sessionId: stepSessionId || '',
+      });
+
+      // Mark completed in DB
+      agentTasksApi.update(step.taskId, { status: 'completed' }).then(() => {
+        if (sessionId) queryClient.invalidateQueries({ queryKey: queryKeys.agentTasks.all(sessionId) });
+      }).catch(() => {});
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[PlanRuntime] startStep:', step.title, '失败:', msg);
+      planStore.updateStepStatus(step.taskId, 'error');
+      planStore.setStepError(step.taskId, msg);
+    } finally {
+      planStore.removeRunningTaskId(step.taskId);
+      agentStore.removeRunningAgent(agentId);
     }
   }
 
-  private async executeStep(step: { taskId: string; title: string; description: string }, ctx: StepContext): Promise<void> {
+  private getDependencyResults(taskId: string): Array<{ title: string; output: string }> {
+    const planStore = useAgentPlanStore.getState();
+    const step = planStore.steps.find(s => s.taskId === taskId);
+    if (!step || step.dependsOn.length === 0) return [];
+
+    return step.dependsOn
+      .map(depId => {
+        const depStep = planStore.steps.find(s => s.taskId === depId);
+        const result = useAgentStore.getState().sharedResults[depId];
+        if (!depStep || !result) return null;
+        return { title: depStep.title, output: result.output };
+      })
+      .filter((r): r is { title: string; output: string } => r !== null);
+  }
+
+  private async executeStep(
+    step: { taskId: string; title: string; description: string },
+    ctx: StepContext,
+    stepIndex: number,
+  ): Promise<void> {
     const agentStore = useAgentStore.getState();
     const planStore = useAgentPlanStore.getState();
 
+    console.log('[PlanRuntime] executeStep:', step.title, '创建 session...');
     // Create a session for this step
     const sessionId = await sessionsApi.start(
       'plan-runtime',
@@ -366,6 +390,7 @@ export class PlanRuntime {
       ctx.cwd,
       'dangerously-skip-permissions',
     );
+    console.log('[PlanRuntime] executeStep:', step.title, 'sessionId:', sessionId);
 
     planStore.setStepSessionId(step.taskId, sessionId);
 
@@ -430,12 +455,19 @@ export class PlanRuntime {
           unlisten();
           break;
         }
+        case 'impact_warning': {
+          agentStore.appendToken(sessionId, `\n⚠ ${event.summary}\n`);
+          break;
+        }
       }
     });
 
-    // Send the step prompt
-    const prompt = buildStepPrompt(step, ctx);
+    // Send the step prompt with dependency results
+    const prompt = buildStepPrompt(step, ctx, stepIndex);
+    console.log('[PlanRuntime] executeStep:', step.title, '发送 prompt, 长度:', prompt.length);
     await provider.send(prompt);
+
+    console.log('[PlanRuntime] executeStep:', step.title, '开始等待完成...');
 
     // Wait for completion by polling isActive
     await new Promise<void>((resolve, reject) => {

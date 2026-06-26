@@ -6,11 +6,13 @@ import { SettingOutlined } from '@ant-design/icons';
 import SearchBox from './components/SearchBox';
 import ShortcutsModal from './ShortcutsModal';
 import { useThemeStore } from '../stores/themeStore';
+import { useGlobalEditorStore } from '../stores/globalEditorStore';
 import { COMMANDS, matchesShortcut, setCommandNavigate, setToggleFilePanel } from '../lib/commands';
 import type { FileExplorerHandle } from './FileExplorer';
 
 // Lazy-load heavy components — only needed when panels are open
 const FileExplorer = lazy(() => import('./FileExplorer'));
+const CodeEditorPane = lazy(() => import('../features/workspace/editor/CodeEditorPane'));
 
 const WorkspacePage = lazy(() => import('../features/workspace/WorkspacePage'));
 
@@ -140,7 +142,7 @@ export default function MainLayout() {
     const stored = localStorage.getItem('devhub_filePanelWidth');
     return stored ? Math.min(500, Math.max(160, Number(stored))) : 220;
   });
-  const [filePanelHover, setFilePanelHover] = useState(false);
+
   const [filePanelDragging, setFilePanelDragging] = useState(false);
   const filePanelW = filePanelOpen ? filePanelWidth : 0;
   const headerLeft = railW + filePanelW;
@@ -148,6 +150,8 @@ export default function MainLayout() {
   const handleFilePanelDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setFilePanelDragging(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
     const startX = e.clientX;
     const startWidth = filePanelWidth;
     const widthRef = { current: filePanelWidth };
@@ -160,6 +164,8 @@ export default function MainLayout() {
     };
     const onMouseUp = () => {
       setFilePanelDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       localStorage.setItem('devhub_filePanelWidth', String(widthRef.current));
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
@@ -167,6 +173,63 @@ export default function MainLayout() {
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   }, [filePanelWidth]);
+
+  // ── Global Editor Drawer (right side) ──
+  const editorDrawerOpen = useGlobalEditorStore(s => s.drawerOpen);
+  const setEditorDrawerOpen = useGlobalEditorStore(s => s.setDrawerOpen);
+  const [editorDrawerWidth, setEditorDrawerWidth] = useState(() => {
+    const stored = localStorage.getItem('devhub_globalEditorWidth');
+    return stored ? Math.min(800, Math.max(300, Number(stored))) : 500;
+  });
+
+  const [editorDrawerDragging, setEditorDrawerDragging] = useState(false);
+  const [editorDrawerHover, setEditorDrawerHover] = useState(false);
+  const editorDrawerW = editorDrawerOpen ? editorDrawerWidth : 0;
+
+  // Escape key to close editor drawer
+  useEffect(() => {
+    if (!editorDrawerOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setEditorDrawerOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [editorDrawerOpen, setEditorDrawerOpen]);
+
+  // Auto-collapse editor drawer on narrow viewports
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && editorDrawerOpen) {
+        setEditorDrawerOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, [editorDrawerOpen, setEditorDrawerOpen]);
+
+  const handleEditorDrawerDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setEditorDrawerDragging(true);
+    const startX = e.clientX;
+    const startWidth = editorDrawerWidth;
+    const widthRef = { current: editorDrawerWidth };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      const newWidth = Math.min(800, Math.max(300, startWidth + delta));
+      widthRef.current = newWidth;
+      setEditorDrawerWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      setEditorDrawerDragging(false);
+      localStorage.setItem('devhub_globalEditorWidth', String(widthRef.current));
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [editorDrawerWidth]);
 
   return (
     <div style={{
@@ -223,30 +286,11 @@ export default function MainLayout() {
           padding: '10px 0',
           gap: 6,
           background: 'linear-gradient(180deg, var(--color-rail-start) 0%, var(--color-rail-end) 100%)',
-          boxShadow: isDark ? 'none' : '1px 0 0 var(--color-divider)',
+          boxShadow: `1px 0 0 ${isDark || filePanelOpen ? 'transparent' : 'var(--color-divider)'}`,
+          transition: 'box-shadow 0.2s ease',
           flexShrink: 0,
         }}
       >
-        {/* Logo */}
-        <div
-          onClick={() => navigate('/workspace')}
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 8,
-            background: 'linear-gradient(135deg, var(--color-primary), var(--md-primary-container))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 10,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-          title="DevHub"
-        >
-          <img src="/icon.png" alt="D" style={{ width: 18, height: 18, borderRadius: 4 }} />
-        </div>
-
         {/* Navigation items */}
         {navItems.map(item => {
           const isFileExplorer = item.key === '__file-explorer';
@@ -351,7 +395,7 @@ export default function MainLayout() {
         left: railW,
         width: filePanelWidth,
         height: '100vh',
-        zIndex: 45,
+        zIndex: 47,
         background: 'var(--color-file-panel)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
@@ -414,29 +458,19 @@ export default function MainLayout() {
           </div>
         </div>
         {/* File tree */}
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable' }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           <Suspense fallback={null}>
             <FileExplorer collapsed={false} ref={fileExplorerRef} />
           </Suspense>
         </div>
 
-        {/* Drag handle — right edge */}
+        {/* Drag handle — VS Code style */}
         <div
+          className={`resize-handle resize-handle--right${filePanelDragging ? ' is-active' : ''}`}
           onMouseDown={handleFilePanelDragStart}
-          onMouseEnter={() => setFilePanelHover(true)}
-          onMouseLeave={() => { if (!filePanelDragging) setFilePanelHover(false); }}
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            width: filePanelHover || filePanelDragging ? 6 : 4,
-            height: '100%',
-            cursor: 'col-resize',
-            background: filePanelHover || filePanelDragging
-              ? 'var(--color-drag-highlight)'
-              : 'transparent',
-            transition: filePanelDragging ? 'none' : 'width 0.15s ease, background 0.15s ease',
-            zIndex: 10,
+          onDoubleClick={() => {
+            setFilePanelWidth(220);
+            localStorage.setItem('devhub_filePanelWidth', '220');
           }}
         />
       </div>
@@ -444,12 +478,14 @@ export default function MainLayout() {
       {/* ── Main area ── */}
       <div style={{
         flex: 1,
-        marginLeft: headerLeft,
+        marginLeft: headerLeft + editorDrawerW,
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
         overflow: 'hidden',
         transition: 'margin-left 0.2s ease',
+        position: 'relative',
+        zIndex: 46,
       }}>
 
         {/* ── Topbar ── */}
@@ -457,7 +493,7 @@ export default function MainLayout() {
           position: 'fixed',
           top: 0,
           right: 0,
-          left: headerLeft,
+          left: headerLeft + editorDrawerW,
           height: 'var(--layout-topbar-height)',
           zIndex: 40,
           display: 'flex',
@@ -470,18 +506,28 @@ export default function MainLayout() {
           borderBottom: '1px solid var(--color-divider)',
           transition: 'left 0.2s ease',
         }}>
-          {/* Center: Command Palette input */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-            <SearchBox />
+          {/* Center: Command Palette input — absolute centered in full header width */}
+          <div style={{
+            position: 'absolute',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '100%',
+            maxWidth: 500,
+            padding: '0 16px',
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+          }}>
+            <div style={{ pointerEvents: 'auto' }}>
+              <SearchBox />
+            </div>
           </div>
 
-          {/* Spacer */}
-          <div style={{ flex: 1 }} />
-
           {/* Right: actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Deploy */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', position: 'relative', zIndex: 1 }}>
+            {/* Deploy — placeholder, not yet functional */}
             <button
+              disabled
+              title="部署功能即将上线"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -491,39 +537,30 @@ export default function MainLayout() {
                 border: 'none',
                 background: 'var(--md-primary)',
                 color: 'var(--md-on-primary)',
-                cursor: 'pointer',
+                cursor: 'not-allowed',
                 fontFamily: 'var(--font-label)',
                 fontSize: 'var(--text-sm)',
                 fontWeight: 500,
                 letterSpacing: '0.02em',
-                transition: 'all 0.15s ease',
+                opacity: 0.5,
                 boxShadow: 'var(--shadow-sm)',
               }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
             >
               部署
               <span className="material-symbols-outlined" style={{ fontSize: 14 }}>rocket_launch</span>
             </button>
 
-            {/* Notifications */}
+            {/* Notifications — placeholder, not yet functional */}
             <button
+              disabled
+              title="通知功能即将上线"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: 36, height: 36, borderRadius: 6, border: 'none',
                 background: 'transparent',
                 color: isDark ? 'var(--ws-text-secondary)' : 'var(--color-text-secondary)',
-                cursor: 'pointer', transition: 'all 0.15s ease',
+                cursor: 'not-allowed', opacity: 0.5,
               }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = 'var(--md-surface-container-high)';
-                e.currentTarget.style.color = 'var(--md-on-surface)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = isDark ? 'var(--ws-text-secondary)' : 'var(--color-text-secondary)';
-              }}
-              title="通知"
             >
               <span className="material-symbols-outlined" style={{ fontSize: 18 }}>notifications</span>
             </button>
@@ -615,6 +652,98 @@ export default function MainLayout() {
           )}
         </main>
       </div>
+
+      {/* ── Global Editor (between file explorer and content) ── */}
+      {editorDrawerOpen && (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: headerLeft,
+        width: editorDrawerWidth,
+        height: '100vh',
+        zIndex: 47,
+        background: 'var(--color-file-panel)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderRight: '1px solid var(--color-border)',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+        {/* Panel header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 12px 8px',
+          borderBottom: '1px solid var(--color-divider)',
+          flexShrink: 0,
+        }}>
+          <span style={{
+            fontSize: 'var(--text-xs)',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: isDark ? 'var(--ws-text-tertiary)' : 'var(--color-text-tertiary)',
+          }}>
+            Editor
+          </span>
+          <span
+            className="material-symbols-outlined"
+            onClick={() => setEditorDrawerOpen(false)}
+            style={{
+              fontSize: 16,
+              color: isDark ? 'var(--ws-icon-muted)' : 'var(--color-text-tertiary)',
+              cursor: 'pointer',
+              padding: 2,
+              borderRadius: 4,
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--md-on-surface)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = isDark ? 'var(--ws-icon-muted)' : 'var(--color-text-tertiary)'; }}
+          >close</span>
+        </div>
+        {/* Editor content */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <Suspense fallback={null}>
+            <CodeEditorPane variant="global" onEmpty={() => setEditorDrawerOpen(false)} />
+          </Suspense>
+        </div>
+
+        {/* Drag handle — right edge */}
+        <div
+          onMouseDown={handleEditorDrawerDragStart}
+          onDoubleClick={() => {
+            setEditorDrawerWidth(500);
+            localStorage.setItem('devhub_globalEditorWidth', '500');
+          }}
+          onMouseEnter={() => setEditorDrawerHover(true)}
+          onMouseLeave={() => { if (!editorDrawerDragging) setEditorDrawerHover(false); }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 8,
+            height: '100%',
+            cursor: 'col-resize',
+            zIndex: 10,
+            background: 'transparent',
+          }}
+        >
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: editorDrawerHover || editorDrawerDragging ? 1 : 0,
+            height: '100%',
+            background: editorDrawerDragging
+              ? 'var(--color-primary)'
+              : 'var(--color-drag-highlight)',
+            transition: editorDrawerDragging ? 'none' : 'width 0.15s ease, background 0.15s ease',
+          }} />
+        </div>
+      </div>
+      )}
 
     </div>
   );

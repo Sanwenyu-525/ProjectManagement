@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useThemeStore } from '../../stores/themeStore';
 import { useTerminalStore } from '../../stores/terminalStore';
@@ -15,6 +16,7 @@ import { folderName } from './components/terminalFactory';
 import { useLaunchQueue } from './hooks/useLaunchQueue';
 import { useTerminalEvents } from './hooks/useTerminalEvents';
 import { styles } from './WorkspacePage.styles';
+import ResizeHandle from '../../shared/ResizeHandle';
 
 // Lazy-load heavy components — only needed when editor/terminal/right-panel are open
 const CodeEditorPane = lazy(() => import('./editor/CodeEditorPane'));
@@ -25,6 +27,7 @@ const AgentRightPanel = lazy(() => import('./agent/AgentRightPanel'));
 let staleSessionsCleanedUp = false; // Run cleanupStale only once per app session
 
 export default function WorkspacePage() {
+  const location = useLocation();
   const tabs = useAgentTabStore(s => s.tabs);
   const activeTabId = useAgentTabStore(s => s.activeTabId);
   const addTab = useAgentTabStore(s => s.addTab);
@@ -159,6 +162,8 @@ export default function WorkspacePage() {
   // Divider drag handlers
   const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
     const startX = e.clientX;
     const startRatio = splitRatio;
     const splitEl = (e.currentTarget as HTMLElement).parentElement;
@@ -171,6 +176,8 @@ export default function WorkspacePage() {
       setSplitRatio(newRatio);
     };
     const onMouseUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -185,12 +192,12 @@ export default function WorkspacePage() {
   const pendingAgentMsg = useWorkspaceStore(s => s.pendingAgentMessage);
   const setPendingAgentMsg = useWorkspaceStore(s => s.setPendingAgentMessage);
 
-  // Open editor when a file is requested from FileExplorer
+  // Open editor when a file is requested from FileExplorer (only when on workspace page)
   useEffect(() => {
-    if (selectedFile) {
+    if (selectedFile && location.pathname.startsWith('/workspace')) {
       setEditorOpen(true);
     }
-  }, [selectedFile, setEditorOpen]);
+  }, [selectedFile, setEditorOpen, location.pathname]);
 
   // Send pending agent message when arriving from another page
   useEffect(() => {
@@ -208,11 +215,10 @@ export default function WorkspacePage() {
   const planModeState = useAgentPlanStore(s => s.mode);
   useEffect(() => {
     if (planModeState === 'completed' || planModeState === 'error') {
-      // Keep planMode true for 3s to show completion state, then reset
+      // Reset planMode flag (so UI returns to normal), but keep steps visible
       const timer = setTimeout(() => {
         setPlanMode(false);
-        useAgentPlanStore.getState().reset();
-      }, 3000);
+      }, 500);
       return () => clearTimeout(timer);
     }
   }, [planModeState, setPlanMode]);
@@ -305,6 +311,8 @@ export default function WorkspacePage() {
               tabIndex={0}
               onClick={() => setPreviewOpen(v => !v)}
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPreviewOpen(v => !v); } }}
+              onMouseEnter={e => { if (!previewOpen) e.currentTarget.style.background = 'rgba(0,0,0,0.06)'; }}
+              onMouseLeave={e => { if (!previewOpen) e.currentTarget.style.background = 'transparent'; }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -355,6 +363,8 @@ export default function WorkspacePage() {
                     role="button"
                     aria-label="关闭编辑器"
                     onClick={() => setEditorOpen(false)}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.06)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                     style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 8, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >close</span>
                 </div>
@@ -366,44 +376,51 @@ export default function WorkspacePage() {
 
             {/* Draggable divider — editor | preview/chat */}
             {editorOpen && (
-              <div
-                className="resize-divider"
+              <ResizeHandle
+                orientation="horizontal"
+                onResizeStart={handleDividerMouseDown}
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="调整编辑器宽度"
                 tabIndex={0}
-                onMouseDown={handleDividerMouseDown}
                 onKeyDown={e => {
                   if (e.key === 'ArrowLeft') setSplitRatio(r => Math.max(0.2, r - 0.05));
                   if (e.key === 'ArrowRight') setSplitRatio(r => Math.min(0.8, r + 0.05));
                 }}
                 style={{
+                  position: 'relative',
                   width: 6,
                   flexShrink: 0,
-                  cursor: 'col-resize',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  position: 'relative',
                   zIndex: 5,
                 }}
               >
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 3,
-                  opacity: 0.4,
-                }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{
-                      width: 2,
-                      height: 2,
-                      borderRadius: '50%',
-                      background: 'var(--md-on-surface-variant)',
-                    }} />
-                  ))}
-                </div>
-              </div>
+                {(isDragging) => (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0, bottom: 0, left: '50%',
+                    width: 4,
+                    transform: 'translateX(-50%)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 3,
+                    borderRadius: 2,
+                    background: isDragging ? 'var(--md-primary-container)' : 'transparent',
+                    transition: isDragging ? 'none' : 'background 0.15s',
+                  }}>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} style={{
+                        width: 2,
+                        height: 2,
+                        borderRadius: '50%',
+                        background: isDragging ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
+                        transition: isDragging ? 'none' : 'background 0.15s',
+                      }} />
+                    ))}
+                  </div>
+                )}
+              </ResizeHandle>
             )}
 
             {/* Preview panel (middle) */}
@@ -423,6 +440,8 @@ export default function WorkspacePage() {
                       role="button"
                       aria-label="关闭预览"
                       onClick={() => setPreviewOpen(false)}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.06)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                       style={{ fontSize: 'var(--text-lg)', cursor: 'pointer', color: 'var(--md-on-surface-variant)', padding: 8, borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >close</span>
                   </div>
@@ -446,6 +465,7 @@ export default function WorkspacePage() {
               })(),
             }}>
               <AgentTabBar onCloseTab={handleTabClose} />
+              <GraphQuickBar cwd={effectiveCwd} />
               {tabs.map(tab => (
                 <div
                   key={tab.id}
@@ -519,6 +539,107 @@ export default function WorkspacePage() {
       </Suspense>
       </div>
 
+    </div>
+  );
+}
+
+// ── Graph Quick Bar ──────────────────────────────────────────────
+
+function GraphQuickBar({ cwd }: { cwd: string }) {
+  const [filePath, setFilePath] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  if (!cwd) return null;
+
+  const dispatch = (text: string) => {
+    window.dispatchEvent(new CustomEvent('agentQuickCommand', { detail: text }));
+  };
+
+  const handleFileAction = (subCmd: string) => {
+    if (filePath.trim()) {
+      dispatch(`/graph ${subCmd} ${filePath.trim()}`);
+      setFilePath('');
+    } else {
+      // No file path — focus input to hint user
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  };
+
+  const btnBase: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 3,
+    padding: '2px 8px', borderRadius: 4,
+    border: '1px solid var(--border)',
+    background: 'var(--md-surface-container-low)',
+    color: 'var(--md-on-surface-variant)',
+    fontSize: 10, fontWeight: 600, fontFamily: 'var(--font-sans)',
+    cursor: 'pointer', transition: 'all 0.12s', whiteSpace: 'nowrap' as const,
+  };
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 6,
+      padding: '3px 10px',
+      borderBottom: '1px solid var(--border)',
+      background: 'var(--md-surface-container-lowest)',
+      flexShrink: 0,
+    }}>
+      <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'var(--md-primary)' }}>
+        hub
+      </span>
+
+      <button
+        onClick={() => dispatch('/graph layers')}
+        style={btnBase}
+        title="/graph layers — 查询架构分层"
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 11 }}>layers</span>
+        Layers
+      </button>
+
+      <input
+        ref={inputRef}
+        value={filePath}
+        onChange={e => setFilePath(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && filePath.trim()) {
+            dispatch(`/graph impact ${filePath.trim()}`);
+            setFilePath('');
+          }
+        }}
+        placeholder="输入文件路径后点击 Impact/Deps"
+        style={{
+          width: 180, padding: '3px 8px', borderRadius: 4,
+          border: '1px solid var(--border)',
+          background: 'var(--md-surface-container-low)',
+          fontSize: 10, fontFamily: 'var(--font-mono)',
+          color: 'var(--md-on-surface)', outline: 'none',
+        }}
+      />
+
+      <button
+        onClick={() => handleFileAction('impact')}
+        style={btnBase}
+        title="/graph impact — 查询影响范围"
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 11 }}>hub</span>
+        Impact
+      </button>
+
+      <button
+        onClick={() => handleFileAction('deps')}
+        style={btnBase}
+        title="/graph deps — 查询依赖链"
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'var(--md-surface-container-low)'; }}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 11 }}>account_tree</span>
+        Deps
+      </button>
     </div>
   );
 }

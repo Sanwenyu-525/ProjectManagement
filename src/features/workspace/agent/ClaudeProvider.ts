@@ -1,10 +1,12 @@
 import { listen } from '@tauri-apps/api/event';
-import { terminalApi, sessionsApi, gitApi } from '../../../api';
+import { terminalApi, sessionsApi, gitApi, projectsApi, graphApi } from '../../../api';
 import type { TerminalOutputEvent, TerminalExitEvent } from '../../../shared/terminalTypes';
 import type { AgentProvider, AgentStreamEvent, StartOptions } from './AgentProvider';
 import { extractJsonObjects, type StreamJsonEvent } from '../../../lib/parseStreamJson';
 import { trackToolFileAccess } from '../../../lib/trackAgentFileAccess';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useAgentContextStore } from '../../../stores/agentContextStore';
+import { useWorkspaceStore } from '../../../stores/workspaceStore';
 
 /**
  * ClaudeProvider — one-shot mode per message.
@@ -389,97 +391,128 @@ export class ClaudeProvider implements AgentProvider {
 
   private handleStreamEvent(event: StreamJsonEvent): void {
     switch (event.type) {
-      case 'system':
-        if (event.subtype === 'init' && event.session_id) {
-          this.cliSessionId = event.session_id;
-          if (this.config?.sessionId) {
-            sessionsApi.update(this.config.sessionId, { providerSessionId: event.session_id }).catch(() => {});
-          }
-        } else if (event.subtype === 'api_retry') {
-          const delay = Math.round(event.retry_delay_ms ?? 0);
-          this.emit({ type: 'thinking', text: `API 重试 ${event.attempt}/${event.max_retries}（${event.error_status}，${(delay / 1000).toFixed(1)}s）` });
-        }
-        // thinking_tokens / cost_usd 等内部系统事件：静默忽略
-        break;
+      case 'system': this.handleSystemEvent(event); break;
+      case 'assistant': this.handleAssistantEvent(event); break;
+      case 'user': this.handleUserEvent(event); break;
+      case 'result': this.handleResultEvent(event); break;
+      case 'error': this.emit({ type: 'error', error: event.error || event.result || 'CLI error' }); break;
+    }
+  }
 
-      case 'assistant':
-        for (let i = 0; i < (event.message?.content || []).length; i++) {
-          const block = event.message!.content![i];
-          if (block.type === 'text' && block.text) {
-            this.hasStreamedText = true;
-            // stream-json sends cumulative text — emit only the new portion
-            const prevLen = this.emittedTextLengths.get(i) || 0;
-            if (block.text.length > prevLen) {
-              this.emit({ type: 'token', text: block.text.slice(prevLen) });
-              this.emittedTextLengths.set(i, block.text.length);
-            }
-          } else if (block.type === 'thinking' && (block.thinking || block.text)) {
-            this.emit({ type: 'thinking', text: block.thinking || block.text || '' });
-          } else if (block.type === 'tool_use' && block.name) {
-            const toolId = block.id || `tool-${Date.now()}`;
-            this.emit({
-              type: 'tool_start',
-              id: toolId,
-              toolName: block.name,
-              input: block.input || {},
-            });
-            // 记录文件操作到上下文面板
-            if (this.config?.sessionId) {
-              trackToolFileAccess(this.config.sessionId, block.name, block.input || {});
-            }
-          }
-        }
-        break;
+  private handleSystemEvent(event: StreamJsonEvent): void {
+    if (event.subtype === 'init' && event.session_id) {
+      this.cliSessionId = event.session_id;
+      if (this.config?.sessionId) {
+        sessionsApi.update(this.config.sessionId, { providerSessionId: event.session_id }).catch(() => {});
+      }
+    } else if (event.subtype === 'api_retry') {
+      const delay = Math.round(event.retry_delay_ms ?? 0);
+      this.emit({ type: 'thinking', text: `API 重试 ${event.attempt}/${event.max_retries}（${event.error_status}，${(delay / 1000).toFixed(1)}s）` });
+    }
+  }
 
-      case 'user':
-        for (const block of event.message?.content || []) {
-          if (block.type !== 'tool_result' || !block.tool_use_id) continue;
-          const rawContent = block.content as string | Array<{type: string; text?: string}> | undefined;
-          let output = '';
-          if (typeof rawContent === 'string') {
-            output = rawContent;
-          } else if (Array.isArray(rawContent)) {
-            output = rawContent
-              .filter((p) => p.type === 'text' && p.text)
-              .map((p) => p.text || '')
-              .join('');
-          }
-          this.emit({
-            type: 'tool_result',
-            toolUseId: block.tool_use_id,
-            output,
-            isError: Boolean(block.is_error),
-          });
+  private handleAssistantEvent(event: StreamJsonEvent): void {
+    for (let i = 0; i < (event.message?.content || []).length; i++) {
+      const block = event.message!.content![i];
+      if (block.type === 'text' && block.text) {
+        this.hasStreamedText = true;
+        const prevLen = this.emittedTextLengths.get(i) || 0;
+        if (block.text.length > prevLen) {
+          this.emit({ type: 'token', text: block.text.slice(prevLen) });
+          this.emittedTextLengths.set(i, block.text.length);
         }
-        break;
+      } else if (block.type === 'thinking' && (block.thinking || block.text)) {
+        this.emit({ type: 'thinking', text: block.thinking || block.text || '' });
+      } else if (block.type === 'tool_use' && block.name) {
+        const toolId = block.id || `tool-${Date.now()}`;
+        this.emit({ type: 'tool_start', id: toolId, toolName: block.name, input: block.input || {} });
+        if (this.config?.sessionId) {
+          trackToolFileAccess(this.config.sessionId, block.name, block.input || {});
+        }
+        // Impact analysis for write/edit operations
+        if ((block.name === 'write' || block.name === 'edit') && this.config?.cwd) {
+          this.checkFileImpact(block.input || {});
+        }
+      }
+    }
+  }
 
-      case 'result':
-        this.retryAttempt = 0; // reset on successful response
-        if (event.result) this.resultText = event.result;
-        if (event.is_error) {
-          this.hasError = true;
-          this.emit({ type: 'error', error: event.result || 'Unknown error' });
-        }
-        if (event.total_cost_usd !== undefined || event.duration_ms !== undefined || event.num_turns !== undefined) {
-          this.emit({
-            type: 'result',
-            costUsd: event.total_cost_usd,
-            durationMs: event.duration_ms,
-            numTurns: event.num_turns,
-            sessionId: event.session_id,
-          });
-        }
-        break;
+  private handleUserEvent(event: StreamJsonEvent): void {
+    for (const block of event.message?.content || []) {
+      if (block.type !== 'tool_result' || !block.tool_use_id) continue;
+      const rawContent = block.content as string | Array<{type: string; text?: string}> | undefined;
+      let output = '';
+      if (typeof rawContent === 'string') {
+        output = rawContent;
+      } else if (Array.isArray(rawContent)) {
+        output = rawContent.filter((p) => p.type === 'text' && p.text).map((p) => p.text || '').join('');
+      }
+      this.emit({ type: 'tool_result', toolUseId: block.tool_use_id, output, isError: Boolean(block.is_error) });
+    }
+  }
 
-      case 'error':
-        this.emit({ type: 'error', error: event.error || event.result || 'CLI error' });
-        break;
+  private handleResultEvent(event: StreamJsonEvent): void {
+    this.retryAttempt = 0;
+    if (event.result) this.resultText = event.result;
+    if (event.is_error) {
+      this.hasError = true;
+      this.emit({ type: 'error', error: event.result || 'Unknown error' });
+    }
+    if (event.total_cost_usd !== undefined || event.duration_ms !== undefined || event.num_turns !== undefined) {
+      this.emit({ type: 'result', costUsd: event.total_cost_usd, durationMs: event.duration_ms, numTurns: event.num_turns, sessionId: event.session_id });
     }
   }
 
   private cleanupListeners(): void {
     if (this.unlistenOutput) { this.unlistenOutput(); this.unlistenOutput = null; }
     if (this.unlistenExit) { this.unlistenExit(); this.unlistenExit = null; }
+  }
+
+  private checkFileImpact(input: Record<string, unknown>): void {
+    const filePath = (input.file_path ?? input.path ?? '') as string;
+    if (!filePath || !this.config?.cwd) return;
+
+    const cwd = this.config.cwd;
+    const threshold = useWorkspaceStore.getState().impactWarningThreshold;
+
+    projectsApi.resolveId(cwd).then(projectId => {
+      if (!projectId) return;
+      // Make path relative to project root
+      const relativePath = filePath.startsWith(cwd)
+        ? filePath.slice(cwd.length).replace(/^[/\\]+/, '').replace(/\\/g, '/')
+        : filePath.replace(/\\/g, '/');
+      return graphApi.query(projectId, 'impact', { file: relativePath });
+    }).then(result => {
+      if (!result) return;
+      const impacted = (result.impactedNodes ?? []) as unknown[];
+      const impactCount = impacted.length;
+      if (impactCount > threshold) {
+        const directCount = (result.directCount ?? 0) as number;
+        const indirectCount = (result.indirectCount ?? 0) as number;
+        const summary = `文件 ${filePath} 的变更将影响 ${impactCount} 个文件（直接 ${directCount}，间接 ${indirectCount}）`;
+        this.emit({
+          type: 'impact_warning',
+          file: filePath,
+          impactCount,
+          directCount,
+          indirectCount,
+          summary,
+        });
+        // Track in context store
+        if (this.config?.sessionId) {
+          useAgentContextStore.getState().trackImpactWarning(this.config.sessionId, {
+            file: filePath,
+            impactCount,
+            directCount,
+            indirectCount,
+            summary,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }).catch(() => {
+      // Silent fail — impact analysis is non-critical
+    });
   }
 
   private emit(event: AgentStreamEvent): void {

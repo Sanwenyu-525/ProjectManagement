@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Input, message } from 'antd';
 import { knowledgeApi, memoryApi } from '../../../api';
+import type { KnowledgeQueryResult } from '../../../api/knowledge';
 import { queryKeys } from '../../../api/queryKeys';
 import { useKnowledgeStore } from '../../../stores/knowledgeStore';
 import type { KnowledgeItem, ContextItem } from '../../../types';
@@ -14,6 +15,12 @@ const SOURCE_ICONS: Record<string, string> = {
   document: 'description',
   note: 'edit_note',
 };
+
+interface QAMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  sources?: KnowledgeQueryResult['sources'];
+}
 
 // ── Component ──
 
@@ -28,6 +35,13 @@ export default function KnowledgeAI({ item, allItems }: KnowledgeAIProps) {
 
   const queryClient = useQueryClient();
   const [extractText, setExtractText] = useState('');
+  const [question, setQuestion] = useState('');
+  const [qaHistory, setQaHistory] = useState<QAMessage[]>([]);
+  const qaEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    qaEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [qaHistory]);
 
   const extractMutation = useMutation({
     mutationFn: () => knowledgeApi.extract(extractText, 'knowledge-page'),
@@ -43,6 +57,39 @@ export default function KnowledgeAI({ item, allItems }: KnowledgeAIProps) {
     onError: () => message.error('AI 提炼失败'),
   });
 
+  const queryMutation = useMutation({
+    mutationFn: (q: string) => knowledgeApi.query(q),
+    onSuccess: (result) => {
+      setQaHistory(prev => [
+        ...prev,
+        { role: 'assistant', content: result.answer, sources: result.sources },
+      ]);
+    },
+    onError: (err) => {
+      console.error('[KnowledgeQ&A]', err);
+      setQaHistory(prev => [
+        ...prev,
+        { role: 'assistant', content: `查询失败: ${String(err)}` },
+      ]);
+    },
+  });
+
+  const handleQuery = () => {
+    const q = question.trim();
+    if (!q || queryMutation.isPending) return;
+    setQaHistory(prev => [...prev, { role: 'user', content: q }]);
+    setQuestion('');
+    queryMutation.mutate(q);
+  };
+
+  const handleSourceClick = (sourceId: string) => {
+    const match = allItems.find(ki => ki.id === sourceId);
+    if (match) {
+      setSelectedCategory(match.category);
+      setSelectedId(match.id);
+    }
+  };
+
   // Fetch related recommendations
   const { data: recommendations = [] } = useQuery({
     queryKey: queryKeys.memories.context(item?.content ?? ''),
@@ -52,7 +99,6 @@ export default function KnowledgeAI({ item, allItems }: KnowledgeAIProps) {
   });
 
   const handleRecommendClick = (ctxItem: ContextItem) => {
-    // Find the matching KnowledgeItem by id
     const match = allItems.find(ki => ki.id === ctxItem.id);
     if (match) {
       setSelectedCategory(match.category);
@@ -159,6 +205,8 @@ export default function KnowledgeAI({ item, allItems }: KnowledgeAIProps) {
         </div>
 
         <div style={styles.divider} />
+
+        {/* Knowledge Q&A */}
         <div style={styles.section}>
           <div style={styles.sectionHeader}>
             <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--color-amber)' }}>
@@ -166,16 +214,55 @@ export default function KnowledgeAI({ item, allItems }: KnowledgeAIProps) {
             </span>
             <span style={styles.sectionTitle}>知识问答</span>
           </div>
-          <Input
-            placeholder="向知识库提问..."
-            disabled
-            style={{ marginTop: 8 }}
-          />
-          <div style={styles.qaPlaceholder}>
-            <span className="material-symbols-outlined" style={{ fontSize: 24, color: 'var(--md-outline-variant)', opacity: 0.4 }}>
-              construction
-            </span>
-            <p style={styles.qaText}>AI 问答功能即将上线</p>
+          {qaHistory.length > 0 && (
+            <div style={styles.qaConversation}>
+              {qaHistory.map((msg, i) => (
+                <div key={i} style={msg.role === 'user' ? styles.qaUserMsg : styles.qaAssistantMsg}>
+                  <span style={styles.qaRoleLabel}>
+                    {msg.role === 'user' ? '你' : 'AI'}
+                  </span>
+                  <p style={styles.qaMsgText}>{msg.content}</p>
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div style={styles.qaSources}>
+                      {msg.sources.map(src => (
+                        <div
+                          key={src.id}
+                          style={styles.qaSourceCard}
+                          onClick={() => handleSourceClick(src.id)}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--md-primary)', flexShrink: 0 }}>
+                            {SOURCE_ICONS[src.category] ?? 'article'}
+                          </span>
+                          <span style={styles.qaSourceTitle}>{src.title}</span>
+                          <span style={styles.qaSourceCat}>{src.category}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div ref={qaEndRef} />
+            </div>
+          )}
+          <div style={styles.qaInputRow}>
+            <Input
+              value={question}
+              onChange={e => setQuestion(e.target.value)}
+              onPressEnter={handleQuery}
+              placeholder="向知识库提问..."
+              disabled={queryMutation.isPending}
+              style={{ flex: 1 }}
+            />
+            <Button
+              type="primary"
+              size="small"
+              loading={queryMutation.isPending}
+              onClick={handleQuery}
+              disabled={!question.trim()}
+              icon={<span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+                send
+              </span>}
+            />
           </div>
         </div>
       </div>
@@ -284,16 +371,80 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-label)',
     flexShrink: 0,
   },
-  qaPlaceholder: {
+  qaInputRow: {
+    display: 'flex',
+    gap: 6,
+    alignItems: 'center',
+  },
+  qaConversation: {
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    gap: 4,
-    padding: '16px 0',
+    gap: 10,
+    maxHeight: 280,
+    overflowY: 'auto',
+    padding: '4px 0',
   },
-  qaText: {
+  qaUserMsg: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    padding: '8px 10px',
+    borderRadius: 'var(--radius-sm)',
+    background: 'var(--color-bg-elevated)',
+    border: '1px solid var(--color-border-subtle)',
+  },
+  qaAssistantMsg: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    padding: '8px 10px',
+    borderRadius: 'var(--radius-sm)',
+    background: 'color-mix(in srgb, var(--md-primary) 6%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--md-primary) 15%, transparent)',
+  },
+  qaRoleLabel: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: 'var(--color-text-tertiary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  },
+  qaMsgText: {
     margin: 0,
     fontSize: 12,
+    lineHeight: 1.6,
+    color: 'var(--color-text-primary)',
+    whiteSpace: 'pre-wrap',
+  },
+  qaSources: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    marginTop: 4,
+  },
+  qaSourceCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '4px 8px',
+    borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer',
+    transition: 'background 0.15s',
+    border: '1px solid var(--color-border-subtle)',
+    background: 'var(--color-bg-surface)',
+  },
+  qaSourceTitle: {
+    fontSize: 11,
+    fontWeight: 500,
+    color: 'var(--color-text-primary)',
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  qaSourceCat: {
+    fontSize: 10,
     color: 'var(--color-text-tertiary)',
+    flexShrink: 0,
   },
 };

@@ -21,6 +21,14 @@ export default function AgentContextPanel({ sessionId, cwd }: AgentContextPanelP
     () => (sessionContext ? Object.values(sessionContext.files).sort((a, b) => b.lastAccessed - a.lastAccessed) : []),
     [sessionContext],
   );
+  const graphQueries = useMemo(
+    () => sessionContext?.graphQueries ?? [],
+    [sessionContext],
+  );
+  const impactWarnings = useMemo(
+    () => sessionContext?.impactWarnings ?? [],
+    [sessionContext],
+  );
 
   // Group files by primary operation
   const grouped = useMemo(() => {
@@ -43,13 +51,13 @@ export default function AgentContextPanel({ sessionId, cwd }: AgentContextPanelP
     );
   }
 
-  if (displayFiles.length === 0) {
+  if (displayFiles.length === 0 && graphQueries.length === 0 && impactWarnings.length === 0) {
     return (
       <div style={styles.empty}>
         <span className="material-symbols-outlined" style={{ fontSize: 28, color: 'var(--md-outline-variant)', opacity: 0.6 }}>
           folder_open
         </span>
-        <p style={styles.emptyText}>开始对话后，agent 引用的文件会显示在这里。</p>
+        <p style={styles.emptyText}>开始对话后，agent 引用的文件和图谱查询会显示在这里。</p>
       </div>
     );
   }
@@ -97,6 +105,54 @@ export default function AgentContextPanel({ sessionId, cwd }: AgentContextPanelP
           </div>
         );
       })}
+
+      {/* Graph query history */}
+      {graphQueries.length > 0 && (
+        <div style={styles.group}>
+          <div style={styles.groupHeader}>
+            <span className="material-symbols-outlined" style={{ fontSize: 13, color: 'var(--md-tertiary)' }}>
+              hub
+            </span>
+            <span style={styles.groupLabel}>图谱查询</span>
+            <span style={styles.groupCount}>{graphQueries.length}</span>
+          </div>
+          {graphQueries.map((q, i) => (
+            <div key={i} style={styles.fileItem}>
+              <span className="material-symbols-outlined" style={{ fontSize: 12, color: GRAPH_ICONS[q.queryType] ?? 'var(--md-outline)', flexShrink: 0 }}>
+                {GRAPH_ICONS[q.queryType] ?? 'help'}
+              </span>
+              <span style={styles.fileName}>{q.target}</span>
+              <span style={{ fontSize: 9, color: 'var(--md-on-surface-variant)', fontFamily: 'var(--font-sans)', flexShrink: 0 }}>
+                {q.queryType}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Impact warnings */}
+      {impactWarnings.length > 0 && (
+        <div style={styles.group}>
+          <div style={styles.groupHeader}>
+            <span className="material-symbols-outlined" style={{ fontSize: 13, color: 'var(--md-error)' }}>
+              warning
+            </span>
+            <span style={styles.groupLabel}>影响警告</span>
+            <span style={styles.groupCount}>{impactWarnings.length}</span>
+          </div>
+          {impactWarnings.map((w, i) => (
+            <div key={i} style={styles.fileItem} title={w.summary}>
+              <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'var(--md-error)', flexShrink: 0 }}>
+                warning
+              </span>
+              <span style={styles.fileName}>{getShortPath(w.file, cwd)}</span>
+              <span style={{ fontSize: 9, color: 'var(--md-error)', fontFamily: 'var(--font-mono)', fontWeight: 600, flexShrink: 0 }}>
+                {w.impactCount} files
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -110,6 +166,12 @@ function getShortPath(path: string, cwd?: string): string {
   const parts = path.split(/[/\\]/);
   return parts.length > 2 ? parts.slice(-2).join('/') : path;
 }
+
+const GRAPH_ICONS: Record<string, string> = {
+  impact: 'hub',
+  deps: 'account_tree',
+  layers: 'layers',
+};
 
 const styles: Record<string, React.CSSProperties> = {
   container: {

@@ -1,6 +1,18 @@
 import { cmd } from './client';
 import type { KnowledgeItem } from '../types';
 
+export interface KnowledgeQueryResult {
+  answer: string;
+  sources: Array<KnowledgeItem & { relevance: string }>;
+}
+
+export interface KnowledgeContextItem {
+  id: string;
+  title: string;
+  category: string;
+  contentSnippet: string;
+}
+
 export const knowledgeApi = {
   list: (category?: string, projectId?: string, limit?: number): Promise<KnowledgeItem[]> =>
     cmd('knowledge_list', { category: category ?? null, projectId: projectId ?? null, limit: limit ?? 100 }),
@@ -12,6 +24,8 @@ export const knowledgeApi = {
     cmd('knowledge_create_note', { data: { title, content, projectId: projectId ?? null, tags: tags ?? null } }),
   extract: (content: string, sourceContext?: string, projectId?: string): Promise<KnowledgeItem[]> =>
     cmd('knowledge_extract', { data: { content, sourceContext: sourceContext ?? null, projectId: projectId ?? null } }),
-  seed: (): Promise<{ inserted: number }> =>
-    cmd('knowledge_seed', {}),
+  query: (question: string, projectId?: string): Promise<KnowledgeQueryResult> =>
+    cmd('knowledge_query', { data: { question, projectId: projectId ?? null } }),
+  searchContext: (query: string, projectId?: string, limit?: number): Promise<KnowledgeContextItem[]> =>
+    cmd('knowledge_search_context', { data: { query, projectId: projectId ?? null, limit: limit ?? 10 } }),
 };

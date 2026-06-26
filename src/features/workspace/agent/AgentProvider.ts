@@ -7,7 +7,8 @@ export type AgentStreamEvent =
   | { type: 'tool_start'; id: string; toolName: string; input: Record<string, unknown> }
   | { type: 'tool_result'; toolUseId: string; output: string; isError: boolean }
   | { type: 'result'; costUsd?: number; durationMs?: number; numTurns?: number; sessionId?: string }
-  | { type: 'retrying'; attempt: number; maxAttempts: number; delayMs: number; reason: string };
+  | { type: 'retrying'; attempt: number; maxAttempts: number; delayMs: number; reason: string }
+  | { type: 'impact_warning'; file: string; impactCount: number; directCount: number; indirectCount: number; summary: string };
 
 export type MessageBlock =
   | { type: 'text'; text: string }

@@ -2,16 +2,16 @@
 
 ## Current Focus
 
-Q3 路线图执行中。P1（图谱三个视图）已完成，当前进行 P2（知识库 Q&A + Agent 集成）。
+Q3 路线图执行中。P1-P3 已完成，当前进行 P4（多 Agent 并行 + 项目巡检报告）。
 
 **已完成：**
 - P1 图谱：启用影响分析、调用链、架构分层三个视图（5/5 视图全部可用）
 - 节点操作：选中节点可"打开文件"或"交给 Agent 分析"
 - 编辑器修复：Windows 换行符标准化（\r\n → \n），消除误报 modified 状态
+- P2 知识库：Q&A 对话 + `/knowledge` slash command + Agent 知识库检索
+- P3 Agent 集成图谱：`/graph impact|deps|layers` slash commands + 改前影响检查
 
-**待做（P2-P4）：**
-- P2：知识库 Q&A + Agent 引用知识库（2 周）
-- P3：Agent 集成图谱（图谱查询 + 改前检查）（2 周）
+**待做（P4）：**
 - P4：多 Agent 并行 + 项目巡检报告（4 周）
 
 详见 `docs/superpowers/specs/2026-06-25-q3-roadmap-design.md`。

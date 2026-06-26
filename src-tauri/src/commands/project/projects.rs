@@ -964,3 +964,20 @@ pub async fn projects_batch_import(
         "errors": errors,
     }))
 }
+
+/// Resolve a cwd path to a project ID.
+/// Used by Agent to map its working directory to a registered project.
+#[command]
+pub async fn projects_resolve_id(
+    db: State<'_, Database>,
+    cwd: String,
+) -> Result<Option<String>, String> {
+    let rows = db.query_json(
+        "SELECT id FROM projects WHERE localPath = ?1 AND deletedAt IS NULL",
+        rusqlite::params![cwd],
+    ).map_err(|e| e.to_string())?;
+    Ok(rows.as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("id").and_then(|x| x.as_str()))
+        .map(|s| s.to_string()))
+}

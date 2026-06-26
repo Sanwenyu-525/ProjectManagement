@@ -11,3 +11,4 @@ pub mod brain;
 pub mod dependencies;
 pub mod health;
 pub mod graph;
+pub mod audit;

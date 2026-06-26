@@ -100,6 +100,14 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: '/refactor', description: '增量重构', icon: 'recycling', category: 'project' },
   { name: '/ship', description: '提交前质量门', icon: 'rocket_launch', category: 'project' },
   { name: '/test', description: '系统化测试', icon: 'fact_check', category: 'project' },
+  // Knowledge
+  { name: '/knowledge', description: '查询知识库', icon: 'menu_book', category: 'project' },
+  // Graph
+  { name: '/graph impact', description: '查询文件影响范围', icon: 'hub', category: 'project' },
+  { name: '/graph deps', description: '查询文件依赖链', icon: 'account_tree', category: 'project' },
+  { name: '/graph layers', description: '查询架构分层', icon: 'layers', category: 'project' },
+  // Audit
+  { name: '/audit', description: '执行项目巡检', icon: 'fact_check', category: 'project' },
 ];
 
 // ── Hook ─────────────────────────────────────────────────────────
@@ -119,7 +127,7 @@ export function useSlashCommands() {
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
-    const match = val.match(/^\/([\w-]*)$/);
+    const match = val.match(/^\/([\w -]*)$/);
     if (match) { setOpen(true); setQuery(match[1]); setIndex(0); }
     else { setOpen(false); }
     return val;
