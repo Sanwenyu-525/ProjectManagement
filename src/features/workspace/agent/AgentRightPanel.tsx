@@ -1,13 +1,17 @@
 import { useState, useCallback } from 'react';
 import { useAgentWorkspaceStore } from '../../../stores/agentWorkspaceStore';
+import { useThemeStore } from '../../../stores/themeStore';
 import AgentPlanPanel from './AgentPlanPanel';
 import AgentGitTab from './AgentGitTab';
 import AgentMemoryPanel from './AgentMemoryPanel';
 import AgentContextPanel from './AgentContextPanel';
 import AgentPromptPanel from './AgentPromptPanel';
+import AgentGraphPanel from './AgentGraphPanel';
+import AgentKnowledgePanel from './AgentKnowledgePanel';
 import ResizeHandle from '../../../shared/ResizeHandle';
+import { useWheelScroll } from '../../../hooks/useWheelScroll';
 
-type RightTab = 'plan' | 'git' | 'context' | 'memory' | 'prompts';
+type RightTab = 'plan' | 'git' | 'context' | 'memory' | 'prompts' | 'graph' | 'knowledge';
 
 const TABS: { key: RightTab; label: string; icon: string }[] = [
   { key: 'plan', label: '计划', icon: 'description' },
@@ -15,6 +19,8 @@ const TABS: { key: RightTab; label: string; icon: string }[] = [
   { key: 'context', label: '上下文', icon: 'folder_open' },
   { key: 'memory', label: '记忆', icon: 'neurology' },
   { key: 'prompts', label: '提示词', icon: 'record_voice_over' },
+  { key: 'graph', label: '图谱', icon: 'hub' },
+  { key: 'knowledge', label: '知识库', icon: 'menu_book' },
 ];
 
 const COLLAPSED_WIDTH = 48;
@@ -31,16 +37,24 @@ export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps
   const togglePanelCollapsed = useAgentWorkspaceStore(s => s.togglePanelCollapsed);
   const [activeTab, setActiveTab] = useState<RightTab>('plan');
   const [hoveredTab, setHoveredTab] = useState<RightTab | null>(null);
+  const wheelScroll = useWheelScroll<HTMLDivElement>();
+  const density = useThemeStore(s => s.density);
+  const isCompact = density === 'compact' || density === 'dense';
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     const startX = e.clientX;
     const startWidth = panelWidth;
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
 
     const onMouseMove = (ev: MouseEvent) => {
       const delta = startX - ev.clientX;
       setPanelWidth(startWidth + delta);
     };
     const onMouseUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -104,8 +118,11 @@ export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps
       />
 
       {/* Tab bar */}
-      <div style={styles.tabBar} role="tablist">
-        <div style={styles.tabScroll}>
+      <div style={{
+          ...styles.tabBar,
+          height: isCompact ? (density === 'dense' ? 32 : 38) : 52,
+        }} role="tablist">
+        <div style={styles.tabScroll} ref={wheelScroll.ref} onWheel={wheelScroll.onWheel}>
           {TABS.map(tab => {
             const isActive = activeTab === tab.key;
             const isHovered = hoveredTab === tab.key;
@@ -160,6 +177,8 @@ export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps
         {activeTab === 'context' && <AgentContextPanel sessionId={sessionId} cwd={cwd} />}
         {activeTab === 'memory' && <AgentMemoryPanel sessionId={sessionId} />}
         {activeTab === 'prompts' && <AgentPromptPanel />}
+        {activeTab === 'graph' && <AgentGraphPanel />}
+        {activeTab === 'knowledge' && <AgentKnowledgePanel />}
       </div>
     </div>
   );
@@ -220,7 +239,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flex: 1,
     minWidth: 0,
-    overflow: 'hidden',
+    overflow: 'auto',
   },
   tab: {
     display: 'flex',
