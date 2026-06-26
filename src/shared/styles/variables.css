@@ -73,6 +73,7 @@
   /* Scrollbar */
   --color-scrollbar: rgba(108, 122, 119, 0.20);
   --color-scrollbar-hover: rgba(108, 122, 119, 0.40);
+  --color-scrollbar-track: rgba(0, 0, 0, 0.03);
 
   /* Skeleton loading */
   --color-skeleton: rgba(82, 97, 116, 0.06);
@@ -267,7 +268,8 @@
   --term-text: #172033;
   --term-text-muted: rgba(23, 32, 51, 0.55);
   --term-text-dim: rgba(23, 32, 51, 0.4);
-  --term-border: rgba(0, 60, 50, 0.10);
+  /* @deprecated Use --border instead. Kept for backward compatibility. */
+  --term-border: var(--border);
   --term-accent: #006b5f;
 
   /* ── Layout Tokens (prototype alignment) ── */
@@ -345,6 +347,7 @@
   /* Scrollbar — dark */
   --color-scrollbar: rgba(255, 255, 255, 0.12);
   --color-scrollbar-hover: rgba(255, 255, 255, 0.20);
+  --color-scrollbar-track: rgba(255, 255, 255, 0.04);
 
   /* Skeleton — dark */
   --color-skeleton: rgba(148, 163, 184, 0.06);
@@ -486,7 +489,8 @@
   --term-text: #dde4e1;
   --term-text-muted: rgba(133, 148, 144, 0.7);
   --term-text-dim: rgba(133, 148, 144, 0.5);
-  --term-border: rgba(133, 148, 144, 0.15);
+  /* @deprecated Use --border instead. Kept for backward compatibility. */
+  --term-border: var(--border);
   --term-accent: #4fdbc8;
 }
 
