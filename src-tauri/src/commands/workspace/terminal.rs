@@ -258,6 +258,9 @@ pub async fn terminal_start(
     command_str: String,
     cwd: String,
 ) -> Result<String, String> {
+    // 校验 cwd 存在性，避免使用已删除的路径启动终端
+    path_guard::validate_path_exists(&cwd)?;
+
     let terminal_id = format!(
         "{}-{}",
         project_id,
@@ -424,6 +427,9 @@ pub async fn terminal_start_agent(
     args: Vec<String>,
     cwd: String,
 ) -> Result<String, String> {
+    // 校验 cwd 存在性
+    path_guard::validate_path_exists(&cwd)?;
+
     let pty_system = native_pty_system();
 
     let size = PtySize {
@@ -523,6 +529,9 @@ pub async fn terminal_start_agent_piped(
     cwd: String,
     stdin_data: String,
 ) -> Result<String, String> {
+    // 校验 cwd 存在性
+    path_guard::validate_path_exists(&cwd)?;
+
     #[cfg(target_os = "windows")]
     let mut cmd = {
         let mut c = Command::new("cmd");
@@ -642,6 +651,9 @@ pub async fn terminal_start_agent_piped_pty(
     cwd: String,
     stdin_data: String,
 ) -> Result<String, String> {
+    // 校验 cwd 存在性
+    path_guard::validate_path_exists(&cwd)?;
+
     let pty_system = native_pty_system();
 
     let size = PtySize {
@@ -809,6 +821,8 @@ pub async fn terminal_stop(terminal_id: String) -> Result<(), String> {
                 .child
                 .kill()
                 .map_err(|e| format!("停止失败: {}", e))?;
+            // 等待子进程退出，避免僵尸进程
+            let _ = terminal.child.wait();
             return Ok(());
         }
     }
@@ -818,6 +832,7 @@ pub async fn terminal_stop(terminal_id: String) -> Result<(), String> {
         let mut procs = recover_lock(&PROCESSES);
         if let Some(mut child) = procs.remove(&terminal_id) {
             child.kill().map_err(|e| format!("停止失败: {}", e))?;
+            let _ = child.wait();
             return Ok(());
         }
     }
@@ -847,7 +862,8 @@ pub async fn terminal_resize(
             .map_err(|e| format!("调整终端大小失败: {}", e))?;
         return Ok(());
     }
-    Err("进程不存在".into())
+    // 非 PTY 终端（如 terminal_start 的 piped 模式）不支持 resize，静默忽略
+    Ok(())
 }
 
 // ── Get terminal IDs for a project ─────────────────────────────────────
@@ -877,11 +893,13 @@ pub fn cleanup_all() {
     if let Ok(mut procs) = PROCESSES.lock() {
         for (_, mut child) in procs.drain() {
             child.kill().ok();
+            let _ = child.wait();
         }
     }
     if let Ok(mut terminals) = PTY_TERMINALS.lock() {
         for (_, mut terminal) in terminals.drain() {
             terminal.child.kill().ok();
+            let _ = terminal.child.wait();
         }
     }
 }

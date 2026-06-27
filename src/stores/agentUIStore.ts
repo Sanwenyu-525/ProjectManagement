@@ -37,19 +37,21 @@ export const useAgentUIStore = create<AgentUIStore>((set) => ({
 
   // Panel layout
   panelWidth: (() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.panelWidth);
-    return saved ? Math.min(600, Math.max(320, Number(saved))) : 400;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.panelWidth);
+      return saved ? Math.min(600, Math.max(320, Number(saved))) : 400;
+    } catch { return 400; }
   })(),
-  panelCollapsed: localStorage.getItem(STORAGE_KEYS.panelCollapsed) === 'true',
+  panelCollapsed: (() => { try { return localStorage.getItem(STORAGE_KEYS.panelCollapsed) === 'true'; } catch { return false; } })(),
   setPanelWidth: (w) => {
     const clamped = Math.min(600, Math.max(320, Math.round(w)));
-    localStorage.setItem(STORAGE_KEYS.panelWidth, String(clamped));
+    try { localStorage.setItem(STORAGE_KEYS.panelWidth, String(clamped)); } catch { /* ignore */ }
     set({ panelWidth: clamped });
   },
   togglePanelCollapsed: () =>
     set((s) => {
       const next = !s.panelCollapsed;
-      localStorage.setItem(STORAGE_KEYS.panelCollapsed, String(next));
+      try { localStorage.setItem(STORAGE_KEYS.panelCollapsed, String(next)); } catch { /* ignore */ }
       return { panelCollapsed: next };
     }),
 }));

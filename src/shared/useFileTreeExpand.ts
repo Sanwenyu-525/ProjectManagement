@@ -49,10 +49,20 @@ export function mergeTrees(
   return newTree.map(node => {
     if (!node.isDir) return node;
     const existing = existingMap.get(normPath(node.path));
-    if (existing?.children && existing.children.length > 0 && expanded.has(normPath(node.path))) {
-      // Recursively preserve loaded children for nested expanded nodes.
-      // First arg is the new tree (node.children from API), second is existing (with loaded sub-children).
-      return { ...node, children: mergeTrees(node.children ?? [], existing.children, expanded) };
+    // Only recurse when the API actually returned deeper data for this dir.
+    // A shallow refresh (getTree(root, 1)) yields empty children arrays for
+    // sub-directories — recursing into those would erase previously
+    // lazy-loaded subtrees and render expanded folders as "空目录".
+    const newChildren = node.children ?? [];
+    if (expanded.has(normPath(node.path))
+      && newChildren.length > 0
+      && existing?.children && existing.children.length > 0) {
+      return { ...node, children: mergeTrees(newChildren, existing.children, expanded) };
+    }
+    // Shallow refresh: keep the already-loaded children instead of overwriting
+    // them with the API's empty array. Refresh metadata (hasChildren etc.) only.
+    if (existing?.children && existing.children.length > 0) {
+      return { ...node, children: existing.children };
     }
     return node;
   });
@@ -81,6 +91,19 @@ export function findDir(dirs: DirState[], path: string): DirState | undefined {
     const nd = normPath(d.path);
     return np === nd || np.startsWith(nd + '/');
   });
+}
+
+/** Depth-first search for a node by normalized path within a tree */
+export function findNodeInTree(nodes: FileTreeNode[], path: string): FileTreeNode | undefined {
+  const target = normPath(path);
+  for (const n of nodes) {
+    if (normPath(n.path) === target) return n;
+    if (n.isDir && n.children) {
+      const found = findNodeInTree(n.children, path);
+      if (found) return found;
+    }
+  }
+  return undefined;
 }
 
 export function useFileTreeExpand(
@@ -113,8 +136,11 @@ export function useFileTreeExpand(
   const autoExpandSubtree = useCallback((tree: FileTreeNode[], expandedSet: Set<string>) => {
     for (const node of tree) {
       if (!node.isDir || !expandedSet.has(normPath(node.path))) continue;
-      const hasChildren = node.children && node.children.length > 0;
-      if (hasChildren || fetchingRef.current.has(normPath(node.path))) continue;
+      // Skip if already has children loaded or is currently being fetched
+      // node.hasChildren: backend hint; fallback to true if missing (backward compat)
+      const mightHaveChildren = node.hasChildren !== false;
+      if (mightHaveChildren && node.children && node.children.length > 0) continue;
+      if (fetchingRef.current.has(normPath(node.path))) continue;
       if (!pendingAutoExpandRef.current) pendingAutoExpandRef.current = new Set();
       pendingAutoExpandRef.current.add(normPath(node.path));
     }
@@ -211,49 +237,42 @@ export function useFileTreeExpand(
   // Toggle a directory's expand/collapse state
   const toggleDir = useCallback((path: string) => {
     const np = normPath(path);
-    let fetchPath: string | null = null;
 
+    // Decide lazily-load OUTSIDE the setDirs updater. Reading dirsRef here is
+    // safe (event-handler context) and avoids relying on a side-effect variable
+    // mutated inside the updater — React (StrictMode) may invoke the updater
+    // twice and discard the first run, which previously swallowed fetchPath.
+    const dir = findDir(dirsRef.current, np);
+    const alreadyExpanded = dir?.expanded.has(np) ?? false;
+    let needsFetch = false;
+    if (dir && !alreadyExpanded) {
+      const node = findNodeInTree(dir.tree, np);
+      // Only fetch if directory has children but they haven't been loaded yet
+      // node.hasChildren: backend hint; fallback to true if missing (backward compat)
+      needsFetch = !!node && node.isDir && node.hasChildren !== false
+        && (!node.children || node.children.length === 0);
+    }
+
+    // Pure state transition: updater has no side effects.
     setDirs(prev => {
-      const dir = findDir(prev, np);
-      if (!dir) return prev;
-
-      const next = new Set(dir.expanded);
-      const isExpanding = !next.has(np);
-      if (isExpanding) next.add(np);
-      else next.delete(np);
-
-      if (isExpanding) {
-        // Check if node needs lazy loading
-        const findNode = (nodes: FileTreeNode[], p: string): FileTreeNode | undefined => {
-          const target = normPath(p);
-          for (const n of nodes) {
-            if (normPath(n.path) === target) return n;
-            if (n.isDir && n.children) {
-              const found = findNode(n.children, p);
-              if (found) return found;
-            }
-          }
-          return undefined;
-        };
-        const node = findNode(dir.tree, np);
-        if (node && node.isDir && (!node.children || node.children.length === 0)) {
-          fetchPath = np;
-        }
-      }
-
-      return prev.map(d =>
-        findDir([d], np) ? { ...d, expanded: next } : d
+      const d = findDir(prev, np);
+      if (!d) return prev;
+      const next = new Set(d.expanded);
+      if (next.has(np)) next.delete(np);
+      else next.add(np);
+      return prev.map(dd =>
+        findDir([dd], np) ? { ...dd, expanded: next } : dd
       );
     });
 
-    if (fetchPath) {
+    if (needsFetch) {
       // Mark as loading synchronously so the render before loadChildren's async setLoadingDirPaths shows "加载中..."
       setLoadingDirPaths(prev => {
         const next = new Set(prev);
-        next.add(fetchPath!);
+        next.add(np);
         return next;
       });
-      loadChildren(fetchPath);
+      loadChildren(np);
     }
   }, [loadChildren]);
 

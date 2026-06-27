@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useAgentUIStore } from '../../../stores/agentUIStore';
 import { useThemeStore } from '../../../stores/themeStore';
+import ErrorBoundary from '../../../shared/ErrorBoundary';
 import AgentPlanPanel from './AgentPlanPanel';
 import AgentGitTab from './AgentGitTab';
 import AgentMemoryPanel from './AgentMemoryPanel';
@@ -172,13 +173,15 @@ export default function AgentRightPanel({ sessionId, cwd }: AgentRightPanelProps
 
       {/* Content */}
       <div style={styles.content}>
-        {activeTab === 'plan' && <AgentPlanPanel />}
-        {activeTab === 'git' && <AgentGitTab repoPath={cwd} />}
-        {activeTab === 'context' && <AgentContextPanel sessionId={sessionId} cwd={cwd} />}
-        {activeTab === 'memory' && <AgentMemoryPanel sessionId={sessionId} />}
-        {activeTab === 'prompts' && <AgentPromptPanel />}
-        {activeTab === 'graph' && <AgentGraphPanel />}
-        {activeTab === 'knowledge' && <AgentKnowledgePanel />}
+        <ErrorBoundary>
+          {activeTab === 'plan' && <AgentPlanPanel />}
+          {activeTab === 'git' && <AgentGitTab repoPath={cwd} />}
+          {activeTab === 'context' && <AgentContextPanel sessionId={sessionId} cwd={cwd} />}
+          {activeTab === 'memory' && <AgentMemoryPanel sessionId={sessionId} />}
+          {activeTab === 'prompts' && <AgentPromptPanel />}
+          {activeTab === 'graph' && <AgentGraphPanel />}
+          {activeTab === 'knowledge' && <AgentKnowledgePanel />}
+        </ErrorBoundary>
       </div>
     </div>
   );

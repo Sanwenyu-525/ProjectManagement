@@ -163,23 +163,29 @@ export default forwardRef<FileExplorerHandle, Props>(function FileExplorer({ col
 
   const fetchTree = useCallback((path: string, depth?: number) => {
     const np = normPath(path);
+    console.warn('[DIAG fetchTree]', np, 'depth', depth ?? 1);
     filesApi.getTree(np, depth ?? 1)
       .then(tree => {
+        console.warn('[DIAG fetchTree OK]', np, 'rootNodes', tree.length, 'sample', tree[0]?.name, 'children?', tree[0]?.children?.length);
         // Collect expanded child paths that need lazy loading
         const pathsToLoad: string[] = [];
         setDirs(prev => {
           const updated = prev.map(d => {
             if (normPath(d.path) !== np) return d;
             const merged = mergeTrees(tree, d.tree, d.expanded);
+            console.warn('[DIAG fetchTree merge]', np, 'prevTreeLen', d.tree.length, 'mergedLen', merged.length, 'expanded', [...d.expanded]);
             return { ...d, tree: merged, loading: false };
           });
-          // Auto-expand: queue lazy-load for expanded children that have no data yet
+          // Auto-expand: queue lazy-load for expanded children that have data to load
           const dir = updated.find(d => normPath(d.path) === np);
           if (dir) {
             for (const node of dir.tree) {
               if (!node.isDir) continue;
               const nodeNp = normPath(node.path);
-              if (dir.expanded.has(nodeNp) && (!node.children || node.children.length === 0)) {
+              // Only load if directory has children but they haven't been loaded yet
+              // node.hasChildren: backend hint; fallback to true if missing (backward compat)
+              const mightHaveChildren = node.hasChildren !== false;
+              if (dir.expanded.has(nodeNp) && mightHaveChildren && (!node.children || node.children.length === 0)) {
                 pathsToLoad.push(nodeNp);
               }
             }

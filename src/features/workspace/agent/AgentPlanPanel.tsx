@@ -40,14 +40,20 @@ export default function AgentPlanPanel() {
   const [editingTitle, setEditingTitle] = useState('');
   const [hoveredChild, setHoveredChild] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const addTaskInputRef = useRef<HTMLInputElement>(null);
+  const newGroupInputRef = useRef<HTMLInputElement>(null);
 
   const { groups, childrenOf } = useMemo(() => groupAgentTasks(tasks), [tasks]);
 
-  // Focus input when adding
+  // Focus the appropriate input when adding
   useEffect(() => {
-    if (addingToGroup || showNewGroup || editingGroupId) {
-      requestAnimationFrame(() => inputRef.current?.focus());
+    if (editingGroupId) {
+      requestAnimationFrame(() => renameInputRef.current?.focus());
+    } else if (addingToGroup) {
+      requestAnimationFrame(() => addTaskInputRef.current?.focus());
+    } else if (showNewGroup) {
+      requestAnimationFrame(() => newGroupInputRef.current?.focus());
     }
   }, [addingToGroup, showNewGroup, editingGroupId]);
 
@@ -240,7 +246,7 @@ export default function AgentPlanPanel() {
                 </span>
                 {editingGroupId === group.id ? (
                   <input
-                    ref={inputRef}
+                    ref={renameInputRef}
                     value={editingTitle}
                     onChange={e => setEditingTitle(e.target.value)}
                     onBlur={() => handleRenameGroup(group)}
@@ -365,7 +371,7 @@ export default function AgentPlanPanel() {
                   {addingToGroup === group.id ? (
                     <div style={styles.addRow}>
                       <input
-                        ref={inputRef}
+                        ref={addTaskInputRef}
                         value={newTaskTitle}
                         onChange={e => setNewTaskTitle(e.target.value)}
                         onBlur={() => { setAddingToGroup(null); setNewTaskTitle(''); }}
@@ -404,7 +410,7 @@ export default function AgentPlanPanel() {
         {showNewGroup ? (
           <div style={styles.newGroupForm}>
             <input
-              ref={inputRef}
+              ref={newGroupInputRef}
               value={newGroupTitle}
               onChange={e => setNewGroupTitle(e.target.value)}
               onBlur={() => { setShowNewGroup(false); setNewGroupTitle(''); }}

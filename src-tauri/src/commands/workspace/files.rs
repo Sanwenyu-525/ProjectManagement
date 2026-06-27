@@ -30,6 +30,7 @@ pub struct FileTreeNode {
     pub size: Option<u64>,
     pub extension: Option<String>,
     pub modified: Option<String>,
+    pub has_children: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -818,6 +819,30 @@ fn build_tree(dir: &Path, remaining: i32) -> Vec<FileTreeNode> {
             (size, modified)
         };
 
+        // Check if directory has children (without recursively loading them)
+        let has_children = if is_dir {
+            fs::read_dir(&path)
+                .map(|mut entries| entries.any(|e| {
+                    e.ok().map(|e| {
+                        let name = e.file_name();
+                        let name_str = name.to_string_lossy();
+                        // Skip hidden and ignored directories
+                        if e.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                            && (SKIP_DIRS.contains(&name_str.as_ref()) || name_str.starts_with('.'))
+                        {
+                            return false;
+                        }
+                        if name_str.starts_with('.') && name_str != ".env" && name_str != ".gitignore" && name_str != ".eslintrc" {
+                            return false;
+                        }
+                        true
+                    }).unwrap_or(false)
+                }))
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
         let children = if is_dir {
             Some(build_tree(&path, remaining - 1))
         } else {
@@ -832,6 +857,7 @@ fn build_tree(dir: &Path, remaining: i32) -> Vec<FileTreeNode> {
             size,
             extension,
             modified,
+            has_children,
         });
     }
 

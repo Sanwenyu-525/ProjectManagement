@@ -17,6 +17,7 @@ export interface FileTreeNode {
   size?: number;
   extension?: string;
   modified?: string;
+  hasChildren?: boolean;
 }
 
 export interface FileContent {

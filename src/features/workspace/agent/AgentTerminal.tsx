@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { terminalApi, sessionsApi, knowledgeApi, projectsApi, graphApi, auditApi } from '../../../api';
+import { terminalApi, sessionsApi, knowledgeApi, projectsApi, graphApi, auditApi, filesApi } from '../../../api';
 import { useXtermTerminal } from '../components/useXtermTerminal';
 import { useThemeStore } from '../../../stores/themeStore';
 import { useTerminalStore } from '../../../stores/terminalStore';
@@ -77,6 +77,17 @@ export default function AgentTerminal({ tabId, style: extraStyle }: AgentTermina
     const tab = useAgentTabStore.getState().tabs.find(t => t.id === tabId);
     if (tab?.sessionId) useAgentTabStore.getState().setSessionId(tabId, null);
   }, [tabId]);
+
+  // 校验 cwd 存在性，不存在则回退到 defaultCwd
+  useEffect(() => {
+    if (!cwdRef.current) return;
+    filesApi.listDirectory(cwdRef.current).catch(() => {
+      const fallback = useTerminalStore.getState().defaultCwd || '';
+      if (fallback && fallback !== cwdRef.current) {
+        cwdRef.current = fallback;
+      }
+    });
+  }, []);
 
   // Listen for quick commands from AgentTabBar
   useEffect(() => {

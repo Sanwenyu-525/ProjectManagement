@@ -208,8 +208,19 @@ export function SlashMenu({ filtered, selectedIndex, onSelectedIndexChange, onSe
   useEffect(() => {
     const anchor = anchorRef.current;
     if (!anchor) return;
-    const rect = anchor.getBoundingClientRect();
-    setPos({ left: rect.left, width: rect.width, bottom: rect.top - 4 });
+    const recalc = () => {
+      const rect = anchor.getBoundingClientRect();
+      setPos({ left: rect.left, width: rect.width, bottom: rect.top - 4 });
+    };
+    recalc();
+    // 滚动/resize 时重新计算位置，避免菜单错位
+    window.addEventListener('resize', recalc);
+    const scrollParent = anchor.closest('.agent-chat-scroll') || anchor.parentElement;
+    scrollParent?.addEventListener('scroll', recalc, { passive: true });
+    return () => {
+      window.removeEventListener('resize', recalc);
+      scrollParent?.removeEventListener('scroll', recalc);
+    };
   }, [anchorRef, filtered]);
 
   useEffect(() => {

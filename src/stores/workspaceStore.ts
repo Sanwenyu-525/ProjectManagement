@@ -95,14 +95,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
   editorOpen: false,
   setEditorOpen: (v) => set({ editorOpen: v }),
 
-  drawerOpen: localStorage.getItem('devhub_globalEditorOpen') === 'true',
+  drawerOpen: (() => { try { return localStorage.getItem('devhub_globalEditorOpen') === 'true'; } catch { return false; } })(),
   setDrawerOpen: (v) => {
-    localStorage.setItem('devhub_globalEditorOpen', String(v));
+    try { localStorage.setItem('devhub_globalEditorOpen', String(v)); } catch { /* ignore */ }
     set({ drawerOpen: v });
   },
   toggleDrawer: () => set((s) => {
     const next = !s.drawerOpen;
-    localStorage.setItem('devhub_globalEditorOpen', String(next));
+    try { localStorage.setItem('devhub_globalEditorOpen', String(next)); } catch { /* ignore */ }
     return { drawerOpen: next };
   }),
 
